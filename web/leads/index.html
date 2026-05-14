@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Leads — True Path CRM</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+  <link rel="stylesheet" href="/assets/css/app.css">
+</head>
+<body class="bg-slate-100 text-slate-700">
+<div id="app" class="flex h-screen overflow-hidden">
+  <div id="nav-placeholder"></div>
+  <div class="flex-1 flex flex-col overflow-hidden">
+    <div id="topbar"></div>
+    <main class="flex-1 overflow-y-auto p-6">
+
+      <div class="search-bar">
+        <input type="text" id="search" class="form-control" placeholder="Search leads…" oninput="debounceLoad()">
+        <div class="flex gap-2 ml-auto">
+          <button class="btn btn-outline" id="view-list-btn" onclick="setView('list')"><i class="fa-solid fa-list"></i></button>
+          <button class="btn btn-outline" id="view-kanban-btn" onclick="setView('kanban')"><i class="fa-solid fa-columns"></i></button>
+          <button class="btn btn-primary" onclick="openNew()"><i class="fa-solid fa-plus"></i> New Lead</button>
+        </div>
+      </div>
+
+      <div class="filter-bar">
+        <button class="filter-btn active" data-status="" onclick="setFilter(this,'')">All</button>
+        <button class="filter-btn" data-status="New" onclick="setFilter(this,'New')">New</button>
+        <button class="filter-btn" data-status="Contacted" onclick="setFilter(this,'Contacted')">Contacted</button>
+        <button class="filter-btn" data-status="Qualified" onclick="setFilter(this,'Qualified')">Qualified</button>
+        <button class="filter-btn" data-status="Lost" onclick="setFilter(this,'Lost')">Lost</button>
+        <button class="filter-btn" data-status="Converted" onclick="setFilter(this,'Converted')">Converted</button>
+      </div>
+
+      <!-- List view -->
+      <div id="list-view">
+        <div class="card">
+          <div class="card-body">
+            <table class="data-table">
+              <thead><tr><th>#</th><th>Name</th><th>Company</th><th>Email</th><th>Phone</th><th>Value</th><th>Status</th><th>Source</th><th>Last Contact</th><th>Assigned</th></tr></thead>
+              <tbody id="tbl-body"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- Kanban view -->
+      <div id="kanban-view" style="display:none">
+        <div class="kanban-board" id="kanban-board"></div>
+      </div>
+
+    </main>
+  </div>
+</div>
+
+<!-- Lead modal -->
+<div id="lead-modal" class="modal-backdrop hidden">
+  <div class="modal">
+    <div class="modal-header">
+      <span class="modal-title" id="modal-title">New Lead</span>
+      <button class="modal-close" onclick="closeModal('lead-modal')">×</button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="edit-id">
+      <div class="form-grid">
+        <div class="form-group"><label class="form-label">Full Name *</label><input class="form-control" id="f-name"></div>
+        <div class="form-group"><label class="form-label">Company</label><input class="form-control" id="f-company"></div>
+        <div class="form-group"><label class="form-label">Email</label><input class="form-control" type="email" id="f-email"></div>
+        <div class="form-group"><label class="form-label">Phone</label><input class="form-control" id="f-phone"></div>
+        <div class="form-group"><label class="form-label">Value ($)</label><input class="form-control" type="number" id="f-value"></div>
+        <div class="form-group"><label class="form-label">Status</label>
+          <select class="form-control" id="f-status">
+            <option>New</option><option>Contacted</option><option>Qualified</option><option>Lost</option><option>Converted</option>
+          </select>
+        </div>
+        <div class="form-group"><label class="form-label">Source</label>
+          <select class="form-control" id="f-source">
+            <option value="">— Select —</option>
+            <option>Referral</option><option>Website</option><option>Cold Call</option><option>Event</option><option>Social Media</option><option>Other</option>
+          </select>
+        </div>
+        <div class="form-group"><label class="form-label">Last Contact</label><input class="form-control" type="date" id="f-last_contact"></div>
+      </div>
+      <div class="form-group"><label class="form-label">Tags</label><input class="form-control" id="f-tags" placeholder="comma-separated tags"></div>
+      <div class="form-group"><label class="form-label">Notes</label><textarea class="form-control" id="f-notes" rows="3"></textarea></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeModal('lead-modal')">Cancel</button>
+      <button class="btn btn-danger btn-sm" id="delete-btn" onclick="doDelete()" style="display:none">Delete</button>
+      <button class="btn btn-primary" onclick="save()">Save</button>
+    </div>
+  </div>
+</div>
+
+<script src="/assets/js/app.js"></script>
+<script>
+  initNav('leads');
+  let currentView = 'list', currentStatus = '', allLeads = [];
+  let debounce;
+
+  function debounceLoad() { clearTimeout(debounce); debounce = setTimeout(load, 300); }
+  function setFilter(btn, status) {
+    document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    currentStatus = status;
+    load();
+  }
+
+  function setView(v) {
+    currentView = v;
+    document.getElementById('list-view').style.display   = v === 'list'   ? '' : 'none';
+    document.getElementById('kanban-view').style.display = v === 'kanban' ? '' : 'none';
+    renderData();
+  }
+
+  const STATUSES = ['New','Contacted','Qualified','Lost','Converted'];
+
+  async function load() {
+    const search = document.getElementById('search').value;
+    let url = '/leads?';
+    if (currentStatus) url += `status=${encodeURIComponent(currentStatus)}&`;
+    if (search) url += `search=${encodeURIComponent(search)}`;
+    const data = await apiGet(url);
+    if (!data) return;
+    allLeads = data;
+    renderData();
+  }
+
+  function renderData() {
+    if (currentView === 'list') renderList();
+    else renderKanban();
+  }
+
+  function renderList() {
+    document.getElementById('tbl-body').innerHTML = allLeads.length
+      ? allLeads.map(l => `<tr class="clickable" onclick="openEdit(${l.id})">
+          <td class="text-slate-400 font-mono text-xs">#${l.id}</td>
+          <td class="font-medium">${esc(l.name)}</td>
+          <td>${esc(l.company)||'—'}</td>
+          <td>${esc(l.email)||'—'}</td>
+          <td>${esc(l.phone)||'—'}</td>
+          <td>${l.value ? fmtCurrency(l.value) : '—'}</td>
+          <td>${statusBadge(l.status, LEAD_STATUS_COLORS)}</td>
+          <td>${esc(l.source)||'—'}</td>
+          <td class="text-xs text-slate-400">${fmtDate(l.last_contact)}</td>
+          <td class="text-xs">${esc(l.assigned_name)||'—'}</td>
+        </tr>`).join('')
+      : '<tr><td colspan="10" class="text-center py-10 text-slate-400">No leads found</td></tr>';
+  }
+
+  function renderKanban() {
+    const cols = {};
+    STATUSES.forEach(s => cols[s] = []);
+    allLeads.forEach(l => { if (cols[l.status]) cols[l.status].push(l); else cols['New'].push(l); });
+    document.getElementById('kanban-board').innerHTML = STATUSES.map(s => `
+      <div class="kanban-col">
+        <div class="kanban-col-header">
+          <span>${s}</span>
+          <span class="text-xs font-mono">${cols[s].length}</span>
+        </div>
+        <div class="kanban-cards">
+          ${cols[s].length ? cols[s].map(l => `
+            <div class="kanban-card" onclick="openEdit(${l.id})">
+              <div class="kanban-card-name">${esc(l.name)}</div>
+              <div class="kanban-card-meta">${esc(l.company)||''}${l.value ? ' · ' + fmtCurrency(l.value) : ''}</div>
+            </div>`).join('') : '<div class="text-xs text-slate-400 text-center py-4">Empty</div>'}
+        </div>
+      </div>`).join('');
+  }
+
+  function openNew() { clearForm(); openModal('lead-modal'); }
+
+  function clearForm() {
+    document.getElementById('edit-id').value = '';
+    ['f-name','f-company','f-email','f-phone','f-value','f-last_contact','f-tags','f-notes'].forEach(id => document.getElementById(id).value = '');
+    document.getElementById('f-status').value = 'New';
+    document.getElementById('f-source').value = '';
+    document.getElementById('delete-btn').style.display = 'none';
+    document.getElementById('modal-title').textContent = 'New Lead';
+  }
+
+  async function openEdit(id) {
+    clearForm();
+    const l = await apiGet(`/leads?id=${id}`);
+    if (!l) return;
+    document.getElementById('edit-id').value       = l.id;
+    document.getElementById('f-name').value        = l.name        || '';
+    document.getElementById('f-company').value     = l.company     || '';
+    document.getElementById('f-email').value       = l.email       || '';
+    document.getElementById('f-phone').value       = l.phone       || '';
+    document.getElementById('f-value').value       = l.value       || '';
+    document.getElementById('f-status').value      = l.status      || 'New';
+    document.getElementById('f-source').value      = l.source      || '';
+    document.getElementById('f-last_contact').value= l.last_contact ? l.last_contact.slice(0,10) : '';
+    document.getElementById('f-tags').value        = l.tags        || '';
+    document.getElementById('f-notes').value       = l.notes       || '';
+    document.getElementById('modal-title').textContent = `Edit — ${l.name}`;
+    document.getElementById('delete-btn').style.display = '';
+    openModal('lead-modal');
+  }
+
+  function getForm() {
+    return {
+      name: document.getElementById('f-name').value.trim(),
+      company: document.getElementById('f-company').value.trim(),
+      email: document.getElementById('f-email').value.trim(),
+      phone: document.getElementById('f-phone').value.trim(),
+      value: document.getElementById('f-value').value || null,
+      status: document.getElementById('f-status').value,
+      source: document.getElementById('f-source').value,
+      last_contact: document.getElementById('f-last_contact').value || null,
+      tags: document.getElementById('f-tags').value.trim(),
+      notes: document.getElementById('f-notes').value.trim(),
+    };
+  }
+
+  async function save() {
+    const id = document.getElementById('edit-id').value;
+    const body = getForm();
+    if (!body.name) { showToast('Name is required', 'error'); return; }
+    const res = id ? await apiPatch(`/leads?id=${id}`, body) : await apiPost('/leads', body);
+    if (res && res.ok) { showToast(id ? 'Lead updated' : 'Lead created', 'success'); closeModal('lead-modal'); load(); }
+    else showToast('Save failed', 'error');
+  }
+
+  async function doDelete() {
+    const id = document.getElementById('edit-id').value;
+    if (!id || !confirm2('Delete this lead?')) return;
+    const res = await apiDelete(`/leads?id=${id}`);
+    if (res && res.ok) { showToast('Deleted', 'success'); closeModal('lead-modal'); load(); }
+    else showToast('Delete failed', 'error');
+  }
+
+  document.getElementById('lead-modal').addEventListener('click', e => { if (e.target === e.currentTarget) closeModal('lead-modal'); });
+  load();
+</script>
+</body>
+</html>

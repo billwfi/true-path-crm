@@ -1,0 +1,11 @@
+{
+  "name": "true-path-crm",
+  "version": "1.0.0",
+  "description": "True Path CRM — Netlify + SQL Server",
+  "private": true,
+  "dependencies": {
+    "mssql": "^11.0.1",
+    "jsonwebtoken": "^9.0.2",
+    "bcryptjs": "^2.4.3"
+  }
+}

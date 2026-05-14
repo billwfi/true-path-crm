@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Temp Batch — True Path CRM</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+  <link rel="stylesheet" href="/assets/css/app.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+</head>
+<body class="bg-slate-100 text-slate-700">
+<div id="app" class="flex h-screen overflow-hidden">
+  <div id="nav-placeholder"></div>
+  <div class="flex-1 flex flex-col overflow-hidden">
+    <div id="topbar"></div>
+    <main class="flex-1 overflow-y-auto p-6">
+
+      <!-- Import CSV card -->
+      <div class="card mb-6">
+        <div class="card-header">
+          <span class="card-title"><i class="fa-solid fa-file-csv text-sky-500 mr-2"></i>Import CSV</span>
+        </div>
+        <div class="card-body p-4">
+          <div class="flex items-center gap-4 flex-wrap">
+            <input type="file" id="csv-file" accept=".csv" class="form-control" style="max-width:340px" onchange="previewCSV()">
+            <button class="btn btn-outline btn-sm" onclick="downloadTemplate()"><i class="fa-solid fa-download"></i> Template</button>
+            <span class="text-sm text-slate-400" id="csv-status"></span>
+          </div>
+          <div id="csv-preview" class="mt-4" style="display:none">
+            <div class="overflow-x-auto max-h-52 border border-slate-200 rounded">
+              <table class="data-table text-xs" id="csv-tbl">
+                <thead id="csv-head"></thead>
+                <tbody id="csv-body"></tbody>
+              </table>
+            </div>
+            <div class="flex gap-3 mt-3">
+              <button class="btn btn-primary" onclick="importCSV()"><i class="fa-solid fa-upload"></i> Import to Temp Batch</button>
+              <button class="btn btn-outline" onclick="clearCSV()">Clear</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Pending records -->
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">Pending Records</span>
+          <button class="btn btn-success btn-sm" onclick="approveAll()"><i class="fa-solid fa-check-double"></i> Approve All → Batch</button>
+        </div>
+        <div class="card-body">
+          <table class="data-table">
+            <thead><tr>
+              <th>Customer Name</th><th>Customer ID</th><th>Drug</th><th>Vendor</th>
+              <th>Day Supply</th><th>Unit Price</th><th>Unit Cost</th><th>Shipping</th>
+              <th>Refill</th><th>Override</th><th>Status</th><th></th>
+            </tr></thead>
+            <tbody id="tbl-body"></tbody>
+          </table>
+        </div>
+      </div>
+    </main>
+  </div>
+</div>
+
+<script src="/assets/js/app.js"></script>
+<script>
+  initNav('temp-batch');
+  let parsedRows = [], currentImportBatchId = null;
+
+  // CSV column mapping: CSV header → API field
+  const COL_MAP = {
+    'customer name': 'customer_name', 'customer id': 'customer_id',
+    'drug': 'drug', 'vendor': 'vendor', 'day supply': 'day_supply',
+    'price': 'price', 'cost': 'cost', 'unit type': 'unit_type',
+    'unit quantity': 'unit_quantity', 'unit qty': 'unit_quantity',
+    'vendor quantity': 'vendor_quantity', 'vendor qty': 'vendor_quantity',
+    'unit price': 'unit_price', 'unit cost': 'unit_cost',
+    'shipping method': 'shipping_method', 'shipping': 'shipping_method',
+    'date prescribed': 'date_prescribed', 'number of refills': 'num_refills',
+    'refills': 'num_refills', 'is refill': 'is_refill', 'refill': 'is_refill',
+  };
+
+  function previewCSV() {
+    const file = document.getElementById('csv-file').files[0];
+    if (!file) return;
+    Papa.parse(file, {
+      header: true, skipEmptyLines: true,
+      complete: result => {
+        parsedRows = result.data.map(row => {
+          const mapped = {};
+          Object.entries(row).forEach(([k, v]) => {
+            const key = COL_MAP[k.trim().toLowerCase()];
+            if (key) mapped[key] = v.trim();
+          });
+          return mapped;
+        }).filter(r => r.customer_name || r.drug);
+
+        document.getElementById('csv-status').textContent = `${parsedRows.length} rows parsed`;
+        const headers = Object.keys(result.data[0] || {});
+        document.getElementById('csv-head').innerHTML = '<tr>' + headers.map(h => `<th>${esc(h)}</th>`).join('') + '</tr>';
+        document.getElementById('csv-body').innerHTML = result.data.slice(0,5).map(row =>
+          '<tr>' + headers.map(h => `<td>${esc(row[h]||'')}</td>`).join('') + '</tr>').join('');
+        document.getElementById('csv-preview').style.display = '';
+      },
+      error: () => showToast('Failed to parse CSV', 'error'),
+    });
+  }
+
+  async function importCSV() {
+    if (!parsedRows.length) { showToast('No rows to import', 'error'); return; }
+    const res = await apiPost('/temp-batch', parsedRows);
+    if (res && res.ok) {
+      const d = await res.json();
+      currentImportBatchId = d.import_batch_id;
+      showToast(`Imported ${parsedRows.length} rows`, 'success');
+      clearCSV(); load();
+    } else showToast('Import failed', 'error');
+  }
+
+  function clearCSV() {
+    parsedRows = [];
+    document.getElementById('csv-file').value = '';
+    document.getElementById('csv-preview').style.display = 'none';
+    document.getElementById('csv-status').textContent = '';
+  }
+
+  function downloadTemplate() {
+    const cols = 'Customer Name,Customer ID,Drug,Vendor,Day Supply,Unit Price,Unit Cost,Unit Quantity,Vendor Quantity,Shipping Method,Date Prescribed,Number of Refills,Is Refill\n';
+    const sample = 'John Doe,PT-001,Ozempic,Vendor A,30,450.00,380.00,1,3,Standard,2026-05-01,3,0\n';
+    const blob = new Blob([cols + sample], { type: 'text/csv' });
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'temp_batch_template.csv'; a.click();
+  }
+
+  async function load() {
+    const data = await apiGet('/temp-batch');
+    if (!data) return;
+    document.getElementById('tbl-body').innerHTML = data.length
+      ? data.map(r => `<tr>
+          <td class="font-medium">${esc(r.customer_name)||'—'}</td>
+          <td class="font-mono text-xs">${esc(r.customer_id)||'—'}</td>
+          <td>${esc(r.drug)||'—'}</td>
+          <td>${esc(r.vendor)||'—'}</td>
+          <td class="text-center">${r.day_supply||'—'}</td>
+          <td>${r.unit_price ? fmtCurrency(r.unit_price) : '—'}</td>
+          <td>${r.unit_cost  ? fmtCurrency(r.unit_cost)  : '—'}</td>
+          <td>${esc(r.shipping_method)||'—'}</td>
+          <td class="text-center">${r.is_refill ? '✓' : '—'}</td>
+          <td class="text-center">
+            <input type="checkbox" ${r.override?'checked':''} onchange="toggleOverride(${r.id}, this.checked)">
+          </td>
+          <td>${r.status === 'Error'
+            ? `<span class="badge badge-red" title="${esc(r.error_message||'')}">Error</span>`
+            : '<span class="badge badge-yellow">Pending</span>'}</td>
+          <td>
+            <button class="btn btn-success btn-sm" onclick="approveOne(${r.id})" title="Approve"><i class="fa-solid fa-check"></i></button>
+            <button class="btn btn-danger btn-sm ml-1" onclick="deleteOne(${r.id})" title="Remove"><i class="fa-solid fa-trash"></i></button>
+          </td>
+        </tr>`).join('')
+      : '<tr><td colspan="12" class="text-center py-10 text-slate-400">No pending records</td></tr>';
+  }
+
+  async function approveOne(id) {
+    const res = await apiPatch(`/temp-batch?id=${id}`, { status: 'Approved' });
+    if (res && res.ok) { showToast('Approved', 'success'); load(); }
+  }
+
+  async function toggleOverride(id, val) {
+    await apiPatch(`/temp-batch?id=${id}`, { override: val ? 1 : 0, status: 'Pending' });
+  }
+
+  async function approveAll() {
+    if (!confirm2('Move all pending records to Batch Orders?')) return;
+    const body = currentImportBatchId ? { import_batch_id: currentImportBatchId } : {};
+    const res = await apiPatch('/temp-batch?action=approve_all', body);
+    if (res && res.ok) {
+      const d = await res.json();
+      showToast(`Approved ${d.approved} records → Batch`, 'success');
+      currentImportBatchId = null; load();
+    } else showToast('Approve failed', 'error');
+  }
+
+  async function deleteOne(id) {
+    if (!confirm2('Remove this record?')) return;
+    const res = await apiDelete(`/temp-batch?id=${id}`);
+    if (res && res.ok) { showToast('Removed', 'success'); load(); }
+  }
+
+  load();
+</script>
+</body>
+</html>

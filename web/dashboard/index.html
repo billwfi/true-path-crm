@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dashboard — True Path CRM</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+  <link rel="stylesheet" href="/assets/css/app.css">
+</head>
+<body class="bg-slate-100 text-slate-700">
+
+<div id="app" class="flex h-screen overflow-hidden">
+  <div id="nav-placeholder"></div>
+  <div class="flex-1 flex flex-col overflow-hidden">
+    <div id="topbar"></div>
+    <main class="flex-1 overflow-y-auto p-6">
+
+      <!-- Stat cards -->
+      <div class="grid grid-cols-2 lg:grid-cols-5 gap-4 mb-6" id="stats-row">
+        <div class="stat-card"><div class="stat-number" id="s-clients">—</div><div class="stat-label">Active Clients</div></div>
+        <div class="stat-card"><div class="stat-number" id="s-leads">—</div><div class="stat-label">Open Leads</div></div>
+        <div class="stat-card"><div class="stat-number" id="s-tasks">—</div><div class="stat-label">Open Tasks</div></div>
+        <div class="stat-card"><div class="stat-number" id="s-batch">—</div><div class="stat-label">Batch Today</div></div>
+        <div class="stat-card"><div class="stat-number" id="s-pending">—</div><div class="stat-label">Temp Batch Pending</div></div>
+      </div>
+
+      <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+
+        <!-- Recent Leads -->
+        <div class="card">
+          <div class="card-header">
+            <span class="card-title">Recent Leads</span>
+            <a href="/leads/" class="text-sky-500 text-xs font-medium hover:underline">View All</a>
+          </div>
+          <div class="card-body">
+            <table class="data-table" id="tbl-leads">
+              <thead><tr><th>Name</th><th>Company</th><th>Status</th></tr></thead>
+              <tbody id="leads-body"><tr><td colspan="3" class="text-center py-6 text-slate-400">Loading…</td></tr></tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Due Tasks -->
+        <div class="card">
+          <div class="card-header">
+            <span class="card-title">Tasks Due Soon</span>
+            <a href="/tasks/" class="text-sky-500 text-xs font-medium hover:underline">View All</a>
+          </div>
+          <div class="card-body">
+            <table class="data-table">
+              <thead><tr><th>Task</th><th>Due</th><th>Priority</th></tr></thead>
+              <tbody id="tasks-body"><tr><td colspan="3" class="text-center py-6 text-slate-400">Loading…</td></tr></tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Recent Batch -->
+        <div class="card">
+          <div class="card-header">
+            <span class="card-title">Recent Batch Orders</span>
+            <a href="/batch/" class="text-sky-500 text-xs font-medium hover:underline">View All</a>
+          </div>
+          <div class="card-body">
+            <table class="data-table">
+              <thead><tr><th>Patient</th><th>Drug</th><th>Status</th></tr></thead>
+              <tbody id="batch-body"><tr><td colspan="3" class="text-center py-6 text-slate-400">Loading…</td></tr></tbody>
+            </table>
+          </div>
+        </div>
+
+      </div>
+    </main>
+  </div>
+</div>
+
+<script src="/assets/js/app.js"></script>
+<script>
+  initNav('dashboard');
+
+  async function load() {
+    const data = await apiGet('/dashboard');
+    if (!data) return;
+
+    const s = data.stats;
+    document.getElementById('s-clients').textContent = s.active_clients;
+    document.getElementById('s-leads').textContent   = s.open_leads;
+    document.getElementById('s-tasks').textContent   = s.open_tasks;
+    document.getElementById('s-batch').textContent   = s.batch_today;
+    document.getElementById('s-pending').textContent = s.temp_batch_pending;
+
+    document.getElementById('leads-body').innerHTML = data.recent_leads.length
+      ? data.recent_leads.map(l => `<tr class="clickable" onclick="location.href='/leads/?id=${l.id}'">
+          <td>${esc(l.name)}</td><td>${esc(l.company)}</td>
+          <td>${statusBadge(l.status, LEAD_STATUS_COLORS)}</td></tr>`).join('')
+      : '<tr><td colspan="3" class="text-center py-6 text-slate-400">No leads</td></tr>';
+
+    document.getElementById('tasks-body').innerHTML = data.due_tasks.length
+      ? data.due_tasks.map(t => `<tr class="clickable" onclick="location.href='/tasks/?id=${t.id}'">
+          <td>${esc(t.name)}</td><td>${fmtDate(t.due_date)}</td>
+          <td><span class="priority-${(t.priority||'').toLowerCase()}">${esc(t.priority)}</span></td></tr>`).join('')
+      : '<tr><td colspan="3" class="text-center py-6 text-slate-400">Nothing due soon</td></tr>';
+
+    document.getElementById('batch-body').innerHTML = data.recent_batch.length
+      ? data.recent_batch.map(b => `<tr class="clickable" onclick="location.href='/batch/?id=${b.id}'">
+          <td>${esc(b.customer_name)}</td><td>${esc(b.drug_name)}</td>
+          <td>${statusBadge(b.status, BATCH_STATUS_COLORS)}</td></tr>`).join('')
+      : '<tr><td colspan="3" class="text-center py-6 text-slate-400">No batch orders today</td></tr>';
+  }
+
+  load();
+</script>
+</body>
+</html>

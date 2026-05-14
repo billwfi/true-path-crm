@@ -1,0 +1,153 @@
+/* ── Auth ── */
+const API = '/.netlify/functions';
+const TOKEN_KEY = 'tp_token';
+const USER_KEY  = 'tp_user';
+
+function getToken() { return localStorage.getItem(TOKEN_KEY); }
+function getUser()  { try { return JSON.parse(localStorage.getItem(USER_KEY)); } catch { return null; } }
+function setAuth(token, user) { localStorage.setItem(TOKEN_KEY, token); localStorage.setItem(USER_KEY, JSON.stringify(user)); }
+function clearAuth() { localStorage.removeItem(TOKEN_KEY); localStorage.removeItem(USER_KEY); }
+
+function requireAuth() {
+  if (!getToken()) { window.location.href = '/login.html'; }
+}
+
+function logout() {
+  clearAuth();
+  window.location.href = '/login.html';
+}
+
+/* ── API ── */
+async function apiFetch(path, opts = {}) {
+  const token = getToken();
+  const res = await fetch(API + path, {
+    ...opts,
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(opts.headers || {}),
+    },
+  });
+  if (res.status === 401) { clearAuth(); window.location.href = '/login.html'; return null; }
+  return res;
+}
+
+async function apiGet(path) {
+  const res = await apiFetch(path);
+  if (!res || !res.ok) return null;
+  return res.json();
+}
+
+async function apiPost(path, body) {
+  const res = await apiFetch(path, { method: 'POST', body: JSON.stringify(body) });
+  return res;
+}
+
+async function apiPatch(path, body) {
+  const res = await apiFetch(path, { method: 'PATCH', body: JSON.stringify(body) });
+  return res;
+}
+
+async function apiDelete(path) {
+  const res = await apiFetch(path, { method: 'DELETE' });
+  return res;
+}
+
+/* ── Utilities ── */
+function esc(s) { return (s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+function fmtDate(d) {
+  if (!d) return '—';
+  const dt = new Date(d);
+  return isNaN(dt) ? d : `${dt.getMonth()+1}/${dt.getDate()}/${dt.getFullYear()}`;
+}
+
+function fmtCurrency(n) {
+  if (n == null || n === '') return '—';
+  return '$' + Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+function showToast(msg, type = '') {
+  const el = document.createElement('div');
+  el.className = `toast${type ? ' ' + type : ''}`;
+  el.textContent = msg;
+  document.getElementById('toast-container').appendChild(el);
+  setTimeout(() => el.remove(), 3500);
+}
+
+function confirm2(msg) { return window.confirm(msg); }
+
+/* ── Nav ── */
+const NAV_ITEMS = [
+  { section: 'Main' },
+  { href: '/dashboard/', icon: 'fa-gauge-high',       label: 'Dashboard',   key: 'dashboard' },
+  { href: '/clients/',   icon: 'fa-users',             label: 'Clients',     key: 'clients' },
+  { href: '/leads/',     icon: 'fa-user-plus',         label: 'Leads',       key: 'leads' },
+  { href: '/tasks/',     icon: 'fa-list-check',        label: 'Tasks',       key: 'tasks' },
+  { section: 'Pharmacy' },
+  { href: '/batch/',     icon: 'fa-pills',             label: 'Batch Orders',key: 'batch' },
+  { href: '/temp-batch/',icon: 'fa-inbox',             label: 'Temp Batch',  key: 'temp-batch' },
+  { section: 'Admin' },
+  { href: '/companies/', icon: 'fa-building',          label: 'Companies',   key: 'companies' },
+  { href: '/brokers/',   icon: 'fa-handshake',         label: 'Brokers',     key: 'brokers' },
+];
+
+function initNav(activeKey) {
+  requireAuth();
+  const user = getUser();
+
+  // Build sidebar
+  const items = NAV_ITEMS.map(item => {
+    if (item.section) return `<div class="nav-section">${item.section}</div>`;
+    return `<a class="nav-link${item.key === activeKey ? ' active' : ''}" href="${item.href}">
+      <i class="fa-solid ${item.icon}"></i>
+      <span class="nav-label">${item.label}</span>
+    </a>`;
+  }).join('');
+
+  document.getElementById('nav-placeholder').innerHTML = `
+    <div id="sidebar">
+      <div class="brand">
+        <div class="brand-text">True Path CRM</div>
+        <div class="brand-sub">International Rx</div>
+      </div>
+      ${items}
+      <div style="margin-top:auto; padding:16px;">
+        <a class="nav-link" onclick="logout()" style="cursor:pointer;">
+          <i class="fa-solid fa-right-from-bracket"></i>
+          <span class="nav-label">Logout</span>
+        </a>
+      </div>
+    </div>`;
+
+  // Build topbar
+  const pageTitles = {
+    dashboard: 'Dashboard', clients: 'Clients', leads: 'Leads', tasks: 'Tasks',
+    batch: 'Batch Orders', 'temp-batch': 'Temp Batch', companies: 'Companies', brokers: 'Brokers',
+  };
+  document.getElementById('topbar').innerHTML = `
+    <span class="topbar-title">${pageTitles[activeKey] || ''}</span>
+    <span class="topbar-user"><i class="fa-solid fa-user-circle"></i> ${esc((user && (user.firstname + ' ' + user.lastname)) || user?.email || '')}</span>`;
+
+  // Toast container
+  if (!document.getElementById('toast-container')) {
+    const tc = document.createElement('div');
+    tc.id = 'toast-container';
+    document.body.appendChild(tc);
+  }
+}
+
+/* ── Modal helpers ── */
+function openModal(id)  { document.getElementById(id).classList.remove('hidden'); }
+function closeModal(id) { document.getElementById(id).classList.add('hidden'); }
+
+/* ── Status badge helpers ── */
+const LEAD_STATUS_COLORS = { New:'blue', Contacted:'purple', Qualified:'green', Lost:'red', Converted:'gray' };
+const TASK_STATUS_COLORS = { 'Not Started':'gray', 'In Progress':'blue', 'Testing':'yellow', Awaiting:'orange', Completed:'green' };
+const TASK_PRIORITY_COLORS = { Low:'green', Medium:'yellow', High:'red', Urgent:'red' };
+const BATCH_STATUS_COLORS  = { Pending:'yellow', Processing:'blue', Completed:'green', Error:'red', Rejected:'red' };
+
+function statusBadge(status, map) {
+  const color = map[status] || 'gray';
+  return `<span class="badge badge-${color}">${esc(status)}</span>`;
+}

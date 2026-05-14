@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Companies — True Path CRM</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+  <link rel="stylesheet" href="/assets/css/app.css">
+</head>
+<body class="bg-slate-100 text-slate-700">
+<div id="app" class="flex h-screen overflow-hidden">
+  <div id="nav-placeholder"></div>
+  <div class="flex-1 flex flex-col overflow-hidden">
+    <div id="topbar"></div>
+    <main class="flex-1 overflow-y-auto p-6">
+      <div class="search-bar">
+        <input type="text" id="search" class="form-control" placeholder="Search companies…" oninput="debounceLoad()">
+        <button class="btn btn-primary" onclick="openNew()"><i class="fa-solid fa-plus"></i> New Company</button>
+      </div>
+      <div class="card">
+        <div class="card-body">
+          <table class="data-table">
+            <thead><tr><th>#</th><th>Name</th><th>Phone</th><th>Address</th><th>City</th><th>State</th><th>Zip</th><th>Created</th><th></th></tr></thead>
+            <tbody id="tbl-body"></tbody>
+          </table>
+        </div>
+      </div>
+    </main>
+  </div>
+</div>
+
+<div id="modal" class="modal-backdrop hidden">
+  <div class="modal">
+    <div class="modal-header">
+      <span class="modal-title" id="modal-title">New Company</span>
+      <button class="modal-close" onclick="closeModal('modal')">×</button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="edit-id">
+      <div class="form-group"><label class="form-label">Company Name *</label><input class="form-control" id="f-name"></div>
+      <div class="form-grid">
+        <div class="form-group"><label class="form-label">Phone</label><input class="form-control" id="f-phone"></div>
+        <div class="form-group"><label class="form-label">Address</label><input class="form-control" id="f-address"></div>
+        <div class="form-group"><label class="form-label">City</label><input class="form-control" id="f-city"></div>
+        <div class="form-group"><label class="form-label">State</label><input class="form-control" id="f-state"></div>
+        <div class="form-group"><label class="form-label">Zip Code</label><input class="form-control" id="f-zip_code"></div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeModal('modal')">Cancel</button>
+      <button class="btn btn-danger btn-sm" id="delete-btn" onclick="doDelete()" style="display:none">Delete</button>
+      <button class="btn btn-primary" onclick="save()">Save</button>
+    </div>
+  </div>
+</div>
+
+<script src="/assets/js/app.js"></script>
+<script>
+  initNav('companies');
+  let debounce;
+  function debounceLoad() { clearTimeout(debounce); debounce = setTimeout(load, 300); }
+
+  async function load() {
+    const s = document.getElementById('search').value;
+    const data = await apiGet(`/companies${s ? '?search=' + encodeURIComponent(s) : ''}`);
+    if (!data) return;
+    document.getElementById('tbl-body').innerHTML = data.length
+      ? data.map(c => `<tr class="clickable" onclick="openEdit(${c.id})">
+          <td class="text-slate-400 font-mono text-xs">#${c.id}</td>
+          <td class="font-medium">${esc(c.name)}</td>
+          <td>${esc(c.phone)||'—'}</td>
+          <td>${esc(c.address)||'—'}</td>
+          <td>${esc(c.city)||'—'}</td>
+          <td>${esc(c.state)||'—'}</td>
+          <td>${esc(c.zip_code)||'—'}</td>
+          <td class="text-xs text-slate-400">${fmtDate(c.created_at)}</td>
+          <td><button class="btn btn-outline btn-sm" onclick="event.stopPropagation();openEdit(${c.id})"><i class="fa-solid fa-pen"></i></button></td>
+        </tr>`).join('')
+      : '<tr><td colspan="9" class="text-center py-10 text-slate-400">No companies found</td></tr>';
+  }
+
+  function openNew() {
+    ['edit-id','f-name','f-phone','f-address','f-city','f-state','f-zip_code'].forEach(id => document.getElementById(id).value = '');
+    document.getElementById('delete-btn').style.display = 'none';
+    document.getElementById('modal-title').textContent = 'New Company';
+    openModal('modal');
+  }
+
+  async function openEdit(id) {
+    const c = await apiGet(`/companies?id=${id}`);
+    if (!c) return;
+    document.getElementById('edit-id').value  = c.id;
+    document.getElementById('f-name').value   = c.name     || '';
+    document.getElementById('f-phone').value  = c.phone    || '';
+    document.getElementById('f-address').value= c.address  || '';
+    document.getElementById('f-city').value   = c.city     || '';
+    document.getElementById('f-state').value  = c.state    || '';
+    document.getElementById('f-zip_code').value= c.zip_code|| '';
+    document.getElementById('modal-title').textContent = `Edit — ${c.name}`;
+    document.getElementById('delete-btn').style.display = '';
+    openModal('modal');
+  }
+
+  async function save() {
+    const id = document.getElementById('edit-id').value;
+    const body = { name: document.getElementById('f-name').value.trim(), phone: document.getElementById('f-phone').value.trim(),
+      address: document.getElementById('f-address').value.trim(), city: document.getElementById('f-city').value.trim(),
+      state: document.getElementById('f-state').value.trim(), zip_code: document.getElementById('f-zip_code').value.trim() };
+    if (!body.name) { showToast('Name required', 'error'); return; }
+    const res = id ? await apiPatch(`/companies?id=${id}`, body) : await apiPost('/companies', body);
+    if (res && res.ok) { showToast(id ? 'Updated' : 'Created', 'success'); closeModal('modal'); load(); }
+    else showToast('Save failed', 'error');
+  }
+
+  async function doDelete() {
+    const id = document.getElementById('edit-id').value;
+    if (!id || !confirm2('Delete this company?')) return;
+    const res = await apiDelete(`/companies?id=${id}`);
+    if (res && res.ok) { showToast('Deleted', 'success'); closeModal('modal'); load(); }
+    else showToast('Delete failed', 'error');
+  }
+
+  document.getElementById('modal').addEventListener('click', e => { if (e.target === e.currentTarget) closeModal('modal'); });
+  load();
+</script>
+</body>
+</html>

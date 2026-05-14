@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Tasks — True Path CRM</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+  <link rel="stylesheet" href="/assets/css/app.css">
+</head>
+<body class="bg-slate-100 text-slate-700">
+<div id="app" class="flex h-screen overflow-hidden">
+  <div id="nav-placeholder"></div>
+  <div class="flex-1 flex flex-col overflow-hidden">
+    <div id="topbar"></div>
+    <main class="flex-1 overflow-y-auto p-6">
+
+      <div class="search-bar">
+        <input type="text" id="search" class="form-control" placeholder="Search tasks…" oninput="debounceLoad()">
+        <button class="btn btn-primary" onclick="openNew()"><i class="fa-solid fa-plus"></i> New Task</button>
+      </div>
+
+      <div class="filter-bar">
+        <button class="filter-btn active" data-s="" onclick="setFilter(this,'')">All</button>
+        <button class="filter-btn" data-s="Not Started" onclick="setFilter(this,'Not Started')">Not Started</button>
+        <button class="filter-btn" data-s="In Progress" onclick="setFilter(this,'In Progress')">In Progress</button>
+        <button class="filter-btn" data-s="Testing" onclick="setFilter(this,'Testing')">Testing</button>
+        <button class="filter-btn" data-s="Completed" onclick="setFilter(this,'Completed')">Completed</button>
+      </div>
+
+      <div class="card">
+        <div class="card-body">
+          <table class="data-table">
+            <thead><tr><th>#</th><th>Task</th><th>Status</th><th>Priority</th><th>Due Date</th><th>Assigned To</th><th>Tags</th><th></th></tr></thead>
+            <tbody id="tbl-body"></tbody>
+          </table>
+        </div>
+      </div>
+    </main>
+  </div>
+</div>
+
+<!-- Task modal -->
+<div id="task-modal" class="modal-backdrop hidden">
+  <div class="modal">
+    <div class="modal-header">
+      <span class="modal-title" id="modal-title">New Task</span>
+      <button class="modal-close" onclick="closeModal('task-modal')">×</button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="edit-id">
+      <div class="form-group"><label class="form-label">Task Name *</label><input class="form-control" id="f-name"></div>
+      <div class="form-grid">
+        <div class="form-group"><label class="form-label">Status</label>
+          <select class="form-control" id="f-status">
+            <option>Not Started</option><option>In Progress</option><option>Testing</option><option>Awaiting</option><option>Completed</option>
+          </select>
+        </div>
+        <div class="form-group"><label class="form-label">Priority</label>
+          <select class="form-control" id="f-priority">
+            <option>Low</option><option selected>Medium</option><option>High</option><option>Urgent</option>
+          </select>
+        </div>
+        <div class="form-group"><label class="form-label">Start Date</label><input class="form-control" type="date" id="f-start_date"></div>
+        <div class="form-group"><label class="form-label">Due Date</label><input class="form-control" type="date" id="f-due_date"></div>
+      </div>
+      <div class="form-group"><label class="form-label">Tags</label><input class="form-control" id="f-tags" placeholder="comma-separated tags"></div>
+      <div class="form-group"><label class="form-label">Description</label><textarea class="form-control" id="f-description" rows="4"></textarea></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeModal('task-modal')">Cancel</button>
+      <button class="btn btn-danger btn-sm" id="delete-btn" onclick="doDelete()" style="display:none">Delete</button>
+      <button class="btn btn-primary" onclick="save()">Save</button>
+    </div>
+  </div>
+</div>
+
+<script src="/assets/js/app.js"></script>
+<script>
+  initNav('tasks');
+  let filterStatus = '', debounce;
+
+  function debounceLoad() { clearTimeout(debounce); debounce = setTimeout(load, 300); }
+  function setFilter(btn, s) {
+    document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active'); filterStatus = s; load();
+  }
+
+  async function load() {
+    const search = document.getElementById('search').value;
+    let url = '/tasks?x=1';
+    if (filterStatus) url += `&status=${encodeURIComponent(filterStatus)}`;
+    if (search) url += `&search=${encodeURIComponent(search)}`;
+    const data = await apiGet(url);
+    if (!data) return;
+
+    const PRIO = { Low:'badge-green', Medium:'badge-yellow', High:'badge-red', Urgent:'badge-red' };
+    document.getElementById('tbl-body').innerHTML = data.length
+      ? data.map(t => `<tr class="clickable" onclick="openEdit(${t.id})">
+          <td class="text-slate-400 font-mono text-xs">#${t.id}</td>
+          <td class="font-medium">${esc(t.name)}</td>
+          <td>${statusBadge(t.status, TASK_STATUS_COLORS)}</td>
+          <td><span class="badge ${PRIO[t.priority]||'badge-gray'}">${esc(t.priority)}</span></td>
+          <td class="${t.due_date && new Date(t.due_date) < new Date() && t.status !== 'Completed' ? 'text-red-500 font-medium' : 'text-xs text-slate-400'}">${fmtDate(t.due_date)}</td>
+          <td class="text-xs">${esc(t.assigned_name)||'—'}</td>
+          <td class="text-xs text-slate-400">${esc(t.tags)||'—'}</td>
+          <td><button class="btn btn-outline btn-sm" onclick="event.stopPropagation();openEdit(${t.id})"><i class="fa-solid fa-pen"></i></button></td>
+        </tr>`).join('')
+      : '<tr><td colspan="8" class="text-center py-10 text-slate-400">No tasks found</td></tr>';
+  }
+
+  function openNew() { clearForm(); openModal('task-modal'); }
+
+  function clearForm() {
+    document.getElementById('edit-id').value = '';
+    ['f-name','f-start_date','f-due_date','f-tags','f-description'].forEach(id => document.getElementById(id).value = '');
+    document.getElementById('f-status').value = 'Not Started';
+    document.getElementById('f-priority').value = 'Medium';
+    document.getElementById('delete-btn').style.display = 'none';
+    document.getElementById('modal-title').textContent = 'New Task';
+  }
+
+  async function openEdit(id) {
+    clearForm();
+    const t = await apiGet(`/tasks?id=${id}`);
+    if (!t) return;
+    document.getElementById('edit-id').value        = t.id;
+    document.getElementById('f-name').value         = t.name        || '';
+    document.getElementById('f-status').value       = t.status      || 'Not Started';
+    document.getElementById('f-priority').value     = t.priority    || 'Medium';
+    document.getElementById('f-start_date').value   = t.start_date  ? t.start_date.slice(0,10)  : '';
+    document.getElementById('f-due_date').value     = t.due_date    ? t.due_date.slice(0,10)    : '';
+    document.getElementById('f-tags').value         = t.tags        || '';
+    document.getElementById('f-description').value  = t.description || '';
+    document.getElementById('modal-title').textContent = `Edit — ${t.name}`;
+    document.getElementById('delete-btn').style.display = '';
+    openModal('task-modal');
+  }
+
+  async function save() {
+    const id = document.getElementById('edit-id').value;
+    const body = {
+      name: document.getElementById('f-name').value.trim(),
+      status: document.getElementById('f-status').value,
+      priority: document.getElementById('f-priority').value,
+      start_date: document.getElementById('f-start_date').value || null,
+      due_date: document.getElementById('f-due_date').value || null,
+      tags: document.getElementById('f-tags').value.trim(),
+      description: document.getElementById('f-description').value.trim(),
+    };
+    if (!body.name) { showToast('Task name required', 'error'); return; }
+    const res = id ? await apiPatch(`/tasks?id=${id}`, body) : await apiPost('/tasks', body);
+    if (res && res.ok) { showToast(id ? 'Task updated' : 'Task created', 'success'); closeModal('task-modal'); load(); }
+    else showToast('Save failed', 'error');
+  }
+
+  async function doDelete() {
+    const id = document.getElementById('edit-id').value;
+    if (!id || !confirm2('Delete this task?')) return;
+    const res = await apiDelete(`/tasks?id=${id}`);
+    if (res && res.ok) { showToast('Deleted', 'success'); closeModal('task-modal'); load(); }
+    else showToast('Delete failed', 'error');
+  }
+
+  document.getElementById('task-modal').addEventListener('click', e => { if (e.target === e.currentTarget) closeModal('task-modal'); });
+  load();
+</script>
+</body>
+</html>
