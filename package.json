@@ -4,7 +4,7 @@
   "description": "True Path CRM — Netlify + SQL Server",
   "private": true,
   "dependencies": {
-    "mssql": "^11.0.1",
+    "pg": "^8.13.3",
     "jsonwebtoken": "^9.0.2",
     "bcryptjs": "^2.4.3"
   }

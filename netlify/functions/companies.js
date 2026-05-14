@@ -1,61 +1,44 @@
-const { getPool, sql } = require('./_db');
+const { db } = require('./_db');
 const { verifyToken, unauthorized, ok, created, badRequest, notFound, serverError, options } = require('./_auth');
 
 exports.handler = async function (event) {
   if (event.httpMethod === 'OPTIONS') return options();
   if (!verifyToken(event)) return unauthorized();
 
-  const { id } = event.queryStringParameters || {};
+  const { id, search } = event.queryStringParameters || {};
 
   try {
-    const pool = await getPool();
-
     if (event.httpMethod === 'GET') {
       if (id) {
-        const r = await pool.request().input('id', sql.Int, id)
-          .query('SELECT * FROM tp_companies WHERE id = @id');
-        return r.recordset[0] ? ok(r.recordset[0]) : notFound();
+        const r = await db('SELECT * FROM tp_companies WHERE id = $1', [id]);
+        return r.rows[0] ? ok(r.rows[0]) : notFound();
       }
-      const search = (event.queryStringParameters?.search || '').trim();
-      const req = pool.request();
-      let where = '';
-      if (search) { req.input('s', sql.NVarChar, `%${search}%`); where = 'WHERE name LIKE @s OR city LIKE @s OR state LIKE @s'; }
-      const r = await req.query(`SELECT * FROM tp_companies ${where} ORDER BY name`);
-      return ok(r.recordset);
+      const r = await db(
+        'SELECT * FROM tp_companies WHERE ($1::text IS NULL OR name ILIKE $1 OR city ILIKE $1 OR state ILIKE $1) ORDER BY name',
+        [search ? `%${search}%` : null]);
+      return ok(r.rows);
     }
 
     if (event.httpMethod === 'POST') {
       const b = JSON.parse(event.body || '{}');
-      const r = await pool.request()
-        .input('name',    sql.NVarChar, b.name     || '')
-        .input('phone',   sql.NVarChar, b.phone    || null)
-        .input('address', sql.NVarChar, b.address  || null)
-        .input('city',    sql.NVarChar, b.city     || null)
-        .input('state',   sql.NVarChar, b.state    || null)
-        .input('zip',     sql.NVarChar, b.zip_code || null)
-        .query(`INSERT INTO tp_companies (name,phone,address,city,state,zip_code) OUTPUT INSERTED.id
-                VALUES (@name,@phone,@address,@city,@state,@zip)`);
-      return created({ id: r.recordset[0].id });
+      const r = await db(
+        'INSERT INTO tp_companies (name,phone,address,city,state,zip_code) VALUES ($1,$2,$3,$4,$5,$6) RETURNING id',
+        [b.name||'', b.phone||null, b.address||null, b.city||null, b.state||null, b.zip_code||null]);
+      return created({ id: r.rows[0].id });
     }
 
     if (event.httpMethod === 'PATCH') {
       if (!id) return badRequest('id required');
       const b = JSON.parse(event.body || '{}');
-      await pool.request()
-        .input('id',      sql.Int, id)
-        .input('name',    sql.NVarChar, b.name)
-        .input('phone',   sql.NVarChar, b.phone    || null)
-        .input('address', sql.NVarChar, b.address  || null)
-        .input('city',    sql.NVarChar, b.city     || null)
-        .input('state',   sql.NVarChar, b.state    || null)
-        .input('zip',     sql.NVarChar, b.zip_code || null)
-        .query('UPDATE tp_companies SET name=@name,phone=@phone,address=@address,city=@city,state=@state,zip_code=@zip WHERE id=@id');
+      await db(
+        'UPDATE tp_companies SET name=$1,phone=$2,address=$3,city=$4,state=$5,zip_code=$6 WHERE id=$7',
+        [b.name, b.phone||null, b.address||null, b.city||null, b.state||null, b.zip_code||null, id]);
       return ok({ id });
     }
 
     if (event.httpMethod === 'DELETE') {
       if (!id) return badRequest('id required');
-      await pool.request().input('id', sql.Int, id).query('DELETE FROM tp_companies WHERE id=@id');
+      await db('DELETE FROM tp_companies WHERE id = $1', [id]);
       return ok({ deleted: true });
     }
 
