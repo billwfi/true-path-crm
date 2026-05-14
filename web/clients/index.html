@@ -136,7 +136,10 @@
     if (res && res.ok) {
       showToast(id ? 'Client updated' : 'Client created', 'success');
       closeModal('client-modal'); clearForm(); load();
-    } else { showToast('Save failed', 'error'); }
+    } else {
+      const data = res ? await res.json().catch(() => ({})) : {};
+      showToast('Save failed: ' + (data.detail || data.error || res?.status || 'unknown error'), 'error');
+    }
   }
 
   async function doDelete() {

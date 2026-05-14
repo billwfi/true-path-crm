@@ -16,9 +16,9 @@ exports.handler = async function (event) {
   if (!verifyToken(event)) return unauthorized();
 
   const { id } = event.queryStringParameters || {};
-  const pool = await getPool().catch(err => { throw err; });
 
   try {
+    const pool = await getPool();
     // GET list or single
     if (event.httpMethod === 'GET') {
       if (id) {
