@@ -3,14 +3,43 @@
   functions = "netlify/functions"
 
 [[redirects]]
-  from = "/*"
-  to = "/index.html"
-  status = 200
-  conditions = {Role = ["admin"]}
-
-[[redirects]]
   from = "/dashboard"
   to = "/dashboard/"
+  status = 301
+
+[[redirects]]
+  from = "/clients"
+  to = "/clients/"
+  status = 301
+
+[[redirects]]
+  from = "/leads"
+  to = "/leads/"
+  status = 301
+
+[[redirects]]
+  from = "/tasks"
+  to = "/tasks/"
+  status = 301
+
+[[redirects]]
+  from = "/batch"
+  to = "/batch/"
+  status = 301
+
+[[redirects]]
+  from = "/temp-batch"
+  to = "/temp-batch/"
+  status = 301
+
+[[redirects]]
+  from = "/companies"
+  to = "/companies/"
+  status = 301
+
+[[redirects]]
+  from = "/brokers"
+  to = "/brokers/"
   status = 301
 
 [[headers]]
