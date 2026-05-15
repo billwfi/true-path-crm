@@ -1,16 +1,24 @@
-const { getDatabase } = require('@netlify/database');
+const { Pool } = require('pg');
 
-let instance;
+let pool;
 
-function getInstance() {
-  if (!instance) {
-    instance = getDatabase();
+function getPool() {
+  if (!pool) {
+    pool = new Pool({
+      connectionString: process.env.DATABASE_URL,
+      ssl: { rejectUnauthorized: false },
+    });
   }
-  return instance;
+  return pool;
 }
 
 async function db(text, params = []) {
-  return getInstance().pool.query(text, params);
+  try {
+    return await getPool().query(text, params);
+  } catch (err) {
+    pool = null;
+    throw err;
+  }
 }
 
 module.exports = { db };
