@@ -50,7 +50,7 @@ exports.handler = async function (event) {
       await db(
         `UPDATE tp_clients SET firstname=$1, lastname=$2, email=$3, phone=$4, active=$5,
          company_id=$6, broker_id=$7, account_coordinator=$8, groups=$9, notes=$10 WHERE id=$11`,
-        [b.firstname, b.lastname, b.email||null, b.phone||null, b.active !== undefined ? b.active : true,
+        [b.firstname, b.lastname, b.email||null, b.phone||null, b.active !== false && b.active !== 0,
          parseInt(b.company_id)||null, parseInt(b.broker_id)||null, parseInt(b.account_coordinator)||null, b.groups||null, b.notes||null, id]);
       return ok({ id });
     }

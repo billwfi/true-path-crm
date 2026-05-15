@@ -16,7 +16,7 @@
 
       <div class="search-bar">
         <input type="text" id="search" class="form-control" placeholder="Search clients…" oninput="debounceLoad()">
-        <button class="btn btn-primary" onclick="openModal('client-modal')"><i class="fa-solid fa-plus"></i> New Client</button>
+        <button class="btn btn-primary" onclick="clearForm();populateDropdowns();openModal('client-modal')"><i class="fa-solid fa-plus"></i> New Client</button>
       </div>
 
       <div class="card">
@@ -45,8 +45,10 @@
         <div class="form-group"><label class="form-label">Last Name</label><input class="form-control" id="f-lastname"></div>
         <div class="form-group"><label class="form-label">Email</label><input class="form-control" type="email" id="f-email"></div>
         <div class="form-group"><label class="form-label">Phone</label><input class="form-control" id="f-phone"></div>
-        <div class="form-group"><label class="form-label">Company ID</label><input class="form-control" type="number" id="f-company_id" placeholder="Company ID"></div>
-        <div class="form-group"><label class="form-label">Broker ID</label><input class="form-control" type="number" id="f-broker_id" placeholder="Broker ID"></div>
+        <div class="form-group"><label class="form-label">Company</label>
+          <select class="form-control" id="f-company_id"><option value="">— None —</option></select></div>
+        <div class="form-group"><label class="form-label">Broker</label>
+          <select class="form-control" id="f-broker_id"><option value="">— None —</option></select></div>
         <div class="form-group"><label class="form-label">Groups</label><input class="form-control" id="f-groups" placeholder="e.g. 340B, VIP"></div>
         <div class="form-group"><label class="form-label">Active</label>
           <select class="form-control" id="f-active"><option value="1">Yes</option><option value="0">No</option></select>
@@ -97,7 +99,7 @@
 
   async function openEdit(id) {
     clearForm();
-    const c = await apiGet(`/clients?id=${id}`);
+    const [c] = await Promise.all([apiGet(`/clients?id=${id}`), populateDropdowns()]);
     if (!c) return;
     document.getElementById('edit-id').value       = c.id;
     document.getElementById('f-firstname').value   = c.firstname || '';
@@ -116,16 +118,33 @@
 
   function getForm() {
     return {
-      firstname: document.getElementById('f-firstname').value.trim(),
-      lastname:  document.getElementById('f-lastname').value.trim(),
-      email:     document.getElementById('f-email').value.trim(),
-      phone:     document.getElementById('f-phone').value.trim(),
-      company_id: document.getElementById('f-company_id').value || null,
-      broker_id:  document.getElementById('f-broker_id').value  || null,
-      groups:    document.getElementById('f-groups').value.trim(),
-      notes:     document.getElementById('f-notes').value.trim(),
-      active:    document.getElementById('f-active').value === '1' ? 1 : 0,
+      firstname:  document.getElementById('f-firstname').value.trim(),
+      lastname:   document.getElementById('f-lastname').value.trim(),
+      email:      document.getElementById('f-email').value.trim(),
+      phone:      document.getElementById('f-phone').value.trim(),
+      company_id: parseInt(document.getElementById('f-company_id').value) || null,
+      broker_id:  parseInt(document.getElementById('f-broker_id').value)  || null,
+      groups:     document.getElementById('f-groups').value.trim(),
+      notes:      document.getElementById('f-notes').value.trim(),
+      active:     document.getElementById('f-active').value === '1',
     };
+  }
+
+  async function populateDropdowns() {
+    const [companies, brokers] = await Promise.all([
+      apiGet('/companies').catch(() => []),
+      apiGet('/brokers').catch(() => []),
+    ]);
+    const coSel = document.getElementById('f-company_id');
+    const brSel = document.getElementById('f-broker_id');
+    const coVal = coSel.value;
+    const brVal = brSel.value;
+    coSel.innerHTML = '<option value="">— None —</option>' +
+      (companies || []).map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('');
+    brSel.innerHTML = '<option value="">— None —</option>' +
+      (brokers || []).map(b => `<option value="${b.id}">${esc(b.name)}</option>`).join('');
+    coSel.value = coVal;
+    brSel.value = brVal;
   }
 
   async function save() {
