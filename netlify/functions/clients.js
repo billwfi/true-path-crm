@@ -40,7 +40,7 @@ exports.handler = async function (event) {
         `INSERT INTO tp_clients (firstname, lastname, email, phone, company_id, broker_id, account_coordinator, groups, notes)
          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING id`,
         [b.firstname||'', b.lastname||'', b.email||null, b.phone||null,
-         b.company_id||null, b.broker_id||null, b.account_coordinator||null, b.groups||null, b.notes||null]);
+         parseInt(b.company_id)||null, parseInt(b.broker_id)||null, parseInt(b.account_coordinator)||null, b.groups||null, b.notes||null]);
       return created({ id: r.rows[0].id });
     }
 
@@ -51,7 +51,7 @@ exports.handler = async function (event) {
         `UPDATE tp_clients SET firstname=$1, lastname=$2, email=$3, phone=$4, active=$5,
          company_id=$6, broker_id=$7, account_coordinator=$8, groups=$9, notes=$10 WHERE id=$11`,
         [b.firstname, b.lastname, b.email||null, b.phone||null, b.active !== undefined ? b.active : true,
-         b.company_id||null, b.broker_id||null, b.account_coordinator||null, b.groups||null, b.notes||null, id]);
+         parseInt(b.company_id)||null, parseInt(b.broker_id)||null, parseInt(b.account_coordinator)||null, b.groups||null, b.notes||null, id]);
       return ok({ id });
     }
 
