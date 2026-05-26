@@ -84,6 +84,7 @@ const NAV_ITEMS = [
   { href: '/clients/',   icon: 'fa-users',             label: 'Clients',     key: 'clients' },
   { href: '/leads/',     icon: 'fa-user-plus',         label: 'Leads',       key: 'leads' },
   { href: '/tasks/',     icon: 'fa-list-check',        label: 'Tasks',       key: 'tasks' },
+  { href: '/reminders/',icon: 'fa-bell',              label: 'Reminders',   key: 'reminders' },
   { section: 'Pharmacy' },
   { href: '/batch/',     icon: 'fa-pills',             label: 'Batch Orders',key: 'batch' },
   { href: '/temp-batch/',icon: 'fa-inbox',             label: 'Temp Batch',  key: 'temp-batch' },
@@ -123,7 +124,8 @@ function initNav(activeKey) {
   // Build topbar
   const pageTitles = {
     dashboard: 'Dashboard', clients: 'Clients', leads: 'Leads', tasks: 'Tasks',
-    batch: 'Batch Orders', 'temp-batch': 'Temp Batch', companies: 'Companies', brokers: 'Brokers',
+    reminders: 'Reminders', batch: 'Batch Orders', 'temp-batch': 'Temp Batch',
+    companies: 'Companies', brokers: 'Brokers',
   };
   document.getElementById('topbar').innerHTML = `
     <span class="topbar-title">${pageTitles[activeKey] || ''}</span>

@@ -25,6 +25,20 @@
         <div class="stat-card"><div class="stat-number" id="s-pending">—</div><div class="stat-label">Temp Batch Pending</div></div>
       </div>
 
+      <!-- My Reminders -->
+      <div class="card mb-6">
+        <div class="card-header">
+          <span class="card-title"><i class="fa-solid fa-bell text-amber-400 mr-2"></i>My Reminders</span>
+          <a href="/reminders/" class="text-sky-500 text-xs font-medium hover:underline">View All</a>
+        </div>
+        <div class="card-body">
+          <table class="data-table">
+            <thead><tr><th>Description</th><th>Related To</th><th>Date</th><th>Status</th></tr></thead>
+            <tbody id="reminders-body"><tr><td colspan="4" class="text-center py-4 text-slate-400">Loading…</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+
       <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
 
         <!-- Recent Leads -->
@@ -78,6 +92,35 @@
 <script>
   initNav('dashboard');
 
+  function fmtDateTime(d) {
+    if (!d) return '—';
+    const dt = new Date(d);
+    if (isNaN(dt)) return d;
+    return `${dt.getMonth()+1}/${dt.getDate()}/${dt.getFullYear()} ${dt.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'})}`;
+  }
+
+  async function loadReminders() {
+    const me = getUser();
+    if (!me) return;
+    const rows = await apiGet(`/reminders?staff_id=${me.id}&upcoming=true`);
+    const tbody = document.getElementById('reminders-body');
+    if (!rows || !rows.length) {
+      tbody.innerHTML = '<tr><td colspan="4" class="text-center py-4 text-slate-400">No upcoming reminders</td></tr>';
+      return;
+    }
+    const now = new Date();
+    tbody.innerHTML = rows.slice(0, 8).map(r => {
+      const overdue = new Date(r.reminder_date) < now;
+      const relLabel = r.rel_type ? `${r.rel_type} #${r.rel_id}` : '—';
+      return `<tr class="clickable" onclick="location.href='/reminders/'">
+        <td>${esc(r.description)}</td>
+        <td class="text-xs text-slate-500">${esc(relLabel)}</td>
+        <td class="${overdue ? 'text-red-500 font-medium' : ''}">${fmtDateTime(r.reminder_date)}</td>
+        <td>${overdue ? '<span class="badge badge-red">Overdue</span>' : '<span class="badge badge-blue">Active</span>'}</td>
+      </tr>`;
+    }).join('');
+  }
+
   async function load() {
     const data = await apiGet('/dashboard');
     if (!data) return;
@@ -109,6 +152,7 @@
   }
 
   load();
+  loadReminders();
 </script>
 </body>
 </html>

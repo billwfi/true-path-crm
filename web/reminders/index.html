@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Reminders — True Path CRM</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+  <link rel="stylesheet" href="/assets/css/app.css">
+</head>
+<body class="bg-slate-100 text-slate-700">
+<div id="app" class="flex h-screen overflow-hidden">
+  <div id="nav-placeholder"></div>
+  <div class="flex-1 flex flex-col overflow-hidden">
+    <div id="topbar"></div>
+    <main class="flex-1 overflow-y-auto p-6">
+
+      <div class="search-bar">
+        <input type="text" id="search" class="form-control" placeholder="Search reminders…" oninput="debounceLoad()">
+        <button class="btn btn-primary" onclick="openNew()"><i class="fa-solid fa-plus"></i> New Reminder</button>
+      </div>
+
+      <div class="filter-bar">
+        <button class="filter-btn active" data-f="all"      onclick="setFilter(this,'all')">All</button>
+        <button class="filter-btn"         data-f="mine"    onclick="setFilter(this,'mine')">My Reminders</button>
+        <button class="filter-btn"         data-f="upcoming" onclick="setFilter(this,'upcoming')">Upcoming</button>
+        <button class="filter-btn"         data-f="overdue" onclick="setFilter(this,'overdue')">Overdue</button>
+        <button class="filter-btn"         data-f="closed"  onclick="setFilter(this,'closed')">Closed</button>
+      </div>
+
+      <div class="card">
+        <div class="card-body">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>Description</th>
+                <th>Related To</th>
+                <th>Date</th>
+                <th>Assigned To</th>
+                <th>Status</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody id="tbl-body"><tr><td colspan="7" class="text-center py-6 text-slate-400">Loading…</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+    </main>
+  </div>
+</div>
+
+<!-- Reminder modal -->
+<div id="reminder-modal" class="modal-backdrop hidden">
+  <div class="modal" style="max-width:540px">
+    <div class="modal-header">
+      <span class="modal-title" id="modal-title">New Reminder</span>
+      <button class="modal-close" onclick="closeModal('reminder-modal')">×</button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="edit-id">
+      <div class="form-group">
+        <label class="form-label">Description *</label>
+        <textarea class="form-control" id="f-description" rows="3"></textarea>
+      </div>
+      <div class="form-grid">
+        <div class="form-group">
+          <label class="form-label">Date to be notified *</label>
+          <input class="form-control" type="datetime-local" id="f-reminder_date">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Assign to</label>
+          <select class="form-control" id="f-staff_id"></select>
+        </div>
+      </div>
+      <div class="form-grid">
+        <div class="form-group">
+          <label class="form-label">Related Type</label>
+          <select class="form-control" id="f-rel_type">
+            <option value="">— None —</option>
+            <option value="task">Task</option>
+            <option value="client">Client</option>
+            <option value="lead">Lead</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Related ID</label>
+          <input class="form-control" type="number" id="f-rel_id" placeholder="e.g. 42">
+        </div>
+      </div>
+      <div class="form-group flex items-center gap-2">
+        <input type="checkbox" id="f-notify_by_email" class="h-4 w-4">
+        <label for="f-notify_by_email" class="form-label mb-0">Send email notification</label>
+      </div>
+      <div id="closed-row" class="form-group flex items-center gap-2 hidden">
+        <input type="checkbox" id="f-is_closed" class="h-4 w-4">
+        <label for="f-is_closed" class="form-label mb-0">Mark as closed</label>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeModal('reminder-modal')">Cancel</button>
+      <button class="btn btn-danger btn-sm" id="delete-btn" onclick="doDelete()" style="display:none">Delete</button>
+      <button class="btn btn-primary" onclick="save()">Save</button>
+    </div>
+  </div>
+</div>
+
+<script src="/assets/js/app.js"></script>
+<script>
+  initNav('reminders');
+  let filterMode = 'all', debounce, staffList = [];
+
+  async function loadStaff() {
+    const r = await apiGet('/staff');
+    staffList = r || [];
+    const sel = document.getElementById('f-staff_id');
+    const me = getUser();
+    sel.innerHTML = staffList.map(s =>
+      `<option value="${s.id}" ${s.id === me?.id ? 'selected' : ''}>${esc(s.firstname + ' ' + s.lastname)}</option>`
+    ).join('');
+  }
+
+  async function load() {
+    const q = document.getElementById('search').value.trim();
+    const me = getUser();
+    let qs = '';
+    if (filterMode === 'mine')     qs = `?staff_id=${me?.id}`;
+    else if (filterMode === 'upcoming') qs = '?upcoming=true';
+    const rows = await apiGet('/reminders' + qs);
+    if (!rows) return;
+
+    const now = new Date();
+    let filtered = rows;
+    if (filterMode === 'overdue') filtered = rows.filter(r => !r.is_closed && new Date(r.reminder_date) < now);
+    if (filterMode === 'closed')  filtered = rows.filter(r => r.is_closed);
+    if (filterMode === 'all' || filterMode === 'mine' || filterMode === 'upcoming')
+      filtered = rows.filter(r => !r.is_closed);
+    if (q) filtered = filtered.filter(r =>
+      (r.description||'').toLowerCase().includes(q.toLowerCase()) ||
+      (r.staff_name||'').toLowerCase().includes(q.toLowerCase())
+    );
+
+    const tbody = document.getElementById('tbl-body');
+    if (!filtered.length) {
+      tbody.innerHTML = '<tr><td colspan="7" class="text-center py-6 text-slate-400">No reminders found</td></tr>';
+      return;
+    }
+    tbody.innerHTML = filtered.map(r => {
+      const overdue = !r.is_closed && new Date(r.reminder_date) < now;
+      const relLabel = r.rel_type ? `${r.rel_type} #${r.rel_id}` : '—';
+      return `<tr class="clickable" onclick="openEdit(${r.id})">
+        <td class="text-slate-400 text-xs">${r.id}</td>
+        <td>${esc(r.description)}</td>
+        <td class="text-xs text-slate-500">${esc(relLabel)}</td>
+        <td class="${overdue ? 'text-red-500 font-medium' : ''}">${fmtDateTime(r.reminder_date)}</td>
+        <td>${esc(r.staff_name || '—')}</td>
+        <td>${r.is_closed
+          ? '<span class="badge badge-gray">Closed</span>'
+          : overdue
+            ? '<span class="badge badge-red">Overdue</span>'
+            : '<span class="badge badge-blue">Active</span>'}</td>
+        <td>
+          <button class="btn btn-outline btn-sm" onclick="event.stopPropagation();toggleClose(${r.id},${r.is_closed})" title="${r.is_closed ? 'Reopen' : 'Close'}">
+            <i class="fa-solid ${r.is_closed ? 'fa-rotate-left' : 'fa-check'}"></i>
+          </button>
+        </td>
+      </tr>`;
+    }).join('');
+  }
+
+  function fmtDateTime(d) {
+    if (!d) return '—';
+    const dt = new Date(d);
+    if (isNaN(dt)) return d;
+    return `${dt.getMonth()+1}/${dt.getDate()}/${dt.getFullYear()} ${dt.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'})}`;
+  }
+
+  function setFilter(btn, mode) {
+    document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    filterMode = mode;
+    load();
+  }
+
+  function debounceLoad() { clearTimeout(debounce); debounce = setTimeout(load, 300); }
+
+  function openNew() {
+    document.getElementById('edit-id').value = '';
+    document.getElementById('modal-title').textContent = 'New Reminder';
+    document.getElementById('f-description').value = '';
+    document.getElementById('f-reminder_date').value = '';
+    document.getElementById('f-rel_type').value = '';
+    document.getElementById('f-rel_id').value = '';
+    document.getElementById('f-notify_by_email').checked = false;
+    document.getElementById('f-is_closed').checked = false;
+    document.getElementById('closed-row').classList.add('hidden');
+    document.getElementById('delete-btn').style.display = 'none';
+    // Default assign to self
+    const me = getUser();
+    if (me) document.getElementById('f-staff_id').value = me.id;
+    openModal('reminder-modal');
+  }
+
+  async function openEdit(id) {
+    const r = await apiGet(`/reminders?id=${id}`);
+    if (!r) return;
+    document.getElementById('edit-id').value = r.id;
+    document.getElementById('modal-title').textContent = 'Edit Reminder';
+    document.getElementById('f-description').value = r.description || '';
+    document.getElementById('f-reminder_date').value = r.reminder_date ? r.reminder_date.slice(0,16) : '';
+    document.getElementById('f-staff_id').value = r.staff_id || '';
+    document.getElementById('f-rel_type').value = r.rel_type || '';
+    document.getElementById('f-rel_id').value = r.rel_id || '';
+    document.getElementById('f-notify_by_email').checked = !!r.notify_by_email;
+    document.getElementById('f-is_closed').checked = !!r.is_closed;
+    document.getElementById('closed-row').classList.remove('hidden');
+    document.getElementById('delete-btn').style.display = '';
+    openModal('reminder-modal');
+  }
+
+  async function save() {
+    const id = document.getElementById('edit-id').value;
+    const body = {
+      description:     document.getElementById('f-description').value.trim(),
+      reminder_date:   document.getElementById('f-reminder_date').value,
+      staff_id:        parseInt(document.getElementById('f-staff_id').value) || null,
+      rel_type:        document.getElementById('f-rel_type').value || null,
+      rel_id:          parseInt(document.getElementById('f-rel_id').value) || null,
+      notify_by_email: document.getElementById('f-notify_by_email').checked,
+      is_closed:       document.getElementById('f-is_closed').checked,
+    };
+    if (!body.description) { showToast('Description is required', 'error'); return; }
+    if (!body.reminder_date) { showToast('Date is required', 'error'); return; }
+
+    const res = id
+      ? await apiPatch(`/reminders?id=${id}`, body)
+      : await apiPost('/reminders', body);
+
+    if (res && (res.status === 200 || res.status === 201)) {
+      closeModal('reminder-modal');
+      showToast(id ? 'Reminder updated' : 'Reminder created', 'success');
+      load();
+    } else {
+      showToast('Save failed', 'error');
+    }
+  }
+
+  async function doDelete() {
+    const id = document.getElementById('edit-id').value;
+    if (!id || !confirm2('Delete this reminder?')) return;
+    const res = await apiDelete(`/reminders?id=${id}`);
+    if (res && res.ok) {
+      closeModal('reminder-modal');
+      showToast('Reminder deleted');
+      load();
+    }
+  }
+
+  async function toggleClose(id, isClosed) {
+    const r = await apiGet(`/reminders?id=${id}`);
+    if (!r) return;
+    const res = await apiPatch(`/reminders?id=${id}`, { ...r, is_closed: !isClosed });
+    if (res && res.ok) { showToast(isClosed ? 'Reminder reopened' : 'Reminder closed', 'success'); load(); }
+  }
+
+  loadStaff().then(load);
+</script>
+</body>
+</html>
