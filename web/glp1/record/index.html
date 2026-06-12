@@ -19,58 +19,72 @@
         <span class="ml-2 text-lg font-semibold" id="member-name">—</span>
       </div>
 
-      <!-- Demographics -->
-      <div class="card mb-4">
-        <div class="card-header"><i class="fa-solid fa-id-card text-slate-400"></i> Demographics</div>
-        <div class="card-body">
-          <div id="demographics" class="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm"></div>
-          <p class="text-xs text-amber-600 mt-3"><i class="fa-solid fa-circle-info"></i>
-            Full demographics will pull from the eligibility record (integration pending).</p>
-        </div>
+      <!-- Tabs -->
+      <div id="tabbar" class="flex gap-6 border-b border-slate-200 mb-4 px-1">
+        <button class="tab-btn" data-tab="demographics" onclick="showTab('demographics')">Demographics</button>
+        <button class="tab-btn" data-tab="contact" onclick="showTab('contact')">
+          Contact Tracking <span id="tab-attempts" class="badge badge-blue ml-1">0</span></button>
+        <button class="tab-btn" data-tab="intake" onclick="showTab('intake')">Intake Status</button>
       </div>
 
-      <!-- Intake Status -->
-      <div class="card mb-4">
-        <div class="card-header"><i class="fa-solid fa-clipboard-check text-slate-400"></i> Intake Status</div>
-        <div class="card-body">
-          <div class="flex flex-wrap items-end gap-4">
-            <div class="form-group mb-0">
-              <label class="form-label">Status</label>
-              <select class="form-control" id="i-status" onchange="onIntakeStatusChange()"></select>
-            </div>
-            <div class="form-group mb-0">
-              <label class="form-label">Status Date</label>
-              <input type="date" class="form-control" id="i-status-date">
-            </div>
-            <div class="form-group mb-0" id="i-sub-wrap" style="display:none">
-              <label class="form-label">Sub-Status</label>
-              <select class="form-control" id="i-sub-status"></select>
-            </div>
-            <button class="btn btn-primary" onclick="saveIntake()"><i class="fa-solid fa-floppy-disk"></i> Save</button>
-            <span class="text-xs text-slate-400 ml-auto" id="i-updated"></span>
+      <!-- Demographics panel -->
+      <div class="tab-panel" data-panel="demographics">
+        <div class="card">
+          <div class="card-header"><i class="fa-solid fa-id-card text-slate-400"></i> Contact Information</div>
+          <div class="card-body">
+            <div id="demographics" class="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm"></div>
+            <p class="text-xs text-amber-600 mt-3"><i class="fa-solid fa-circle-info"></i>
+              Full demographics will pull from the eligibility record (integration pending).</p>
           </div>
         </div>
       </div>
 
-      <!-- Contact Tracking -->
-      <div class="card">
-        <div class="card-header flex items-center">
-          <span><i class="fa-solid fa-comments text-slate-400"></i> Contact Tracking</span>
-          <span class="badge badge-blue ml-2" id="attempts-badge">0 attempts</span>
-          <button class="btn btn-primary btn-sm ml-auto" onclick="openContact()"><i class="fa-solid fa-plus"></i> Add Contact</button>
-        </div>
-        <div class="card-body">
-          <div id="outreach-prompt" class="flex items-center justify-between bg-amber-50 border border-amber-300 text-amber-800 rounded-md px-4 py-3 mb-3 text-sm" style="display:none">
-            <span><i class="fa-solid fa-triangle-exclamation"></i>
-              4+ outreach attempts logged and all are closed. Mark intake as <strong>Outreach Completed</strong>?</span>
-            <button class="btn btn-sm btn-primary ml-3" onclick="markOutreachCompleted()">Mark Outreach Completed</button>
+      <!-- Contact Tracking panel -->
+      <div class="tab-panel" data-panel="contact" style="display:none">
+        <div class="card">
+          <div class="card-header flex items-center">
+            <span><i class="fa-solid fa-comments text-slate-400"></i> Contact Tracking</span>
+            <span class="badge badge-blue ml-2" id="attempts-badge">0 attempts</span>
+            <button class="btn btn-primary btn-sm ml-auto" onclick="openContact()"><i class="fa-solid fa-plus"></i> Add Contact</button>
           </div>
-          <table class="data-table">
-            <thead><tr>
-              <th>Date</th><th>Type</th><th>Notes</th><th>Follow-up</th><th>Status</th><th></th>
-            </tr></thead>
-            <tbody id="contacts-body"></tbody>
-          </table>
+          <div class="card-body">
+            <div id="outreach-prompt" class="flex items-center justify-between bg-amber-50 border border-amber-300 text-amber-800 rounded-md px-4 py-3 mb-3 text-sm" style="display:none">
+              <span><i class="fa-solid fa-triangle-exclamation"></i>
+                4+ outreach attempts logged and all are closed. Mark intake as <strong>Outreach Completed</strong>?</span>
+              <button class="btn btn-sm btn-primary ml-3" onclick="markOutreachCompleted()">Mark Outreach Completed</button>
+            </div>
+            <table class="data-table">
+              <thead><tr>
+                <th>Date</th><th>Type</th><th>Notes</th><th>Follow-up</th><th>Status</th><th></th>
+              </tr></thead>
+              <tbody id="contacts-body"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- Intake Status panel -->
+      <div class="tab-panel" data-panel="intake" style="display:none">
+        <div class="card">
+          <div class="card-header"><i class="fa-solid fa-clipboard-check text-slate-400"></i> Intake Status</div>
+          <div class="card-body">
+            <div class="flex flex-wrap items-end gap-4">
+              <div class="form-group mb-0">
+                <label class="form-label">Status</label>
+                <select class="form-control" id="i-status" onchange="onIntakeStatusChange()"></select>
+              </div>
+              <div class="form-group mb-0">
+                <label class="form-label">Status Date</label>
+                <input type="date" class="form-control" id="i-status-date">
+              </div>
+              <div class="form-group mb-0" id="i-sub-wrap" style="display:none">
+                <label class="form-label">Sub-Status</label>
+                <select class="form-control" id="i-sub-status"></select>
+              </div>
+              <button class="btn btn-primary" onclick="saveIntake()"><i class="fa-solid fa-floppy-disk"></i> Save</button>
+              <span class="text-xs text-slate-400 ml-auto" id="i-updated"></span>
+            </div>
+          </div>
         </div>
       </div>
     </main>
@@ -126,6 +140,11 @@
   function keyFor(rec) { return (rec.Member_ID != null && rec.Member_ID !== '') ? String(rec.Member_ID) : String(rec.indx); }
 
   function fillSelect(id, vals, sel) { document.getElementById(id).innerHTML = vals.map(v => opt(v, sel)).join(''); }
+
+  function showTab(name) {
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === name));
+    document.querySelectorAll('.tab-panel').forEach(p => p.style.display = p.dataset.panel === name ? '' : 'none');
+  }
 
   async function loadRecord() {
     record = await apiGet(`/glp1?indx=${encodeURIComponent(indx)}`);
@@ -189,6 +208,7 @@
   function renderContacts() {
     document.getElementById('attempts-badge').textContent =
       `${contacts.length} attempt${contacts.length === 1 ? '' : 's'}`;
+    document.getElementById('tab-attempts').textContent = contacts.length;
     document.getElementById('contacts-body').innerHTML = contacts.length
       ? contacts.map(c => `<tr>
           <td class="text-xs">${fmtDate(c.contact_date)}</td>
@@ -255,6 +275,7 @@
 
   document.getElementById('contact-modal').addEventListener('click', e => { if (e.target === e.currentTarget) closeModal('contact-modal'); });
 
+  showTab('demographics');
   (async () => { if (await loadRecord()) await loadTracking(); })();
 </script>
 </body>
