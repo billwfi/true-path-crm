@@ -34,14 +34,16 @@ async function main() {
     options: { encrypt: true, trustServerCertificate: true },
   }).connect();
 
+  // tp_staff has no role column in some deployments; derive role from is_admin.
   const { rows } = await pg.query(
-    'SELECT id, email, password_hash, firstname, lastname, is_admin, role FROM tp_staff ORDER BY id'
+    'SELECT id, email, password_hash, firstname, lastname, is_admin FROM tp_staff ORDER BY id'
   );
   console.log(`Found ${rows.length} tp_staff rows in Postgres.`);
 
   let inserted = 0, skipped = 0;
   for (const u of rows) {
     const userType = u.is_admin ? 'Admin' : 'User';
+    const role = u.is_admin ? 'Admin' : 'Staff';
     const navAccess = u.is_admin ? null : DEFAULT_USER_NAV;
     const res = await mss.request()
       .input('id', sql.Int, u.id)
@@ -50,7 +52,7 @@ async function main() {
       .input('firstname', sql.NVarChar(100), u.firstname)
       .input('lastname', sql.NVarChar(100), u.lastname)
       .input('user_type', sql.NVarChar(20), userType)
-      .input('role', sql.NVarChar(50), u.role || 'Staff')
+      .input('role', sql.NVarChar(50), role)
       .input('nav_access', sql.NVarChar(500), navAccess)
       .query(`
         IF NOT EXISTS (SELECT 1 FROM dbo.Users WHERE id = @id)
