@@ -43,6 +43,11 @@
   status = 301
 
 [[redirects]]
+  from = "/glp1/report"
+  to = "/glp1/report/"
+  status = 301
+
+[[redirects]]
   from = "/settings/user-management"
   to = "/settings/user-management/"
   status = 301

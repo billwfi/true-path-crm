@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>GLP1 — Ready to Assign Report — True Path CRM</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+  <link rel="stylesheet" href="/assets/css/app.css">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+</head>
+<body class="bg-slate-100 text-slate-700">
+<div id="app" class="flex h-screen overflow-hidden">
+  <div id="nav-placeholder"></div>
+  <div class="flex-1 flex flex-col overflow-hidden">
+    <div id="topbar"></div>
+    <main class="flex-1 overflow-y-auto p-6">
+
+      <div class="search-bar">
+        <a class="btn btn-outline" href="/glp1/ready-to-assign/"><i class="fa-solid fa-arrow-left"></i> Back to Ready to Assign</a>
+        <span class="text-sm text-slate-500 ml-2">Ready-to-assign members by group, by year/month of date of service.</span>
+        <div class="flex gap-2 ml-auto">
+          <button class="btn btn-primary" id="export-btn" onclick="exportExcel()"><i class="fa-solid fa-file-excel"></i> Export to Excel</button>
+        </div>
+      </div>
+
+      <div class="card mb-4">
+        <div class="card-body">
+          <div style="height:360px"><canvas id="chart"></canvas></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-body">
+          <table class="data-table">
+            <thead><tr id="tbl-head"></tr></thead>
+            <tbody id="tbl-body"></tbody>
+            <tfoot id="tbl-foot"></tfoot>
+          </table>
+        </div>
+      </div>
+    </main>
+  </div>
+</div>
+
+<script src="/assets/js/app.js"></script>
+<script>
+  initNav('glp1-report');
+
+  const MONTHS = ['', 'Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  // Distinct color per group (cycles if more than the palette).
+  const PALETTE = ['#2563eb','#16a34a','#d97706','#dc2626','#7c3aed','#0891b2','#db2777','#65a30d','#9333ea','#0d9488'];
+
+  let periods = [], groups = [], matrix = {}, chart;
+
+  function periodKey(r) { return r.yr == null ? 'Unknown' : `${r.yr}-${String(r.mo).padStart(2, '0')}`; }
+  function periodLabel(key) {
+    if (key === 'Unknown') return 'Unknown';
+    const [y, m] = key.split('-'); return `${MONTHS[parseInt(m, 10)]} ${y}`;
+  }
+  function cellVal(p, g) { return (matrix[p] && matrix[p][g]) || 0; }
+  function periodTotal(p) { return groups.reduce((s, g) => s + cellVal(p, g), 0); }
+  function groupTotal(g) { return periods.reduce((s, p) => s + cellVal(p, g), 0); }
+  function grandTotal() { return periods.reduce((s, p) => s + periodTotal(p), 0); }
+
+  async function load() {
+    const rows = await apiGet('/glp1?report=ready-by-month') || [];
+    const pset = new Set(), gset = new Set();
+    matrix = {};
+    rows.forEach(r => {
+      const p = periodKey(r), g = r.Group_Name || '(no group)';
+      pset.add(p); gset.add(g);
+      (matrix[p] = matrix[p] || {})[g] = (matrix[p][g] || 0) + r.n;
+    });
+    periods = [...pset].sort();                 // chronological; 'Unknown' sorts last alphabetically after years
+    groups = [...gset].sort();
+    renderChart();
+    renderTable();
+  }
+
+  function renderChart() {
+    const datasets = groups.map((g, i) => ({
+      label: g,
+      data: periods.map(p => cellVal(p, g)),
+      backgroundColor: PALETTE[i % PALETTE.length],
+    }));
+    const cfg = {
+      type: 'bar',
+      data: { labels: periods.map(periodLabel), datasets },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: {
+          title: { display: true, text: 'Ready to Assign — counts by group' },
+          legend: { position: 'bottom' },
+        },
+        scales: { x: { stacked: true }, y: { stacked: true, beginAtZero: true, title: { display: true, text: 'Members' } } },
+      },
+    };
+    if (chart) { chart.data = cfg.data; chart.update(); }
+    else chart = new Chart(document.getElementById('chart'), cfg);
+  }
+
+  function renderTable() {
+    document.getElementById('tbl-head').innerHTML =
+      `<th>Period</th>${groups.map(g => `<th class="text-right">${esc(g)}</th>`).join('')}<th class="text-right">Total</th>`;
+    document.getElementById('tbl-body').innerHTML = periods.length
+      ? periods.map(p => `<tr>
+          <td class="font-medium">${esc(periodLabel(p))}</td>
+          ${groups.map(g => `<td class="text-right">${cellVal(p, g) || '—'}</td>`).join('')}
+          <td class="text-right font-semibold">${periodTotal(p)}</td>
+        </tr>`).join('')
+      : `<tr><td colspan="${groups.length + 2}" class="text-center py-10 text-slate-400">No ready-to-assign records</td></tr>`;
+    document.getElementById('tbl-foot').innerHTML = periods.length
+      ? `<tr class="font-semibold bg-slate-50">
+          <td>Total</td>
+          ${groups.map(g => `<td class="text-right">${groupTotal(g)}</td>`).join('')}
+          <td class="text-right">${grandTotal()}</td>
+        </tr>`
+      : '';
+  }
+
+  function exportExcel() {
+    if (!periods.length) { showToast('Nothing to export', 'error'); return; }
+    const header = ['Period', ...groups, 'Total'];
+    const body = periods.map(p => [periodLabel(p), ...groups.map(g => cellVal(p, g)), periodTotal(p)]);
+    const totals = ['Total', ...groups.map(groupTotal), grandTotal()];
+    const aoa = [header, ...body, totals];
+    const ws = XLSX.utils.aoa_to_sheet(aoa);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Ready to Assign');
+    const stamp = new Date().toISOString().slice(0, 10);
+    XLSX.writeFile(wb, `glp1-ready-to-assign-${stamp}.xlsx`);
+  }
+
+  load();
+</script>
+</body>
+</html>

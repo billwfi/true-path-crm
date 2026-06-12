@@ -14,7 +14,7 @@ exports.handler = async function (event) {
   const user = verifyToken(event);
   if (!user) return unauthorized();
 
-  const { indx, status, group, search, category, stats, action, latest_per_member, drug, drugs } = event.queryStringParameters || {};
+  const { indx, status, group, search, category, stats, action, latest_per_member, drug, drugs, report } = event.queryStringParameters || {};
   const cat = category || 'GLP1';
   // When set, collapse to one row per Member_ID, keeping the most recent Date_of_Service.
   const onePerMember = latest_per_member === '1' || latest_per_member === 'true';
@@ -52,6 +52,24 @@ exports.handler = async function (event) {
            ORDER BY drug`,
           { category: cat, status: status || null });
         return ok(r.recordset.map(x => x.drug).filter(Boolean));
+      }
+
+      if (report === 'ready-by-month') {
+        // Ready-to-assign members (deduped to latest claim) counted by Group_Name and
+        // the year/month of that latest Date_of_Service.
+        const r = await mssql(
+          `WITH ranked AS (
+             SELECT Group_Name, Date_of_Service,
+               ROW_NUMBER() OVER (PARTITION BY ${MEMBER_KEY}
+                 ORDER BY Date_of_Service DESC, indx DESC) AS rn
+             FROM dbo.ReadyToAssign WHERE category = @category AND status = 'Ready to Assign')
+           SELECT YEAR(Date_of_Service) AS yr, MONTH(Date_of_Service) AS mo,
+                  Group_Name, COUNT(*) AS n
+           FROM ranked WHERE rn = 1
+           GROUP BY YEAR(Date_of_Service), MONTH(Date_of_Service), Group_Name
+           ORDER BY yr, mo, Group_Name`,
+          { category: cat });
+        return ok(r.recordset);
       }
 
       const where = `category = @category
