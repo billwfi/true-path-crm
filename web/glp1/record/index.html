@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>GLP1 — Member Record — True Path CRM</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+  <link rel="stylesheet" href="/assets/css/app.css">
+</head>
+<body class="bg-slate-100 text-slate-700">
+<div id="app" class="flex h-screen overflow-hidden">
+  <div id="nav-placeholder"></div>
+  <div class="flex-1 flex flex-col overflow-hidden">
+    <div id="topbar"></div>
+    <main class="flex-1 overflow-y-auto p-6">
+
+      <div class="search-bar">
+        <a class="btn btn-outline" href="/glp1/assigned/"><i class="fa-solid fa-arrow-left"></i> Back to Assigned</a>
+        <span class="ml-2 text-lg font-semibold" id="member-name">—</span>
+      </div>
+
+      <!-- Demographics -->
+      <div class="card mb-4">
+        <div class="card-header"><i class="fa-solid fa-id-card text-slate-400"></i> Demographics</div>
+        <div class="card-body">
+          <div id="demographics" class="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm"></div>
+          <p class="text-xs text-amber-600 mt-3"><i class="fa-solid fa-circle-info"></i>
+            Full demographics will pull from the eligibility record (integration pending).</p>
+        </div>
+      </div>
+
+      <!-- Intake Status -->
+      <div class="card mb-4">
+        <div class="card-header"><i class="fa-solid fa-clipboard-check text-slate-400"></i> Intake Status</div>
+        <div class="card-body">
+          <div class="flex flex-wrap items-end gap-4">
+            <div class="form-group mb-0">
+              <label class="form-label">Status</label>
+              <select class="form-control" id="i-status" onchange="onIntakeStatusChange()"></select>
+            </div>
+            <div class="form-group mb-0">
+              <label class="form-label">Status Date</label>
+              <input type="date" class="form-control" id="i-status-date">
+            </div>
+            <div class="form-group mb-0" id="i-sub-wrap" style="display:none">
+              <label class="form-label">Sub-Status</label>
+              <select class="form-control" id="i-sub-status"></select>
+            </div>
+            <button class="btn btn-primary" onclick="saveIntake()"><i class="fa-solid fa-floppy-disk"></i> Save</button>
+            <span class="text-xs text-slate-400 ml-auto" id="i-updated"></span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Contact Tracking -->
+      <div class="card">
+        <div class="card-header flex items-center">
+          <span><i class="fa-solid fa-comments text-slate-400"></i> Contact Tracking</span>
+          <span class="badge badge-blue ml-2" id="attempts-badge">0 attempts</span>
+          <button class="btn btn-primary btn-sm ml-auto" onclick="openContact()"><i class="fa-solid fa-plus"></i> Add Contact</button>
+        </div>
+        <div class="card-body">
+          <div id="outreach-prompt" class="flex items-center justify-between bg-amber-50 border border-amber-300 text-amber-800 rounded-md px-4 py-3 mb-3 text-sm" style="display:none">
+            <span><i class="fa-solid fa-triangle-exclamation"></i>
+              4+ outreach attempts logged and all are closed. Mark intake as <strong>Outreach Completed</strong>?</span>
+            <button class="btn btn-sm btn-primary ml-3" onclick="markOutreachCompleted()">Mark Outreach Completed</button>
+          </div>
+          <table class="data-table">
+            <thead><tr>
+              <th>Date</th><th>Type</th><th>Notes</th><th>Follow-up</th><th>Status</th><th></th>
+            </tr></thead>
+            <tbody id="contacts-body"></tbody>
+          </table>
+        </div>
+      </div>
+    </main>
+  </div>
+</div>
+
+<!-- Add / Edit contact modal -->
+<div id="contact-modal" class="modal-backdrop hidden">
+  <div class="modal">
+    <div class="modal-header">
+      <span class="modal-title" id="contact-modal-title">Add Contact</span>
+      <button class="modal-close" onclick="closeModal('contact-modal')">×</button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="c-id">
+      <div class="flex gap-3">
+        <div class="form-group flex-1"><label class="form-label">Date *</label><input type="date" class="form-control" id="c-date"></div>
+        <div class="form-group flex-1"><label class="form-label">Contact Type *</label>
+          <select class="form-control" id="c-type"></select></div>
+      </div>
+      <div class="form-group"><label class="form-label">Notes</label>
+        <textarea class="form-control" id="c-notes" rows="3"></textarea></div>
+      <div class="flex gap-3">
+        <div class="form-group flex-1"><label class="form-label">Follow-up Date</label><input type="date" class="form-control" id="c-followup"></div>
+        <div class="form-group flex-1"><label class="form-label">Contact Status</label>
+          <select class="form-control" id="c-status"></select></div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeModal('contact-modal')">Cancel</button>
+      <button class="btn btn-primary" onclick="saveContact()">Save</button>
+    </div>
+  </div>
+</div>
+
+<script src="/assets/js/app.js"></script>
+<script>
+  initNav('glp1-record');
+
+  const CONTACT_TYPES = ['Phone Call', 'Text', 'Email', 'Other'];
+  const CONTACT_STATUSES = ['Open', 'Closed'];
+  const INTAKE_STATUSES = ['In Progress', 'Outreach Completed', 'Submitted to WellSync'];
+  const SUB_STATUSES = ['Declined Enrollment', 'Approved', 'Clinical Denial'];
+  const WELLSYNC = 'Submitted to WellSync';
+
+  const params = new URLSearchParams(location.search);
+  const indx = params.get('indx');
+  let record = null, memberKey = null, contacts = [], intake = null;
+
+  function opt(v, sel) { return `<option ${v === sel ? 'selected' : ''}>${esc(v)}</option>`; }
+  function dInput(d) { return d ? String(d).slice(0, 10) : ''; }
+  // Must match SQL: COALESCE(NULLIF(Member_ID,''), CAST(indx AS VARCHAR(50)))
+  function keyFor(rec) { return (rec.Member_ID != null && rec.Member_ID !== '') ? String(rec.Member_ID) : String(rec.indx); }
+
+  function fillSelect(id, vals, sel) { document.getElementById(id).innerHTML = vals.map(v => opt(v, sel)).join(''); }
+
+  async function loadRecord() {
+    record = await apiGet(`/glp1?indx=${encodeURIComponent(indx)}`);
+    if (!record) { document.querySelector('main').innerHTML = '<div class="card"><div class="card-body text-center py-10 text-slate-400">Record not found</div></div>'; return false; }
+    memberKey = keyFor(record);
+    document.getElementById('member-name').textContent =
+      `${record.Last_Name || ''}, ${record.First_Name || ''}`.replace(/^, |, $/, '') || 'Member';
+    const cleanDrug = (record.Drug_Name || '').replace(/\s+/g, ' ').trim();
+    const fields = [
+      ['Member ID', record.Member_ID], ['Group', record.Group_Name],
+      ['Date of Birth', fmtDate(record.Date_of_Birth)], ['Gender', record.Gender],
+      ['City', record.City], ['State', record.State], ['Zip', record.Zip_Code],
+      ['Most Recent Drug', cleanDrug],
+    ];
+    document.getElementById('demographics').innerHTML = fields.map(([k, v]) =>
+      `<div><div class="text-xs text-slate-400">${esc(k)}</div><div class="font-medium">${esc(v) || '—'}</div></div>`).join('');
+    return true;
+  }
+
+  async function loadTracking() {
+    const data = await apiGet(`/glp1-tracking?member=${encodeURIComponent(memberKey)}`) || {};
+    contacts = data.contacts || [];
+    intake = data.intake;
+    renderIntake();
+    renderContacts();
+  }
+
+  /* ── Intake ── */
+  function renderIntake() {
+    const status = (intake && intake.status) || 'In Progress';
+    fillSelect('i-status', INTAKE_STATUSES, status);
+    document.getElementById('i-status-date').value =
+      dInput(intake && intake.status_date) || dInput(record && record.assigned_at) || new Date().toISOString().slice(0, 10);
+    fillSelect('i-sub-status', SUB_STATUSES, (intake && intake.sub_status) || SUB_STATUSES[0]);
+    onIntakeStatusChange();
+    document.getElementById('i-updated').textContent =
+      intake && intake.updated_at ? 'Updated ' + fmtDate(intake.updated_at) : '';
+  }
+  function onIntakeStatusChange() {
+    document.getElementById('i-sub-wrap').style.display =
+      document.getElementById('i-status').value === WELLSYNC ? '' : 'none';
+  }
+  async function saveIntake() {
+    const status = document.getElementById('i-status').value;
+    const body = {
+      status,
+      status_date: document.getElementById('i-status-date').value || null,
+      sub_status: status === WELLSYNC ? document.getElementById('i-sub-status').value : null,
+    };
+    const res = await apiPatch(`/glp1-tracking?member=${encodeURIComponent(memberKey)}&action=intake`, body);
+    if (res && res.ok) { showToast('Intake saved', 'success'); await loadTracking(); }
+    else showToast('Save failed', 'error');
+  }
+  async function markOutreachCompleted() {
+    document.getElementById('i-status').value = 'Outreach Completed';
+    onIntakeStatusChange();
+    await saveIntake();
+  }
+
+  /* ── Contacts ── */
+  function renderContacts() {
+    document.getElementById('attempts-badge').textContent =
+      `${contacts.length} attempt${contacts.length === 1 ? '' : 's'}`;
+    document.getElementById('contacts-body').innerHTML = contacts.length
+      ? contacts.map(c => `<tr>
+          <td class="text-xs">${fmtDate(c.contact_date)}</td>
+          <td>${esc(c.contact_type)}</td>
+          <td class="text-sm">${esc(c.notes) || '—'}</td>
+          <td class="text-xs">${c.followup_date ? fmtDate(c.followup_date) : '—'}</td>
+          <td>${c.contact_status === 'Closed'
+            ? '<span class="badge badge-gray">Closed</span>' : '<span class="badge badge-green">Open</span>'}</td>
+          <td class="text-right whitespace-nowrap">
+            <button class="btn btn-outline btn-sm" title="Edit" onclick='openContact(${c.id})'><i class="fa-solid fa-pen"></i></button>
+            ${c.contact_status === 'Open'
+              ? `<button class="btn btn-outline btn-sm" title="Close" onclick='setContactStatus(${c.id}, "Closed")'><i class="fa-solid fa-check"></i></button>`
+              : `<button class="btn btn-outline btn-sm" title="Reopen" onclick='setContactStatus(${c.id}, "Open")'><i class="fa-solid fa-rotate-left"></i></button>`}
+            <button class="btn btn-danger btn-sm" title="Delete" onclick='deleteContact(${c.id})'><i class="fa-solid fa-trash"></i></button>
+          </td>
+        </tr>`).join('')
+      : '<tr><td colspan="6" class="text-center py-8 text-slate-400">No contact attempts yet</td></tr>';
+
+    // Prompt to complete outreach: 4+ attempts, all closed, intake still In Progress.
+    const allClosed = contacts.length > 0 && contacts.every(c => c.contact_status === 'Closed');
+    const show = contacts.length >= 4 && allClosed && (!intake || intake.status === 'In Progress');
+    document.getElementById('outreach-prompt').style.display = show ? '' : 'none';
+  }
+
+  function openContact(id) {
+    const c = id ? contacts.find(x => x.id === id) : null;
+    document.getElementById('contact-modal-title').textContent = c ? 'Edit Contact' : 'Add Contact';
+    document.getElementById('c-id').value = c ? c.id : '';
+    document.getElementById('c-date').value = c ? dInput(c.contact_date) : new Date().toISOString().slice(0, 10);
+    fillSelect('c-type', CONTACT_TYPES, c ? c.contact_type : CONTACT_TYPES[0]);
+    document.getElementById('c-notes').value = c ? (c.notes || '') : '';
+    document.getElementById('c-followup').value = c ? dInput(c.followup_date) : '';
+    fillSelect('c-status', CONTACT_STATUSES, c ? c.contact_status : 'Open');
+    openModal('contact-modal');
+  }
+
+  async function saveContact() {
+    const id = document.getElementById('c-id').value;
+    const body = {
+      contact_date: document.getElementById('c-date').value,
+      contact_type: document.getElementById('c-type').value,
+      notes: document.getElementById('c-notes').value.trim(),
+      followup_date: document.getElementById('c-followup').value || null,
+      contact_status: document.getElementById('c-status').value,
+    };
+    if (!body.contact_date) { showToast('Date is required', 'error'); return; }
+    const res = id
+      ? await apiPatch(`/glp1-tracking?contact_id=${id}`, body)
+      : await apiPost(`/glp1-tracking?member=${encodeURIComponent(memberKey)}`, body);
+    if (res && res.ok) { showToast(id ? 'Contact updated' : 'Contact added', 'success'); closeModal('contact-modal'); await loadTracking(); }
+    else { const e = res ? await res.json().catch(() => ({})) : {}; showToast(e.error || 'Save failed', 'error'); }
+  }
+
+  async function setContactStatus(id, status) {
+    const res = await apiPatch(`/glp1-tracking?contact_id=${id}`, { contact_status: status });
+    if (res && res.ok) { await loadTracking(); } else showToast('Update failed', 'error');
+  }
+
+  async function deleteContact(id) {
+    if (!confirm2('Delete this contact attempt?')) return;
+    const res = await apiDelete(`/glp1-tracking?contact_id=${id}`);
+    if (res && res.ok) { showToast('Deleted', 'success'); await loadTracking(); } else showToast('Delete failed', 'error');
+  }
+
+  document.getElementById('contact-modal').addEventListener('click', e => { if (e.target === e.currentTarget) closeModal('contact-modal'); });
+
+  (async () => { if (await loadRecord()) await loadTracking(); })();
+</script>
+</body>
+</html>

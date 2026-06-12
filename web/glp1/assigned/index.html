@@ -93,7 +93,7 @@
   async function load() {
     const search = document.getElementById('search').value;
     const group = document.getElementById('group-filter').value;
-    let url = '/glp1?status=' + encodeURIComponent('Assigned');
+    let url = '/glp1?status=' + encodeURIComponent('Assigned') + '&latest_per_member=1';
     if (group) url += `&group=${encodeURIComponent(group)}`;
     if (search) url += `&search=${encodeURIComponent(search)}`;
     rows = await apiGet(url) || [];
@@ -112,9 +112,11 @@
           <td>${esc(staffName(r.assigned_to))}</td>
           <td class="text-xs text-slate-400">${esc(staffName(r.assigned_by))}</td>
           <td class="text-xs text-slate-400">${fmtDate(r.assigned_at)}</td>
-          <td class="text-right">${canAssign ? `
-            <button class="btn btn-outline btn-sm" onclick='openReassign(${r.indx})'><i class="fa-solid fa-rotate"></i></button>
-            <button class="btn btn-danger btn-sm" onclick='doUnassign(${r.indx})'><i class="fa-solid fa-xmark"></i></button>` : ''}</td>
+          <td class="text-right whitespace-nowrap">
+            <a class="btn btn-primary btn-sm" title="Open record" href="/glp1/record/?indx=${r.indx}"><i class="fa-solid fa-folder-open"></i> Open</a>
+            ${canAssign ? `
+            <button class="btn btn-outline btn-sm" title="Reassign" onclick='openReassign(${r.indx})'><i class="fa-solid fa-rotate"></i></button>
+            <button class="btn btn-danger btn-sm" title="Unassign" onclick='doUnassign(${r.indx})'><i class="fa-solid fa-xmark"></i></button>` : ''}</td>
         </tr>`).join('')
       : '<tr><td colspan="8" class="text-center py-10 text-slate-400">No assigned records</td></tr>';
   }

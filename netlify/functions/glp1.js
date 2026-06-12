@@ -137,6 +137,16 @@ exports.handler = async function (event) {
            WHERE ${memberMatch}`,
           { indx: id, assigned_to: assignedTo, assigned_by: user.id || null, category: cat });
         affected += r.rowsAffected[0] || 0;
+
+        // Auto-create the intake record (In Progress, dated today) the first time a member
+        // is assigned. Existing intake records are left untouched on re-assignment.
+        await mssql(
+          `INSERT INTO dbo.GLP1_Intake (member_key, category, status, status_date, updated_by)
+           SELECT m.k, @category, 'In Progress', CAST(GETDATE() AS DATE), @by
+           FROM (SELECT ${MEMBER_KEY} AS k FROM dbo.ReadyToAssign WHERE indx=@indx) m
+           WHERE NOT EXISTS (SELECT 1 FROM dbo.GLP1_Intake gi
+                             WHERE gi.category=@category AND gi.member_key=m.k)`,
+          { indx: id, category: cat, by: user.id || null });
       }
       return ok({ assigned: ids.length, records: affected, assigned_to: assignedTo });
     }
