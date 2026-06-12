@@ -1,6 +1,6 @@
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
-const { db } = require('./_db');
+const { mssql } = require('./_mssql');
 const { ok, badRequest, unauthorized, serverError, options, CORS, SECRET } = require('./_auth');
 
 exports.handler = async function (event) {
@@ -11,21 +11,29 @@ exports.handler = async function (event) {
       const { email, password } = JSON.parse(event.body || '{}');
       if (!email || !password) return badRequest('Email and password required');
 
-      // Env-var fallback admin (works before DB schema is set up)
+      // Env-var fallback admin (bootstrap — works even if dbo.Users is unreachable)
       if (email === process.env.ADMIN_EMAIL && password === process.env.ADMIN_PASSWORD) {
-        const adminUser = { id: 0, email, firstname: 'Admin', lastname: '', is_admin: true, role: 'Admin' };
+        const adminUser = { id: 0, email, firstname: 'Admin', lastname: '', is_admin: true, user_type: 'Admin', role: 'Admin', nav_access: null };
         const token = jwt.sign(adminUser, SECRET, { expiresIn: '8h' });
         return ok({ token, user: adminUser });
       }
 
-      const r = await db('SELECT id, email, firstname, lastname, is_admin, role, password_hash FROM tp_staff WHERE email = $1 AND active = true', [email]);
-      const user = r.rows[0];
+      // Users now live in SQL Server (dbo.Users) — see scripts/seed-users.js.
+      const r = await mssql(
+        `SELECT id, email, firstname, lastname, user_type, role, nav_access, password_hash
+         FROM dbo.Users WHERE email = @email AND active = 1`,
+        { email });
+      const user = r.recordset[0];
       if (!user) return unauthorized();
 
       const valid = await bcrypt.compare(password, user.password_hash);
       if (!valid) return unauthorized();
 
-      const payload = { id: user.id, email: user.email, firstname: user.firstname, lastname: user.lastname, is_admin: user.is_admin, role: user.role || 'Staff' };
+      const payload = {
+        id: user.id, email: user.email, firstname: user.firstname, lastname: user.lastname,
+        is_admin: user.user_type === 'Admin', user_type: user.user_type || 'User',
+        role: user.role || 'Staff', nav_access: user.nav_access || null,
+      };
       const token = jwt.sign(payload, SECRET, { expiresIn: '8h' });
       return ok({ token, user: payload });
     } catch (err) {

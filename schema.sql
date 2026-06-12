@@ -1,5 +1,11 @@
 -- True Path CRM — PostgreSQL Schema
 -- Run once against your Netlify Postgres / Neon database
+--
+-- NOTE: Application users / authentication now live in SQL Server (dbo.Users) —
+-- see netlify/database/sqlserver/001_users.sql and scripts/seed-users.js.
+-- tp_staff below is retained because its id values are still referenced by
+-- tp_clients.account_coordinator, tp_leads.assigned_id and tp_tasks.assigned_id;
+-- dbo.Users is seeded with the SAME id values so those references stay valid.
 
 CREATE TABLE IF NOT EXISTS tp_staff (
   id            SERIAL PRIMARY KEY,

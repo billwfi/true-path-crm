@@ -94,15 +94,33 @@ const NAV_ITEMS = [
   { section: 'Admin' },
   { href: '/companies/', icon: 'fa-building',          label: 'Companies',   key: 'companies' },
   { href: '/brokers/',   icon: 'fa-handshake',         label: 'Brokers',     key: 'brokers' },
+  { section: 'Settings', adminOnly: true },
+  { href: '/settings/user-management/', icon: 'fa-users-gear', label: 'User Management', key: 'user-management' },
 ];
+
+// True when the logged-in user may see a given nav section.
+// Admins (user_type 'Admin' / is_admin) see everything. Others are limited to
+// the sections listed in their nav_access (CSV). 'Settings' is always admin-only.
+function canSeeSection(section, user) {
+  const admin = !!user && (user.user_type === 'Admin' || user.is_admin === true);
+  if (admin) return true;
+  if (section === 'Settings') return false;
+  const allowed = (user && user.nav_access ? user.nav_access : '').split(',').map(s => s.trim()).filter(Boolean);
+  return allowed.includes(section);
+}
 
 function initNav(activeKey) {
   requireAuth();
   const user = getUser();
 
-  // Build sidebar
+  // Build sidebar, hiding sections the user has no access to (and their items).
+  let visibleSection = true;
   const items = NAV_ITEMS.map(item => {
-    if (item.section) return `<div class="nav-section">${item.section}</div>`;
+    if (item.section) {
+      visibleSection = canSeeSection(item.section, user);
+      return visibleSection ? `<div class="nav-section">${item.section}</div>` : '';
+    }
+    if (!visibleSection) return '';
     return `<a class="nav-link${item.key === activeKey ? ' active' : ''}" href="${item.href}">
       <i class="fa-solid ${item.icon}"></i>
       <span class="nav-label">${item.label}</span>
@@ -129,7 +147,7 @@ function initNav(activeKey) {
     dashboard: 'Dashboard', clients: 'Clients', leads: 'Leads', tasks: 'Tasks',
     reminders: 'Reminders', batch: 'Batch Orders', 'temp-batch': 'Temp Batch',
     'glp1-ready': 'GLP1 — Ready to Assign', 'glp1-assigned': 'GLP1 — Assigned',
-    companies: 'Companies', brokers: 'Brokers',
+    companies: 'Companies', brokers: 'Brokers', 'user-management': 'User Management',
   };
   document.getElementById('topbar').innerHTML = `
     <span class="topbar-title">${pageTitles[activeKey] || ''}</span>

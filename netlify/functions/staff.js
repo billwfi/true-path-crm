@@ -1,4 +1,4 @@
-const { db } = require('./_db');
+const { mssql } = require('./_mssql');
 const { verifyToken, unauthorized, ok, serverError, options } = require('./_auth');
 
 exports.handler = async function (event) {
@@ -7,13 +7,13 @@ exports.handler = async function (event) {
   if (event.httpMethod !== 'GET') return { statusCode: 405, body: 'Method Not Allowed' };
   const { role } = event.queryStringParameters || {};
   try {
-    const r = await db(
-      `SELECT id, firstname, lastname, email, role FROM tp_staff
-       WHERE active = true AND ($1::text IS NULL OR role = $1)
+    const r = await mssql(
+      `SELECT id, firstname, lastname, email, role FROM dbo.Users
+       WHERE active = 1 AND (@role IS NULL OR role = @role)
        ORDER BY firstname, lastname`,
-      [role || null]
+      { role: role || null }
     );
-    return ok(r.rows);
+    return ok(r.recordset);
   } catch (err) {
     return serverError(err);
   }

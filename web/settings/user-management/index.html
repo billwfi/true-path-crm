@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>User Management — True Path CRM</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+  <link rel="stylesheet" href="/assets/css/app.css">
+</head>
+<body class="bg-slate-100 text-slate-700">
+<div id="app" class="flex h-screen overflow-hidden">
+  <div id="nav-placeholder"></div>
+  <div class="flex-1 flex flex-col overflow-hidden">
+    <div id="topbar"></div>
+    <main class="flex-1 overflow-y-auto p-6">
+
+      <div class="search-bar">
+        <input type="text" id="search" class="form-control" placeholder="Search name or email…" oninput="render()">
+        <button class="btn btn-primary" onclick="openNew()"><i class="fa-solid fa-user-plus"></i> New User</button>
+      </div>
+
+      <div class="card">
+        <div class="card-body">
+          <table class="data-table">
+            <thead><tr>
+              <th>Name</th><th>Email</th><th>Type</th><th>Role</th><th>Nav Access</th><th>Status</th><th></th>
+            </tr></thead>
+            <tbody id="tbl-body"></tbody>
+          </table>
+        </div>
+      </div>
+    </main>
+  </div>
+</div>
+
+<!-- New / Edit user modal -->
+<div id="user-modal" class="modal-backdrop hidden">
+  <div class="modal">
+    <div class="modal-header">
+      <span class="modal-title" id="user-modal-title">New User</span>
+      <button class="modal-close" onclick="closeModal('user-modal')">×</button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="edit-id">
+      <div class="form-group"><label class="form-label">Email *</label><input class="form-control" id="f-email"></div>
+      <div class="flex gap-3">
+        <div class="form-group flex-1"><label class="form-label">First Name</label><input class="form-control" id="f-firstname"></div>
+        <div class="form-group flex-1"><label class="form-label">Last Name</label><input class="form-control" id="f-lastname"></div>
+      </div>
+      <div id="password-row" class="form-group">
+        <label class="form-label">Initial Password *</label>
+        <input class="form-control" id="f-password" type="text" autocomplete="new-password">
+      </div>
+      <div class="flex gap-3">
+        <div class="form-group flex-1">
+          <label class="form-label">User Type *</label>
+          <select class="form-control" id="f-user-type" onchange="onTypeChange()">
+            <option value="User">User</option>
+            <option value="Admin">Admin</option>
+          </select>
+        </div>
+        <div class="form-group flex-1">
+          <label class="form-label">Role</label>
+          <select class="form-control" id="f-role">
+            <option>Staff</option>
+            <option>Client Concierge</option>
+            <option>Call Center Manager</option>
+            <option>Admin</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Nav Access</label>
+        <p id="nav-admin-note" class="text-xs text-amber-600 mb-1" style="display:none">Admins can access every section.</p>
+        <div id="nav-access-boxes" class="flex flex-col gap-1"></div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeModal('user-modal')">Cancel</button>
+      <button class="btn btn-primary" onclick="saveUser()">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- Reset password modal -->
+<div id="pw-modal" class="modal-backdrop hidden">
+  <div class="modal">
+    <div class="modal-header">
+      <span class="modal-title">Set / Reset Password</span>
+      <button class="modal-close" onclick="closeModal('pw-modal')">×</button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="pw-id">
+      <p class="text-sm text-slate-500 mb-3" id="pw-who"></p>
+      <div class="form-group">
+        <label class="form-label">New Password *</label>
+        <input class="form-control" id="pw-value" type="text" autocomplete="new-password">
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeModal('pw-modal')">Cancel</button>
+      <button class="btn btn-primary" onclick="savePassword()">Save Password</button>
+    </div>
+  </div>
+</div>
+
+<script src="/assets/js/app.js"></script>
+<script>
+  initNav('user-management');
+
+  // Assignable nav sections (Settings is always admin-only, so not listed).
+  const SECTIONS = ['Main', 'Pharmacy', 'GLP1', 'Admin'];
+  let users = [];
+
+  // Guard: only Admins may use this page.
+  (function guard() {
+    const u = getUser() || {};
+    if (!(u.user_type === 'Admin' || u.is_admin)) {
+      document.querySelector('main').innerHTML =
+        '<div class="card"><div class="card-body text-center py-10 text-slate-400">Admin access required.</div></div>';
+      throw new Error('not admin');
+    }
+  })();
+
+  function fullName(u) { return `${esc(u.firstname || '')} ${esc(u.lastname || '')}`.trim() || '—'; }
+  function navAccessLabel(u) {
+    if (u.user_type === 'Admin') return '<span class="text-slate-400">All</span>';
+    return esc(u.nav_access || '') || '<span class="text-slate-400">None</span>';
+  }
+
+  async function load() {
+    users = await apiGet('/users') || [];
+    render();
+  }
+
+  function render() {
+    const q = document.getElementById('search').value.toLowerCase();
+    const view = users.filter(u =>
+      !q || (u.email || '').toLowerCase().includes(q) || fullName(u).toLowerCase().includes(q));
+    document.getElementById('tbl-body').innerHTML = view.length
+      ? view.map(u => `<tr class="${u.active ? '' : 'opacity-50'}">
+          <td class="font-medium">${fullName(u)}</td>
+          <td class="text-xs">${esc(u.email)}</td>
+          <td>${statusBadge(u.user_type || 'User', { Admin: 'purple', User: 'gray' })}</td>
+          <td class="text-xs">${esc(u.role) || '—'}</td>
+          <td class="text-xs">${navAccessLabel(u)}</td>
+          <td>${u.active ? '<span class="badge badge-green">Active</span>' : '<span class="badge badge-red">Inactive</span>'}</td>
+          <td class="text-right whitespace-nowrap">
+            <button class="btn btn-outline btn-sm" title="Edit" onclick='openEdit(${u.id})'><i class="fa-solid fa-pen"></i></button>
+            <button class="btn btn-outline btn-sm" title="Set/Reset password" onclick='openPassword(${u.id})'><i class="fa-solid fa-key"></i></button>
+            ${u.active
+              ? `<button class="btn btn-danger btn-sm" title="Deactivate" onclick='doDeactivate(${u.id})'><i class="fa-solid fa-user-slash"></i></button>`
+              : `<button class="btn btn-outline btn-sm" title="Reactivate" onclick='doReactivate(${u.id})'><i class="fa-solid fa-user-check"></i></button>`}
+          </td>
+        </tr>`).join('')
+      : '<tr><td colspan="7" class="text-center py-10 text-slate-400">No users</td></tr>';
+  }
+
+  function renderNavBoxes(selected) {
+    const set = new Set((selected || '').split(',').map(s => s.trim()).filter(Boolean));
+    document.getElementById('nav-access-boxes').innerHTML = SECTIONS.map(s => `
+      <label class="flex items-center gap-2 text-sm">
+        <input type="checkbox" class="nav-box" value="${s}" ${set.has(s) ? 'checked' : ''}> ${s}
+      </label>`).join('');
+  }
+
+  function onTypeChange() {
+    const isAdmin = document.getElementById('f-user-type').value === 'Admin';
+    document.getElementById('nav-admin-note').style.display = isAdmin ? '' : 'none';
+    document.getElementById('nav-access-boxes').style.display = isAdmin ? 'none' : '';
+  }
+
+  function selectedNavAccess() {
+    return Array.from(document.querySelectorAll('.nav-box:checked')).map(b => b.value).join(',');
+  }
+
+  function openNew() {
+    document.getElementById('user-modal-title').textContent = 'New User';
+    document.getElementById('edit-id').value = '';
+    ['f-email', 'f-firstname', 'f-lastname', 'f-password'].forEach(id => document.getElementById(id).value = '');
+    document.getElementById('f-user-type').value = 'User';
+    document.getElementById('f-role').value = 'Staff';
+    document.getElementById('password-row').style.display = '';
+    renderNavBoxes('Main');
+    onTypeChange();
+    openModal('user-modal');
+  }
+
+  function openEdit(id) {
+    const u = users.find(x => x.id === id);
+    if (!u) return;
+    document.getElementById('user-modal-title').textContent = 'Edit User';
+    document.getElementById('edit-id').value = u.id;
+    document.getElementById('f-email').value = u.email || '';
+    document.getElementById('f-firstname').value = u.firstname || '';
+    document.getElementById('f-lastname').value = u.lastname || '';
+    document.getElementById('f-user-type').value = u.user_type || 'User';
+    document.getElementById('f-role').value = u.role || 'Staff';
+    document.getElementById('password-row').style.display = 'none'; // password set via key icon
+    renderNavBoxes(u.nav_access);
+    onTypeChange();
+    openModal('user-modal');
+  }
+
+  async function saveUser() {
+    const id = document.getElementById('edit-id').value;
+    const email = document.getElementById('f-email').value.trim();
+    if (!email) { showToast('Email is required', 'error'); return; }
+    const userType = document.getElementById('f-user-type').value;
+    const body = {
+      email,
+      firstname: document.getElementById('f-firstname').value.trim(),
+      lastname: document.getElementById('f-lastname').value.trim(),
+      user_type: userType,
+      role: document.getElementById('f-role').value,
+      nav_access: userType === 'Admin' ? null : selectedNavAccess(),
+    };
+
+    let res;
+    if (id) {
+      res = await apiPatch(`/users?id=${id}`, body);
+    } else {
+      const pw = document.getElementById('f-password').value;
+      if (!pw) { showToast('Initial password is required', 'error'); return; }
+      body.password = pw;
+      res = await apiPost('/users', body);
+    }
+    if (res && res.ok) { showToast(id ? 'User updated' : 'User created', 'success'); closeModal('user-modal'); load(); }
+    else { const e = res ? await res.json().catch(() => ({})) : {}; showToast(e.error || 'Save failed', 'error'); }
+  }
+
+  function openPassword(id) {
+    const u = users.find(x => x.id === id);
+    if (!u) return;
+    document.getElementById('pw-id').value = id;
+    document.getElementById('pw-value').value = '';
+    document.getElementById('pw-who').innerHTML = `Set a new password for <strong>${fullName(u)}</strong> (${esc(u.email)}).`;
+    openModal('pw-modal');
+  }
+
+  async function savePassword() {
+    const id = document.getElementById('pw-id').value;
+    const pw = document.getElementById('pw-value').value;
+    if (!pw) { showToast('Password is required', 'error'); return; }
+    const res = await apiPatch(`/users?id=${id}&action=set-password`, { password: pw });
+    if (res && res.ok) { showToast('Password updated', 'success'); closeModal('pw-modal'); }
+    else showToast('Password update failed', 'error');
+  }
+
+  async function doDeactivate(id) {
+    if (!confirm2('Deactivate this user? They will no longer be able to log in.')) return;
+    const res = await apiDelete(`/users?id=${id}`);
+    if (res && res.ok) { showToast('User deactivated', 'success'); load(); }
+    else { const e = res ? await res.json().catch(() => ({})) : {}; showToast(e.error || 'Deactivate failed', 'error'); }
+  }
+
+  async function doReactivate(id) {
+    const res = await apiPatch(`/users?id=${id}`, { active: true });
+    if (res && res.ok) { showToast('User reactivated', 'success'); load(); }
+    else showToast('Reactivate failed', 'error');
+  }
+
+  ['user-modal', 'pw-modal'].forEach(m =>
+    document.getElementById(m).addEventListener('click', e => { if (e.target === e.currentTarget) closeModal(m); }));
+
+  load();
+</script>
+</body>
+</html>
