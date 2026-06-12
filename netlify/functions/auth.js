@@ -13,22 +13,21 @@ exports.handler = async function (event) {
 
       // Env-var fallback admin (works before DB schema is set up)
       if (email === process.env.ADMIN_EMAIL && password === process.env.ADMIN_PASSWORD) {
-        const token = jwt.sign({ id: 0, email, firstname: 'Admin', lastname: '', is_admin: true }, SECRET, { expiresIn: '8h' });
-        return ok({ token, user: { id: 0, email, firstname: 'Admin', lastname: '', is_admin: true } });
+        const adminUser = { id: 0, email, firstname: 'Admin', lastname: '', is_admin: true, role: 'Admin' };
+        const token = jwt.sign(adminUser, SECRET, { expiresIn: '8h' });
+        return ok({ token, user: adminUser });
       }
 
-      const r = await db('SELECT id, email, firstname, lastname, is_admin, password_hash FROM tp_staff WHERE email = $1 AND active = true', [email]);
+      const r = await db('SELECT id, email, firstname, lastname, is_admin, role, password_hash FROM tp_staff WHERE email = $1 AND active = true', [email]);
       const user = r.rows[0];
       if (!user) return unauthorized();
 
       const valid = await bcrypt.compare(password, user.password_hash);
       if (!valid) return unauthorized();
 
-      const token = jwt.sign(
-        { id: user.id, email: user.email, firstname: user.firstname, lastname: user.lastname, is_admin: user.is_admin },
-        SECRET, { expiresIn: '8h' }
-      );
-      return ok({ token, user: { id: user.id, email: user.email, firstname: user.firstname, lastname: user.lastname, is_admin: user.is_admin } });
+      const payload = { id: user.id, email: user.email, firstname: user.firstname, lastname: user.lastname, is_admin: user.is_admin, role: user.role || 'Staff' };
+      const token = jwt.sign(payload, SECRET, { expiresIn: '8h' });
+      return ok({ token, user: payload });
     } catch (err) {
       return serverError(err);
     }

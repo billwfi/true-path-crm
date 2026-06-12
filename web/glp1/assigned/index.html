@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>GLP1 — Assigned — True Path CRM</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+  <link rel="stylesheet" href="/assets/css/app.css">
+</head>
+<body class="bg-slate-100 text-slate-700">
+<div id="app" class="flex h-screen overflow-hidden">
+  <div id="nav-placeholder"></div>
+  <div class="flex-1 flex flex-col overflow-hidden">
+    <div id="topbar"></div>
+    <main class="flex-1 overflow-y-auto p-6">
+
+      <div class="search-bar">
+        <input type="text" id="search" class="form-control" placeholder="Search patient, member ID, drug…" oninput="debounceLoad()">
+        <select id="group-filter" class="form-control" style="max-width:240px" onchange="load()"><option value="">All Groups</option></select>
+        <select id="concierge-filter" class="form-control" style="max-width:240px" onchange="render()"><option value="">All Concierges</option></select>
+      </div>
+
+      <div class="card">
+        <div class="card-body">
+          <table class="data-table">
+            <thead><tr>
+              <th>Patient</th><th>Group</th><th>Member ID</th><th>Drug</th>
+              <th>Assigned To</th><th>Assigned By</th><th>Assigned</th><th></th>
+            </tr></thead>
+            <tbody id="tbl-body"></tbody>
+          </table>
+        </div>
+      </div>
+    </main>
+  </div>
+</div>
+
+<!-- Reassign modal -->
+<div id="assign-modal" class="modal-backdrop hidden">
+  <div class="modal">
+    <div class="modal-header">
+      <span class="modal-title">Reassign Client Concierge</span>
+      <button class="modal-close" onclick="closeModal('assign-modal')">×</button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="reassign-indx">
+      <p class="text-sm text-slate-500 mb-3" id="reassign-who"></p>
+      <div class="form-group">
+        <label class="form-label">Client Concierge *</label>
+        <select class="form-control" id="f-concierge"><option value="">— Select —</option></select>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeModal('assign-modal')">Cancel</button>
+      <button class="btn btn-primary" onclick="doReassign()">Save</button>
+    </div>
+  </div>
+</div>
+
+<script src="/assets/js/app.js"></script>
+<script>
+  initNav('glp1-assigned');
+  const CAN_ASSIGN = ['Call Center Manager', 'Admin'];
+  const canAssign = CAN_ASSIGN.includes((getUser() || {}).role);
+  let rows = [], staffMap = {}, debounce;
+
+  function debounceLoad() { clearTimeout(debounce); debounce = setTimeout(load, 300); }
+  function cleanDrug(d) { return (d || '').replace(/\s+/g, ' ').trim(); }
+  function fullName(r) { return `${esc(r.Last_Name || '')}, ${esc(r.First_Name || '')}`.replace(/^, |, $/, ''); }
+  function staffName(id) { return id != null && staffMap[id] ? staffMap[id] : '—'; }
+
+  async function loadStaff() {
+    const all = await apiGet('/staff') || [];
+    all.forEach(s => staffMap[s.id] = `${s.firstname || ''} ${s.lastname || ''}`.trim() || s.email);
+    const concierges = all.filter(s => s.role === 'Client Concierge');
+    const list = concierges.length ? concierges : all;
+    document.getElementById('f-concierge').innerHTML = '<option value="">— Select —</option>' +
+      list.map(s => `<option value="${s.id}">${esc(staffMap[s.id])}</option>`).join('');
+    // Concierge filter dropdown
+    document.getElementById('concierge-filter').innerHTML = '<option value="">All Concierges</option>' +
+      list.map(s => `<option value="${s.id}">${esc(staffMap[s.id])}</option>`).join('');
+  }
+
+  async function loadGroups() {
+    const stats = await apiGet('/glp1?stats=1') || [];
+    const groups = [...new Set(stats.filter(s => s.status === 'Assigned').map(s => s.Group_Name))].sort();
+    const gf = document.getElementById('group-filter');
+    const cur = gf.value;
+    gf.innerHTML = '<option value="">All Groups</option>' + groups.map(g => `<option value="${esc(g)}">${esc(g)}</option>`).join('');
+    gf.value = cur;
+  }
+
+  async function load() {
+    const search = document.getElementById('search').value;
+    const group = document.getElementById('group-filter').value;
+    let url = '/glp1?status=' + encodeURIComponent('Assigned');
+    if (group) url += `&group=${encodeURIComponent(group)}`;
+    if (search) url += `&search=${encodeURIComponent(search)}`;
+    rows = await apiGet(url) || [];
+    render();
+  }
+
+  function render() {
+    const cf = document.getElementById('concierge-filter').value;
+    const view = cf ? rows.filter(r => String(r.assigned_to) === cf) : rows;
+    document.getElementById('tbl-body').innerHTML = view.length
+      ? view.map(r => `<tr>
+          <td class="font-medium">${fullName(r)}</td>
+          <td>${esc(r.Group_Name) || '—'}</td>
+          <td class="font-mono text-xs">${esc(r.Member_ID) || '—'}</td>
+          <td>${esc(cleanDrug(r.Drug_Name)) || '—'}</td>
+          <td>${esc(staffName(r.assigned_to))}</td>
+          <td class="text-xs text-slate-400">${esc(staffName(r.assigned_by))}</td>
+          <td class="text-xs text-slate-400">${fmtDate(r.assigned_at)}</td>
+          <td class="text-right">${canAssign ? `
+            <button class="btn btn-outline btn-sm" onclick='openReassign(${r.indx})'><i class="fa-solid fa-rotate"></i></button>
+            <button class="btn btn-danger btn-sm" onclick='doUnassign(${r.indx})'><i class="fa-solid fa-xmark"></i></button>` : ''}</td>
+        </tr>`).join('')
+      : '<tr><td colspan="8" class="text-center py-10 text-slate-400">No assigned records</td></tr>';
+  }
+
+  function openReassign(indx) {
+    const r = rows.find(x => x.indx === indx);
+    if (!r) return;
+    document.getElementById('reassign-indx').value = indx;
+    document.getElementById('reassign-who').innerHTML =
+      `${fullName(r)} — currently <strong>${esc(staffName(r.assigned_to))}</strong>`;
+    document.getElementById('f-concierge').value = r.assigned_to || '';
+    openModal('assign-modal');
+  }
+
+  async function doReassign() {
+    const indx = document.getElementById('reassign-indx').value;
+    const concierge = document.getElementById('f-concierge').value;
+    if (!concierge) { showToast('Select a Client Concierge', 'error'); return; }
+    const res = await apiPatch(`/glp1?indx=${indx}`, { assigned_to: parseInt(concierge) });
+    if (res && res.ok) { showToast('Reassigned', 'success'); closeModal('assign-modal'); load(); }
+    else showToast('Reassign failed', 'error');
+  }
+
+  async function doUnassign(indx) {
+    if (!confirm2('Unassign this record? It will return to Ready to Assign.')) return;
+    const res = await apiPatch(`/glp1?indx=${indx}&action=unassign`, {});
+    if (res && res.ok) { showToast('Returned to Ready to Assign', 'success'); load(); }
+    else showToast('Unassign failed', 'error');
+  }
+
+  document.getElementById('assign-modal').addEventListener('click', e => { if (e.target === e.currentTarget) closeModal('assign-modal'); });
+
+  (async () => { await loadStaff(); await loadGroups(); await load(); })();
+</script>
+</body>
+</html>

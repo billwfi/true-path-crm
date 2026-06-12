@@ -88,6 +88,9 @@ const NAV_ITEMS = [
   { section: 'Pharmacy' },
   { href: '/batch/',     icon: 'fa-pills',             label: 'Batch Orders',key: 'batch' },
   { href: '/temp-batch/',icon: 'fa-inbox',             label: 'Temp Batch',  key: 'temp-batch' },
+  { section: 'GLP1' },
+  { href: '/glp1/ready-to-assign/', icon: 'fa-user-clock', label: 'Ready to Assign', key: 'glp1-ready' },
+  { href: '/glp1/assigned/',        icon: 'fa-user-check', label: 'Assigned',        key: 'glp1-assigned' },
   { section: 'Admin' },
   { href: '/companies/', icon: 'fa-building',          label: 'Companies',   key: 'companies' },
   { href: '/brokers/',   icon: 'fa-handshake',         label: 'Brokers',     key: 'brokers' },
@@ -125,6 +128,7 @@ function initNav(activeKey) {
   const pageTitles = {
     dashboard: 'Dashboard', clients: 'Clients', leads: 'Leads', tasks: 'Tasks',
     reminders: 'Reminders', batch: 'Batch Orders', 'temp-batch': 'Temp Batch',
+    'glp1-ready': 'GLP1 — Ready to Assign', 'glp1-assigned': 'GLP1 — Assigned',
     companies: 'Companies', brokers: 'Brokers',
   };
   document.getElementById('topbar').innerHTML = `

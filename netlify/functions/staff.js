@@ -5,9 +5,13 @@ exports.handler = async function (event) {
   if (event.httpMethod === 'OPTIONS') return options();
   if (!verifyToken(event)) return unauthorized();
   if (event.httpMethod !== 'GET') return { statusCode: 405, body: 'Method Not Allowed' };
+  const { role } = event.queryStringParameters || {};
   try {
     const r = await db(
-      `SELECT id, firstname, lastname, email FROM tp_staff WHERE active = true ORDER BY firstname, lastname`
+      `SELECT id, firstname, lastname, email, role FROM tp_staff
+       WHERE active = true AND ($1::text IS NULL OR role = $1)
+       ORDER BY firstname, lastname`,
+      [role || null]
     );
     return ok(r.rows);
   } catch (err) {

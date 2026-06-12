@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>GLP1 — Ready to Assign — True Path CRM</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+  <link rel="stylesheet" href="/assets/css/app.css">
+</head>
+<body class="bg-slate-100 text-slate-700">
+<div id="app" class="flex h-screen overflow-hidden">
+  <div id="nav-placeholder"></div>
+  <div class="flex-1 flex flex-col overflow-hidden">
+    <div id="topbar"></div>
+    <main class="flex-1 overflow-y-auto p-6">
+
+      <div class="search-bar">
+        <input type="text" id="search" class="form-control" placeholder="Search patient, member ID, drug…" oninput="debounceLoad()">
+        <select id="group-filter" class="form-control" style="max-width:240px" onchange="load()"><option value="">All Groups</option></select>
+        <div class="flex gap-2 ml-auto">
+          <button class="btn btn-primary" id="assign-btn" onclick="openAssign()" disabled>
+            <i class="fa-solid fa-user-check"></i> Assign Selected (<span id="sel-count">0</span>)
+          </button>
+        </div>
+      </div>
+
+      <div id="group-stats" class="filter-bar"></div>
+
+      <div class="card">
+        <div class="card-body">
+          <table class="data-table">
+            <thead><tr>
+              <th style="width:36px"><input type="checkbox" id="check-all" onclick="toggleAll(this)"></th>
+              <th>Patient</th><th>Group</th><th>Member ID</th><th>DOB</th>
+              <th>Drug</th><th>Day Supply</th><th>Date of Service</th><th>Pharmacy</th>
+            </tr></thead>
+            <tbody id="tbl-body"></tbody>
+          </table>
+        </div>
+      </div>
+    </main>
+  </div>
+</div>
+
+<!-- Assign modal -->
+<div id="assign-modal" class="modal-backdrop hidden">
+  <div class="modal">
+    <div class="modal-header">
+      <span class="modal-title">Assign to Client Concierge</span>
+      <button class="modal-close" onclick="closeModal('assign-modal')">×</button>
+    </div>
+    <div class="modal-body">
+      <p class="text-sm text-slate-500 mb-3">Assigning <strong id="assign-n">0</strong> record(s) for outreach.</p>
+      <div class="form-group">
+        <label class="form-label">Client Concierge *</label>
+        <select class="form-control" id="f-concierge"><option value="">— Select —</option></select>
+        <p id="concierge-hint" class="text-xs text-amber-600 mt-1" style="display:none"></p>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeModal('assign-modal')">Cancel</button>
+      <button class="btn btn-primary" onclick="doAssign()">Assign</button>
+    </div>
+  </div>
+</div>
+
+<script src="/assets/js/app.js"></script>
+<script>
+  initNav('glp1-ready');
+  const CAN_ASSIGN = ['Call Center Manager', 'Admin'];
+  const canAssign = CAN_ASSIGN.includes((getUser() || {}).role);
+  let rows = [], selected = new Set(), staffMap = {}, debounce;
+
+  if (!canAssign) {
+    document.getElementById('assign-btn').style.display = 'none';
+  }
+
+  function debounceLoad() { clearTimeout(debounce); debounce = setTimeout(load, 300); }
+  function cleanDrug(d) { return (d || '').replace(/\s+/g, ' ').trim(); }
+  function fullName(r) { return `${esc(r.Last_Name || '')}, ${esc(r.First_Name || '')}`.replace(/^, |, $/, ''); }
+
+  async function loadStaff() {
+    const all = await apiGet('/staff') || [];
+    all.forEach(s => staffMap[s.id] = `${s.firstname || ''} ${s.lastname || ''}`.trim() || s.email);
+    const concierges = all.filter(s => s.role === 'Client Concierge');
+    const sel = document.getElementById('f-concierge');
+    const list = concierges.length ? concierges : all;
+    sel.innerHTML = '<option value="">— Select —</option>' +
+      list.map(s => `<option value="${s.id}">${esc(staffMap[s.id])}${s.role ? ' · ' + esc(s.role) : ''}</option>`).join('');
+    if (!concierges.length) {
+      const hint = document.getElementById('concierge-hint');
+      hint.textContent = 'No staff have the "Client Concierge" role yet — showing all active staff. Set roles in Staff admin.';
+      hint.style.display = '';
+    }
+  }
+
+  async function loadStats() {
+    const stats = await apiGet('/glp1?stats=1') || [];
+    const ready = {};
+    let total = 0;
+    stats.forEach(s => { if (s.status === 'Ready to Assign') { ready[s.Group_Name] = s.n; total += s.n; } });
+    const groups = Object.keys(ready).sort();
+    // Group filter dropdown
+    const gf = document.getElementById('group-filter');
+    const cur = gf.value;
+    gf.innerHTML = '<option value="">All Groups</option>' + groups.map(g => `<option value="${esc(g)}">${esc(g)}</option>`).join('');
+    gf.value = cur;
+    // Stat chips
+    document.getElementById('group-stats').innerHTML =
+      `<span class="filter-btn"><strong>${total}</strong>&nbsp;ready</span>` +
+      groups.map(g => `<span class="filter-btn">${esc(g)}: <strong>${ready[g]}</strong></span>`).join('');
+  }
+
+  async function load() {
+    const search = document.getElementById('search').value;
+    const group = document.getElementById('group-filter').value;
+    let url = '/glp1?status=' + encodeURIComponent('Ready to Assign');
+    if (group) url += `&group=${encodeURIComponent(group)}`;
+    if (search) url += `&search=${encodeURIComponent(search)}`;
+    rows = await apiGet(url) || [];
+    selected.clear();
+    render();
+  }
+
+  function render() {
+    updateSelUI();
+    document.getElementById('tbl-body').innerHTML = rows.length
+      ? rows.map(r => `<tr class="${selected.has(r.indx) ? 'bg-slate-50' : ''}">
+          <td>${canAssign ? `<input type="checkbox" ${selected.has(r.indx) ? 'checked' : ''} onclick="toggleRow(${r.indx})">` : ''}</td>
+          <td class="font-medium">${fullName(r)}</td>
+          <td>${esc(r.Group_Name) || '—'}</td>
+          <td class="font-mono text-xs">${esc(r.Member_ID) || '—'}</td>
+          <td class="text-xs">${fmtDate(r.Date_of_Birth)}</td>
+          <td>${esc(cleanDrug(r.Drug_Name)) || '—'}</td>
+          <td>${esc(r.Days_Supply) || '—'}</td>
+          <td class="text-xs">${fmtDate(r.Date_of_Service)}</td>
+          <td class="text-xs">${esc(r.Pharmacy_Name) || '—'}</td>
+        </tr>`).join('')
+      : '<tr><td colspan="9" class="text-center py-10 text-slate-400">No records ready to assign</td></tr>';
+  }
+
+  function toggleRow(indx) {
+    if (selected.has(indx)) selected.delete(indx); else selected.add(indx);
+    render();
+  }
+  function toggleAll(box) {
+    if (box.checked) rows.forEach(r => selected.add(r.indx)); else selected.clear();
+    render();
+  }
+  function updateSelUI() {
+    document.getElementById('sel-count').textContent = selected.size;
+    const btn = document.getElementById('assign-btn');
+    if (btn) btn.disabled = selected.size === 0;
+    const all = document.getElementById('check-all');
+    all.checked = rows.length > 0 && selected.size === rows.length;
+  }
+
+  function openAssign() {
+    if (!selected.size) return;
+    document.getElementById('assign-n').textContent = selected.size;
+    document.getElementById('f-concierge').value = '';
+    openModal('assign-modal');
+  }
+
+  async function doAssign() {
+    const concierge = document.getElementById('f-concierge').value;
+    if (!concierge) { showToast('Select a Client Concierge', 'error'); return; }
+    const res = await apiPatch('/glp1', { indxs: Array.from(selected), assigned_to: parseInt(concierge) });
+    if (res && res.ok) {
+      showToast(`Assigned ${selected.size} record(s)`, 'success');
+      closeModal('assign-modal');
+      await loadStats(); load();
+    } else {
+      showToast('Assign failed', 'error');
+    }
+  }
+
+  document.getElementById('assign-modal').addEventListener('click', e => { if (e.target === e.currentTarget) closeModal('assign-modal'); });
+
+  (async () => { await loadStaff(); await loadStats(); await load(); })();
+</script>
+</body>
+</html>

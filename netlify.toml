@@ -33,6 +33,16 @@
   status = 301
 
 [[redirects]]
+  from = "/glp1/ready-to-assign"
+  to = "/glp1/ready-to-assign/"
+  status = 301
+
+[[redirects]]
+  from = "/glp1/assigned"
+  to = "/glp1/assigned/"
+  status = 301
+
+[[redirects]]
   from = "/companies"
   to = "/companies/"
   status = 301

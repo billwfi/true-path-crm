@@ -8,6 +8,8 @@ CREATE TABLE IF NOT EXISTS tp_staff (
   firstname     VARCHAR(100),
   lastname      VARCHAR(100),
   is_admin      BOOLEAN DEFAULT FALSE,
+  -- 'Admin', 'Call Center Manager', 'Client Concierge', 'Staff'
+  role          VARCHAR(50) NOT NULL DEFAULT 'Staff',
   active        BOOLEAN DEFAULT TRUE,
   created_at    TIMESTAMP DEFAULT NOW()
 );
@@ -128,3 +130,21 @@ CREATE TABLE IF NOT EXISTS tp_temp_batch (
   import_batch_id VARCHAR(100),
   created_at      TIMESTAMP DEFAULT NOW()
 );
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- GLP1 program — EXTERNAL data source (NOT in this Postgres DB).
+-- The GLP1 module reads/writes SQL Server table iRx.dbo.ReadyToAssign directly
+-- (see netlify/functions/_mssql.js and glp1.js). Reference DDL for that table:
+--
+--   CREATE TABLE dbo.ReadyToAssign (
+--     indx INT IDENTITY(1,1) PRIMARY KEY,
+--     category VARCHAR(50) DEFAULT 'GLP1',
+--     Group_Code, Group_Name, Member_ID, Claim_Patient_ID, Last_Name, First_Name,
+--     Date_of_Birth, Gender, Address, City, State, Zip_Code, Date_of_Service,
+--     NDC, Drug_Name, Fill_Number, Quantity_Dispensed, Days_Supply,
+--     Pharmacy_NPI, Pharmacy_Name,                       -- from GLP_ClaimsEligibilityData
+--     status VARCHAR(30) DEFAULT 'Ready to Assign',      -- 'Ready to Assign' | 'Assigned'
+--     assigned_to INT, assigned_by INT,                  -- tp_staff.id (Postgres)
+--     assigned_at DATETIME, created_at DATETIME DEFAULT GETDATE()
+--   );
+-- ─────────────────────────────────────────────────────────────────────────────
