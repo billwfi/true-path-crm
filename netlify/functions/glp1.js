@@ -14,12 +14,14 @@ exports.handler = async function (event) {
   const user = verifyToken(event);
   if (!user) return unauthorized();
 
-  const { indx, status, group, search, category, stats, action, latest_per_member } = event.queryStringParameters || {};
+  const { indx, status, group, search, category, stats, action, latest_per_member, drug, drugs } = event.queryStringParameters || {};
   const cat = category || 'GLP1';
   // When set, collapse to one row per Member_ID, keeping the most recent Date_of_Service.
   const onePerMember = latest_per_member === '1' || latest_per_member === 'true';
   // Members with no Member_ID stay distinct (keyed by indx) instead of collapsing together.
   const MEMBER_KEY = `COALESCE(NULLIF(Member_ID, ''), CAST(indx AS VARCHAR(50)))`;
+  // Base drug name = leading token of Drug_Name (e.g. "OZEMPIC   INJ 8MG/3ML" -> "OZEMPIC").
+  const DRUG_BASE = `RTRIM(LEFT(LTRIM(Drug_Name), CHARINDEX(' ', LTRIM(Drug_Name) + ' ') - 1))`;
 
   try {
     if (event.httpMethod === 'GET') {
@@ -41,9 +43,21 @@ exports.handler = async function (event) {
         return ok(r.recordset);
       }
 
+      if (drugs) {
+        // Distinct base drug names for the filter dropdown (optionally scoped to a status).
+        const r = await mssql(
+          `SELECT DISTINCT ${DRUG_BASE} AS drug FROM dbo.ReadyToAssign
+           WHERE category = @category AND (@status IS NULL OR status = @status)
+             AND LTRIM(RTRIM(ISNULL(Drug_Name, ''))) <> ''
+           ORDER BY drug`,
+          { category: cat, status: status || null });
+        return ok(r.recordset.map(x => x.drug).filter(Boolean));
+      }
+
       const where = `category = @category
            AND (@status IS NULL OR status = @status)
            AND (@group IS NULL OR Group_Name = @group)
+           AND (@drug IS NULL OR ${DRUG_BASE} = @drug)
            AND (@search IS NULL OR First_Name LIKE @search OR Last_Name LIKE @search
                 OR Member_ID LIKE @search OR Drug_Name LIKE @search)`;
       const listSql = onePerMember
@@ -58,7 +72,7 @@ exports.handler = async function (event) {
            ORDER BY Group_Name, Last_Name, First_Name`;
       const r = await mssql(listSql,
         { category: cat, status: status || null, group: group || null,
-          search: search ? `%${search}%` : null });
+          drug: drug || null, search: search ? `%${search}%` : null });
       return ok(r.recordset);
     }
 

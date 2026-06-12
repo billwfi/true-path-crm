@@ -17,6 +17,7 @@
       <div class="search-bar">
         <input type="text" id="search" class="form-control" placeholder="Search patient, member ID, drug…" oninput="debounceLoad()">
         <select id="group-filter" class="form-control" style="max-width:240px" onchange="load()"><option value="">All Groups</option></select>
+        <select id="drug-filter" class="form-control" style="max-width:200px" onchange="load()"><option value="">All Drugs</option></select>
         <div class="flex gap-2 ml-auto">
           <button class="btn btn-primary" id="assign-btn" onclick="openAssign()" disabled>
             <i class="fa-solid fa-user-check"></i> Assign Selected (<span id="sel-count">0</span>)
@@ -94,6 +95,15 @@
     }
   }
 
+  async function loadDrugs() {
+    const list = await apiGet('/glp1?drugs=1&status=' + encodeURIComponent('Ready to Assign')) || [];
+    const df = document.getElementById('drug-filter');
+    const cur = df.value;
+    df.innerHTML = '<option value="">All Drugs</option>' +
+      list.map(d => `<option value="${esc(d)}">${esc(d)}</option>`).join('');
+    df.value = cur;
+  }
+
   async function loadStats() {
     const stats = await apiGet('/glp1?stats=1&latest_per_member=1') || [];
     const ready = {};
@@ -114,8 +124,10 @@
   async function load() {
     const search = document.getElementById('search').value;
     const group = document.getElementById('group-filter').value;
+    const drug = document.getElementById('drug-filter').value;
     let url = '/glp1?status=' + encodeURIComponent('Ready to Assign') + '&latest_per_member=1';
     if (group) url += `&group=${encodeURIComponent(group)}`;
+    if (drug) url += `&drug=${encodeURIComponent(drug)}`;
     if (search) url += `&search=${encodeURIComponent(search)}`;
     rows = await apiGet(url) || [];
     selected.clear();
@@ -177,7 +189,7 @@
 
   document.getElementById('assign-modal').addEventListener('click', e => { if (e.target === e.currentTarget) closeModal('assign-modal'); });
 
-  (async () => { await loadStaff(); await loadStats(); await load(); })();
+  (async () => { await loadStaff(); await loadDrugs(); await loadStats(); await load(); })();
 </script>
 </body>
 </html>
