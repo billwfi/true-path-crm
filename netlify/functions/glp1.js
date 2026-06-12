@@ -83,17 +83,26 @@ exports.handler = async function (event) {
       }
       const b = JSON.parse(event.body || '{}');
 
+      // Assignment is member-level: each selected indx affects ALL of that member's
+      // records (matched via MEMBER_KEY), so a member fully leaves / returns to the
+      // Ready to Assign list and the count bubbles update. The list is deduped to one
+      // row per member, so the chosen indx is just a handle to the patient.
+      const memberMatch = `category=@category
+             AND ${MEMBER_KEY} = (SELECT ${MEMBER_KEY} FROM dbo.ReadyToAssign WHERE indx=@indx)`;
+
       if (action === 'unassign') {
         const ids = idList(b, indx);
         if (!ids.length) return badRequest('indx (or body.indxs) required');
+        let affected = 0;
         for (const id of ids) {
-          await mssql(
+          const r = await mssql(
             `UPDATE dbo.ReadyToAssign
              SET status='Ready to Assign', assigned_to=NULL, assigned_by=NULL, assigned_at=NULL
-             WHERE indx=@indx AND category=@category`,
+             WHERE ${memberMatch}`,
             { indx: id, category: cat });
+          affected += r.rowsAffected[0] || 0;
         }
-        return ok({ unassigned: ids.length });
+        return ok({ unassigned: ids.length, records: affected });
       }
 
       // Default action = assign
@@ -102,14 +111,16 @@ exports.handler = async function (event) {
       const ids = idList(b, indx);
       if (!ids.length) return badRequest('indx (or body.indxs) required');
 
+      let affected = 0;
       for (const id of ids) {
-        await mssql(
+        const r = await mssql(
           `UPDATE dbo.ReadyToAssign
            SET status='Assigned', assigned_to=@assigned_to, assigned_by=@assigned_by, assigned_at=GETDATE()
-           WHERE indx=@indx AND category=@category`,
+           WHERE ${memberMatch}`,
           { indx: id, assigned_to: assignedTo, assigned_by: user.id || null, category: cat });
+        affected += r.rowsAffected[0] || 0;
       }
-      return ok({ assigned: ids.length, assigned_to: assignedTo });
+      return ok({ assigned: ids.length, records: affected, assigned_to: assignedTo });
     }
 
     return { statusCode: 405, body: 'Method Not Allowed' };
