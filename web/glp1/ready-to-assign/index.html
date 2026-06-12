@@ -95,7 +95,7 @@
   }
 
   async function loadStats() {
-    const stats = await apiGet('/glp1?stats=1') || [];
+    const stats = await apiGet('/glp1?stats=1&latest_per_member=1') || [];
     const ready = {};
     let total = 0;
     stats.forEach(s => { if (s.status === 'Ready to Assign') { ready[s.Group_Name] = s.n; total += s.n; } });
@@ -114,7 +114,7 @@
   async function load() {
     const search = document.getElementById('search').value;
     const group = document.getElementById('group-filter').value;
-    let url = '/glp1?status=' + encodeURIComponent('Ready to Assign');
+    let url = '/glp1?status=' + encodeURIComponent('Ready to Assign') + '&latest_per_member=1';
     if (group) url += `&group=${encodeURIComponent(group)}`;
     if (search) url += `&search=${encodeURIComponent(search)}`;
     rows = await apiGet(url) || [];

@@ -14,8 +14,12 @@ exports.handler = async function (event) {
   const user = verifyToken(event);
   if (!user) return unauthorized();
 
-  const { indx, status, group, search, category, stats, action } = event.queryStringParameters || {};
+  const { indx, status, group, search, category, stats, action, latest_per_member } = event.queryStringParameters || {};
   const cat = category || 'GLP1';
+  // When set, collapse to one row per Member_ID, keeping the most recent Date_of_Service.
+  const onePerMember = latest_per_member === '1' || latest_per_member === 'true';
+  // Members with no Member_ID stay distinct (keyed by indx) instead of collapsing together.
+  const MEMBER_KEY = `COALESCE(NULLIF(Member_ID, ''), CAST(indx AS VARCHAR(50)))`;
 
   try {
     if (event.httpMethod === 'GET') {
@@ -27,22 +31,32 @@ exports.handler = async function (event) {
       }
 
       if (stats) {
+        // Count distinct members (matching the deduped list) when requested, else raw rows.
+        const countExpr = onePerMember ? `COUNT(DISTINCT ${MEMBER_KEY})` : 'COUNT(*)';
         const r = await mssql(
-          `SELECT Group_Name, status, COUNT(*) AS n
+          `SELECT Group_Name, status, ${countExpr} AS n
            FROM dbo.ReadyToAssign WHERE category = @category
            GROUP BY Group_Name, status ORDER BY Group_Name`,
           { category: cat });
         return ok(r.recordset);
       }
 
-      const r = await mssql(
-        `SELECT ${LIST_COLS} FROM dbo.ReadyToAssign
-         WHERE category = @category
+      const where = `category = @category
            AND (@status IS NULL OR status = @status)
            AND (@group IS NULL OR Group_Name = @group)
            AND (@search IS NULL OR First_Name LIKE @search OR Last_Name LIKE @search
-                OR Member_ID LIKE @search OR Drug_Name LIKE @search)
-         ORDER BY Group_Name, Last_Name, First_Name`,
+                OR Member_ID LIKE @search OR Drug_Name LIKE @search)`;
+      const listSql = onePerMember
+        ? `WITH ranked AS (
+             SELECT ${LIST_COLS},
+               ROW_NUMBER() OVER (PARTITION BY ${MEMBER_KEY}
+                 ORDER BY Date_of_Service DESC, indx DESC) AS rn
+             FROM dbo.ReadyToAssign WHERE ${where})
+           SELECT ${LIST_COLS} FROM ranked WHERE rn = 1
+           ORDER BY Group_Name, Last_Name, First_Name`
+        : `SELECT ${LIST_COLS} FROM dbo.ReadyToAssign WHERE ${where}
+           ORDER BY Group_Name, Last_Name, First_Name`;
+      const r = await mssql(listSql,
         { category: cat, status: status || null, group: group || null,
           search: search ? `%${search}%` : null });
       return ok(r.recordset);
