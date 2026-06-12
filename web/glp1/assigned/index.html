@@ -25,7 +25,7 @@
           <table class="data-table">
             <thead><tr>
               <th>Patient</th><th>Group</th><th>Member ID</th><th>Drug</th>
-              <th>Assigned To</th><th>Assigned By</th><th>Assigned</th><th></th>
+              <th>Assigned To</th><th>Assigned</th><th>Intake Status</th><th></th>
             </tr></thead>
             <tbody id="tbl-body"></tbody>
           </table>
@@ -68,6 +68,14 @@
   function cleanDrug(d) { return (d || '').replace(/\s+/g, ' ').trim(); }
   function fullName(r) { return `${esc(r.Last_Name || '')}, ${esc(r.First_Name || '')}`.replace(/^, |, $/, ''); }
   function staffName(id) { return id != null && staffMap[id] ? staffMap[id] : '—'; }
+  const INTAKE_COLORS = { 'In Progress': 'blue', 'Outreach Completed': 'green', 'Submitted to WellSync': 'purple' };
+  function intakeBadge(r) {
+    if (!r.intake_status) return '<span class="text-slate-400">—</span>';
+    const color = INTAKE_COLORS[r.intake_status] || 'gray';
+    const sub = r.intake_sub_status ? ` · ${esc(r.intake_sub_status)}` : '';
+    return `<span class="badge badge-${color}">${esc(r.intake_status)}</span>${sub
+      ? `<span class="text-xs text-slate-500">${sub}</span>` : ''}`;
+  }
 
   async function loadStaff() {
     const all = await apiGet('/staff') || [];
@@ -110,8 +118,8 @@
           <td class="font-mono text-xs">${esc(r.Member_ID) || '—'}</td>
           <td>${esc(cleanDrug(r.Drug_Name)) || '—'}</td>
           <td>${esc(staffName(r.assigned_to))}</td>
-          <td class="text-xs text-slate-400">${esc(staffName(r.assigned_by))}</td>
           <td class="text-xs text-slate-400">${fmtDate(r.assigned_at)}</td>
+          <td>${intakeBadge(r)}</td>
           <td class="text-right whitespace-nowrap">
             <a class="btn btn-primary btn-sm" title="Open record" href="/glp1/record/?indx=${r.indx}"><i class="fa-solid fa-folder-open"></i> Open</a>
             ${canAssign ? `

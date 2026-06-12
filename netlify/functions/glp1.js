@@ -78,16 +78,19 @@ exports.handler = async function (event) {
            AND (@drug IS NULL OR ${DRUG_BASE} = @drug)
            AND (@search IS NULL OR First_Name LIKE @search OR Last_Name LIKE @search
                 OR Member_ID LIKE @search OR Drug_Name LIKE @search)`;
-      const listSql = onePerMember
-        ? `WITH ranked AS (
-             SELECT ${LIST_COLS},
+      // Base rows (+ member_key, and rn when deduping), wrapped so the intake LEFT JOIN
+      // can attach each member's intake status without colliding with ReadyToAssign.status.
+      const base = `SELECT ${LIST_COLS}, ${MEMBER_KEY} AS member_key${
+        onePerMember ? `,
                ROW_NUMBER() OVER (PARTITION BY ${MEMBER_KEY}
-                 ORDER BY Date_of_Service DESC, indx DESC) AS rn
-             FROM dbo.ReadyToAssign WHERE ${where})
-           SELECT ${LIST_COLS} FROM ranked WHERE rn = 1
-           ORDER BY Group_Name, Last_Name, First_Name`
-        : `SELECT ${LIST_COLS} FROM dbo.ReadyToAssign WHERE ${where}
-           ORDER BY Group_Name, Last_Name, First_Name`;
+                 ORDER BY Date_of_Service DESC, indx DESC) AS rn` : ''}
+             FROM dbo.ReadyToAssign WHERE ${where}`;
+      const listSql = `
+        SELECT b.*, gi.status AS intake_status, gi.sub_status AS intake_sub_status
+        FROM (${base}) b
+        LEFT JOIN dbo.GLP1_Intake gi ON gi.category = @category AND gi.member_key = b.member_key
+        ${onePerMember ? 'WHERE b.rn = 1' : ''}
+        ORDER BY b.Group_Name, b.Last_Name, b.First_Name`;
       const r = await mssql(listSql,
         { category: cat, status: status || null, group: group || null,
           drug: drug || null, search: search ? `%${search}%` : null });
