@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Call Center — In Progress — True Path CRM</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+  <link rel="stylesheet" href="/assets/css/app.css">
+</head>
+<body class="bg-slate-100 text-slate-700">
+<div id="app" class="flex h-screen overflow-hidden">
+  <div id="nav-placeholder"></div>
+  <div class="flex-1 flex flex-col overflow-hidden">
+    <div id="topbar"></div>
+    <main class="flex-1 overflow-y-auto p-6">
+
+      <div class="search-bar">
+        <input type="text" id="search" class="form-control" placeholder="Search patient, member ID, drug…" oninput="debounceLoad()">
+        <select id="group-filter" class="form-control" style="max-width:240px" onchange="load()"><option value="">All Groups</option></select>
+      </div>
+
+      <div class="card">
+        <div class="card-body">
+          <table class="data-table">
+            <thead><tr>
+              <th>Patient</th><th>Group</th><th>Member ID</th><th>Drug</th>
+              <th>Assigned</th><th>Intake Status</th><th></th>
+            </tr></thead>
+            <tbody id="tbl-body"></tbody>
+          </table>
+        </div>
+      </div>
+    </main>
+  </div>
+</div>
+
+<script src="/assets/js/app.js"></script>
+<script>
+  initNav('cc-in-progress');
+
+  // Personal work queue: records assigned to the logged-in Client Concierge,
+  // filtered to intake status "In Progress".
+  const me = getUser() || {};
+  let rows = [], debounce;
+
+  function debounceLoad() { clearTimeout(debounce); debounce = setTimeout(load, 300); }
+  function cleanDrug(d) { return (d || '').replace(/\s+/g, ' ').trim(); }
+  function fullName(r) { return `${esc(r.Last_Name || '')}, ${esc(r.First_Name || '')}`.replace(/^, |, $/, ''); }
+  const INTAKE_COLORS = { 'In Progress': 'blue', 'Outreach Completed': 'green', 'Submitted to WellSync': 'purple' };
+  function intakeBadge(r) {
+    if (!r.intake_status) return '<span class="text-slate-400">—</span>';
+    const color = INTAKE_COLORS[r.intake_status] || 'gray';
+    const sub = r.intake_sub_status ? ` · ${esc(r.intake_sub_status)}` : '';
+    return `<span class="badge badge-${color}">${esc(r.intake_status)}</span>${sub
+      ? `<span class="text-xs text-slate-500">${sub}</span>` : ''}`;
+  }
+
+  async function loadGroups() {
+    const stats = await apiGet('/glp1?stats=1') || [];
+    const groups = [...new Set(stats.filter(s => s.status === 'Assigned').map(s => s.Group_Name))].sort();
+    const gf = document.getElementById('group-filter');
+    const cur = gf.value;
+    gf.innerHTML = '<option value="">All Groups</option>' + groups.map(g => `<option value="${esc(g)}">${esc(g)}</option>`).join('');
+    gf.value = cur;
+  }
+
+  async function load() {
+    const search = document.getElementById('search').value;
+    const group = document.getElementById('group-filter').value;
+    let url = '/glp1?status=' + encodeURIComponent('Assigned') + '&latest_per_member=1&assigned_to=' + encodeURIComponent(me.id);
+    if (group) url += `&group=${encodeURIComponent(group)}`;
+    if (search) url += `&search=${encodeURIComponent(search)}`;
+    const all = await apiGet(url) || [];
+    rows = all.filter(r => r.intake_status === 'In Progress');
+    render();
+  }
+
+  function render() {
+    document.getElementById('tbl-body').innerHTML = rows.length
+      ? rows.map(r => `<tr>
+          <td class="font-medium">${fullName(r)}</td>
+          <td>${esc(r.Group_Name) || '—'}</td>
+          <td class="font-mono text-xs">${esc(r.Member_ID) || '—'}</td>
+          <td>${esc(cleanDrug(r.Drug_Name)) || '—'}</td>
+          <td class="text-xs text-slate-400">${fmtDate(r.assigned_at)}</td>
+          <td>${intakeBadge(r)}</td>
+          <td class="text-right whitespace-nowrap">
+            <a class="btn btn-primary btn-sm" title="Open record" href="/glp1/record/?indx=${r.indx}"><i class="fa-solid fa-folder-open"></i> Open</a></td>
+        </tr>`).join('')
+      : '<tr><td colspan="7" class="text-center py-10 text-slate-400">No In Progress records assigned to you</td></tr>';
+  }
+
+  (async () => { await loadGroups(); await load(); })();
+</script>
+</body>
+</html>

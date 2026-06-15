@@ -14,7 +14,7 @@ exports.handler = async function (event) {
   const user = verifyToken(event);
   if (!user) return unauthorized();
 
-  const { indx, status, group, search, category, stats, action, latest_per_member, drug, drugs, report } = event.queryStringParameters || {};
+  const { indx, status, group, search, category, stats, action, latest_per_member, drug, drugs, report, assigned_to } = event.queryStringParameters || {};
   const cat = category || 'GLP1';
   // When set, collapse to one row per Member_ID, keeping the most recent Date_of_Service.
   const onePerMember = latest_per_member === '1' || latest_per_member === 'true';
@@ -76,6 +76,7 @@ exports.handler = async function (event) {
            AND (@status IS NULL OR status = @status)
            AND (@group IS NULL OR Group_Name = @group)
            AND (@drug IS NULL OR ${DRUG_BASE} = @drug)
+           AND (@assigned_to IS NULL OR assigned_to = @assigned_to)
            AND (@search IS NULL OR First_Name LIKE @search OR Last_Name LIKE @search
                 OR Member_ID LIKE @search OR Drug_Name LIKE @search)`;
       // Base rows (+ member_key, and rn when deduping), wrapped so the intake LEFT JOIN
@@ -93,7 +94,8 @@ exports.handler = async function (event) {
         ORDER BY b.Group_Name, b.Last_Name, b.First_Name`;
       const r = await mssql(listSql,
         { category: cat, status: status || null, group: group || null,
-          drug: drug || null, search: search ? `%${search}%` : null });
+          drug: drug || null, assigned_to: assigned_to ? parseInt(assigned_to, 10) : null,
+          search: search ? `%${search}%` : null });
       return ok(r.recordset);
     }
 

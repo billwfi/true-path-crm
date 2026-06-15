@@ -67,6 +67,16 @@
   to = "/brokers/"
   status = 301
 
+[[redirects]]
+  from = "/call-center/in-progress"
+  to = "/call-center/in-progress/"
+  status = 301
+
+[[redirects]]
+  from = "/call-center/other"
+  to = "/call-center/other/"
+  status = 301
+
 [[headers]]
   for = "/*"
   [headers.values]

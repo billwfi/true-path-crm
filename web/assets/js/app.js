@@ -91,6 +91,9 @@ const NAV_ITEMS = [
   { section: 'GLP1' },
   { href: '/glp1/ready-to-assign/', icon: 'fa-user-clock', label: 'Ready to Assign', key: 'glp1-ready' },
   { href: '/glp1/assigned/',        icon: 'fa-user-check', label: 'Assigned',        key: 'glp1-assigned' },
+  { section: 'Call Center' },
+  { href: '/call-center/in-progress/', icon: 'fa-hourglass-half', label: 'In Progress',    key: 'cc-in-progress' },
+  { href: '/call-center/other/',       icon: 'fa-list-check',     label: 'Other Statuses', key: 'cc-other' },
   { section: 'Admin' },
   { href: '/companies/', icon: 'fa-building',          label: 'Companies',   key: 'companies' },
   { href: '/brokers/',   icon: 'fa-handshake',         label: 'Brokers',     key: 'brokers' },
@@ -148,6 +151,7 @@ function initNav(activeKey) {
     reminders: 'Reminders', batch: 'Batch Orders', 'temp-batch': 'Temp Batch',
     'glp1-ready': 'GLP1 — Ready to Assign', 'glp1-assigned': 'GLP1 — Assigned',
     'glp1-report': 'GLP1 — Ready to Assign Report', 'glp1-record': 'GLP1 — Member Record',
+    'cc-in-progress': 'Call Center — In Progress', 'cc-other': 'Call Center — Other Statuses',
     companies: 'Companies', brokers: 'Brokers', 'user-management': 'User Management',
   };
   document.getElementById('topbar').innerHTML = `
