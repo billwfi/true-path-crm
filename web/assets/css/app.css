@@ -19,8 +19,8 @@ body { font-family: 'Inter', system-ui, sans-serif; }
 .brand { padding: 18px 16px 14px; border-bottom: 1px solid #334155; }
 .brand-text { font-size: 15px; font-weight: 700; color: #f1f5f9; letter-spacing: .3px; }
 .brand-sub { font-size: 11px; color: #64748b; }
-/* Dark-navy wordmark inverted to white so it reads on the dark sidebar. */
-.brand-logo { display: block; width: 100%; height: auto; filter: brightness(0) invert(1); }
+/* Full-color logo on a white backdrop so the dark text reads on the dark sidebar. */
+.brand-logo { display: block; width: 100%; height: auto; background: #fff; border-radius: 8px; padding: 10px; }
 
 .nav-section { font-size: 10px; font-weight: 700; letter-spacing: 1px; color: #475569; text-transform: uppercase; padding: 18px 16px 6px; }
 
