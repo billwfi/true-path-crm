@@ -33,8 +33,8 @@
       <div class="tab-panel" data-panel="demographics">
         <div class="card">
           <div class="card-header"><span class="card-title"><i class="fa-solid fa-id-card text-slate-400 mr-2"></i>Demographics</span></div>
-          <div class="card-body">
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div class="card-body form-pad">
+            <div class="field-grid">
               <div class="form-group mb-0"><label class="form-label">First Name *</label><input class="form-control" id="f-firstname"></div>
               <div class="form-group mb-0"><label class="form-label">Last Name</label><input class="form-control" id="f-lastname"></div>
               <div class="form-group mb-0"><label class="form-label">Email</label><input class="form-control" type="email" id="f-email"></div>
@@ -48,10 +48,9 @@
                 <select class="form-control" id="f-active"><option value="1">Yes</option><option value="0">No</option></select></div>
               <div class="form-group mb-0"><label class="form-label">iRx Client ID (CARRIER)</label>
                 <input class="form-control" id="f-irx_client_id" placeholder="Matches eligibility CARRIER"></div>
-              <div class="form-group mb-0"></div>
-              <div class="form-group mb-0 md:col-span-2"><label class="form-label">Notes</label><textarea class="form-control" id="f-notes" rows="3"></textarea></div>
+              <div class="form-group mb-0 full"><label class="form-label">Notes</label><textarea class="form-control" id="f-notes" rows="3"></textarea></div>
             </div>
-            <div class="flex items-center gap-3 mt-4">
+            <div class="flex items-center gap-3 mt-5">
               <button class="btn btn-primary" onclick="saveDemographics()"><i class="fa-solid fa-floppy-disk"></i> Save</button>
               <button class="btn btn-danger" id="delete-btn" onclick="doDeleteClient()" style="display:none"><i class="fa-solid fa-trash"></i> Delete</button>
             </div>

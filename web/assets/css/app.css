@@ -146,6 +146,19 @@ select.form-control { cursor: pointer; }
 .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
 .form-grid.col3 { grid-template-columns: 1fr 1fr 1fr; }
 
+/* ── Detail-page form sections ──
+   Form fields live directly in a .card-body (which is padding:0 for tables),
+   so give those bodies real padding and lay fields out on an aligned grid that
+   top-aligns rows and lets a field span the full width. */
+.card-body.form-pad { padding: 18px 20px 20px; }  /* left/right match .card-header so fields align under the title */
+.field-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px 24px; align-items: start; }
+.field-grid .full { grid-column: 1 / -1; }
+.field-grid.col4 { grid-template-columns: repeat(4, 1fr); }
+.field-grid .span2 { grid-column: span 2; }
+.field-grid .span3 { grid-column: span 3; }
+@media (max-width: 768px) { .field-grid, .field-grid.col4 { grid-template-columns: 1fr; }
+  .field-grid .full, .field-grid .span2, .field-grid .span3 { grid-column: 1 / -1; } }
+
 /* ── Search / Filters ── */
 .search-bar { display: flex; align-items: center; gap: 10px; margin-bottom: 16px; }
 .search-bar input { flex: 1; }

@@ -32,8 +32,8 @@
       <div class="tab-panel" data-panel="demographics">
         <div class="card">
           <div class="card-header"><i class="fa-solid fa-id-card text-slate-400"></i> Contact Information</div>
-          <div class="card-body">
-            <div id="demographics" class="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm"></div>
+          <div class="card-body form-pad">
+            <div id="demographics" class="grid grid-cols-2 md:grid-cols-4 gap-x-6 gap-y-4 text-sm"></div>
             <p class="text-xs text-amber-600 mt-3"><i class="fa-solid fa-circle-info"></i>
               Full demographics will pull from the eligibility record (integration pending).</p>
           </div>
@@ -68,7 +68,7 @@
       <div class="tab-panel" data-panel="intake" style="display:none">
         <div class="card">
           <div class="card-header"><i class="fa-solid fa-clipboard-check text-slate-400"></i> Intake Status</div>
-          <div class="card-body">
+          <div class="card-body form-pad">
             <div class="flex flex-wrap items-end gap-4">
               <div class="form-group mb-0">
                 <label class="form-label">Status</label>
@@ -397,9 +397,9 @@
     document.getElementById('q-form').innerHTML = Q_SCHEMA.map(sec => `
       <div class="card mb-4">
         <div class="card-header"><span class="card-title">${esc(sec.title)}</span></div>
-        <div class="card-body">
+        <div class="card-body form-pad">
           ${sec.subtitle ? `<p class="text-sm text-slate-500 mb-3">${esc(sec.subtitle)}</p>` : ''}
-          <div class="grid grid-cols-1 md:grid-cols-4 gap-4 items-start">
+          <div class="grid grid-cols-1 md:grid-cols-4 gap-x-6 gap-y-4 items-start">
             ${sec.fields.map(qFieldHTML).join('')}
           </div>
         </div>
