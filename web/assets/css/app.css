@@ -13,12 +13,14 @@ body { font-family: 'Inter', system-ui, sans-serif; }
   transition: width 0.2s;
 }
 #sidebar.collapsed { width: 60px; min-width: 60px; }
-#sidebar.collapsed .nav-label, #sidebar.collapsed .nav-section, #sidebar.collapsed .brand-text { display: none; }
+#sidebar.collapsed .nav-label, #sidebar.collapsed .nav-section, #sidebar.collapsed .brand-text, #sidebar.collapsed .brand-logo { display: none; }
 #sidebar.collapsed .nav-link { justify-content: center; padding: 10px; }
 
 .brand { padding: 18px 16px 14px; border-bottom: 1px solid #334155; }
 .brand-text { font-size: 15px; font-weight: 700; color: #f1f5f9; letter-spacing: .3px; }
 .brand-sub { font-size: 11px; color: #64748b; }
+/* Dark-navy wordmark inverted to white so it reads on the dark sidebar. */
+.brand-logo { display: block; width: 100%; height: auto; filter: brightness(0) invert(1); }
 
 .nav-section { font-size: 10px; font-weight: 700; letter-spacing: 1px; color: #475569; text-transform: uppercase; padding: 18px 16px 6px; }
 

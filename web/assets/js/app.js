@@ -133,8 +133,9 @@ function initNav(activeKey) {
   document.getElementById('nav-placeholder').innerHTML = `
     <div id="sidebar">
       <div class="brand">
-        <div class="brand-text">True Path CRM</div>
-        <div class="brand-sub">International Rx</div>
+        <a href="https://www.internationalrx.com/" target="_blank" rel="noopener" title="International Rx">
+          <img src="/assets/img/logo.svg" alt="International Rx" class="brand-logo">
+        </a>
       </div>
       ${items}
       <div style="margin-top:auto; padding:16px;">
