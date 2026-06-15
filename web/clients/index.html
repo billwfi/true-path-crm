@@ -16,7 +16,7 @@
 
       <div class="search-bar">
         <input type="text" id="search" class="form-control" placeholder="Search clients…" oninput="debounceLoad()">
-        <button class="btn btn-primary" onclick="clearForm();populateDropdowns();openModal('client-modal')"><i class="fa-solid fa-plus"></i> New Client</button>
+        <a class="btn btn-primary" href="/clients/record/"><i class="fa-solid fa-plus"></i> New Client</a>
       </div>
 
       <div class="card">
@@ -31,51 +31,19 @@
   </div>
 </div>
 
-<!-- Modal -->
-<div id="client-modal" class="modal-backdrop hidden">
-  <div class="modal">
-    <div class="modal-header">
-      <span class="modal-title" id="modal-title">New Client</span>
-      <button class="modal-close" onclick="closeModal('client-modal')">×</button>
-    </div>
-    <div class="modal-body">
-      <input type="hidden" id="edit-id">
-      <div class="form-grid">
-        <div class="form-group"><label class="form-label">First Name</label><input class="form-control" id="f-firstname"></div>
-        <div class="form-group"><label class="form-label">Last Name</label><input class="form-control" id="f-lastname"></div>
-        <div class="form-group"><label class="form-label">Email</label><input class="form-control" type="email" id="f-email"></div>
-        <div class="form-group"><label class="form-label">Phone</label><input class="form-control" id="f-phone"></div>
-        <div class="form-group"><label class="form-label">Company</label>
-          <select class="form-control" id="f-company_id"><option value="">— None —</option></select></div>
-        <div class="form-group"><label class="form-label">Broker</label>
-          <select class="form-control" id="f-broker_id"><option value="">— None —</option></select></div>
-        <div class="form-group"><label class="form-label">Groups</label><input class="form-control" id="f-groups" placeholder="e.g. 340B, VIP"></div>
-        <div class="form-group"><label class="form-label">Active</label>
-          <select class="form-control" id="f-active"><option value="1">Yes</option><option value="0">No</option></select>
-        </div>
-      </div>
-      <div class="form-group"><label class="form-label">Notes</label><textarea class="form-control" id="f-notes" rows="3"></textarea></div>
-    </div>
-    <div class="modal-footer">
-      <button class="btn btn-outline" onclick="closeModal('client-modal')">Cancel</button>
-      <button class="btn btn-danger btn-sm" id="delete-btn" onclick="doDelete()" style="display:none">Delete</button>
-      <button class="btn btn-primary" onclick="save()">Save</button>
-    </div>
-  </div>
-</div>
-
 <script src="/assets/js/app.js"></script>
 <script>
   initNav('clients');
   let debounce;
   function debounceLoad() { clearTimeout(debounce); debounce = setTimeout(load, 300); }
+  function openClient(id) { location.href = `/clients/record/?id=${id}`; }
 
   async function load() {
     const search = document.getElementById('search').value;
     const data = await apiGet(`/clients${search ? '?search=' + encodeURIComponent(search) : ''}`);
     if (!data) return;
     document.getElementById('tbl-body').innerHTML = data.length
-      ? data.map(c => `<tr class="clickable" onclick="openEdit(${c.id})">
+      ? data.map(c => `<tr class="clickable" onclick="openClient(${c.id})">
           <td class="text-slate-400 font-mono text-xs">#${c.id}</td>
           <td class="font-medium">${esc(c.firstname)} ${esc(c.lastname)}</td>
           <td>${esc(c.company) || '—'}</td>
@@ -84,92 +52,11 @@
           <td>${esc(c.broker) || '—'}</td>
           <td>${c.active ? '<span class="badge badge-green">Active</span>' : '<span class="badge badge-gray">Inactive</span>'}</td>
           <td class="text-xs text-slate-400">${fmtDate(c.created_at)}</td>
-          <td><button class="btn btn-outline btn-sm" onclick="event.stopPropagation();openEdit(${c.id})"><i class="fa-solid fa-pen"></i></button></td>
+          <td><button class="btn btn-outline btn-sm" onclick="event.stopPropagation();openClient(${c.id})"><i class="fa-solid fa-folder-open"></i> Open</button></td>
         </tr>`).join('')
       : '<tr><td colspan="9" class="text-center py-10 text-slate-400">No clients found</td></tr>';
   }
 
-  function clearForm() {
-    ['edit-id','f-firstname','f-lastname','f-email','f-phone','f-company_id','f-broker_id','f-groups','f-notes']
-      .forEach(id => document.getElementById(id).value = '');
-    document.getElementById('f-active').value = '1';
-    document.getElementById('delete-btn').style.display = 'none';
-    document.getElementById('modal-title').textContent = 'New Client';
-  }
-
-  async function openEdit(id) {
-    clearForm();
-    const [c] = await Promise.all([apiGet(`/clients?id=${id}`), populateDropdowns()]);
-    if (!c) return;
-    document.getElementById('edit-id').value       = c.id;
-    document.getElementById('f-firstname').value   = c.firstname || '';
-    document.getElementById('f-lastname').value    = c.lastname  || '';
-    document.getElementById('f-email').value       = c.email     || '';
-    document.getElementById('f-phone').value       = c.phone     || '';
-    document.getElementById('f-company_id').value  = c.company_id|| '';
-    document.getElementById('f-broker_id').value   = c.broker_id || '';
-    document.getElementById('f-groups').value      = c.groups    || '';
-    document.getElementById('f-notes').value       = c.notes     || '';
-    document.getElementById('f-active').value      = c.active ? '1' : '0';
-    document.getElementById('modal-title').textContent = `Edit — ${c.firstname} ${c.lastname}`;
-    document.getElementById('delete-btn').style.display = '';
-    openModal('client-modal');
-  }
-
-  function getForm() {
-    return {
-      firstname:  document.getElementById('f-firstname').value.trim(),
-      lastname:   document.getElementById('f-lastname').value.trim(),
-      email:      document.getElementById('f-email').value.trim(),
-      phone:      document.getElementById('f-phone').value.trim(),
-      company_id: parseInt(document.getElementById('f-company_id').value) || null,
-      broker_id:  parseInt(document.getElementById('f-broker_id').value)  || null,
-      groups:     document.getElementById('f-groups').value.trim(),
-      notes:      document.getElementById('f-notes').value.trim(),
-      active:     document.getElementById('f-active').value === '1',
-    };
-  }
-
-  async function populateDropdowns() {
-    const [companies, brokers] = await Promise.all([
-      apiGet('/companies').catch(() => []),
-      apiGet('/brokers').catch(() => []),
-    ]);
-    const coSel = document.getElementById('f-company_id');
-    const brSel = document.getElementById('f-broker_id');
-    const coVal = coSel.value;
-    const brVal = brSel.value;
-    coSel.innerHTML = '<option value="">— None —</option>' +
-      (companies || []).map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('');
-    brSel.innerHTML = '<option value="">— None —</option>' +
-      (brokers || []).map(b => `<option value="${b.id}">${esc(b.name)}</option>`).join('');
-    coSel.value = coVal;
-    brSel.value = brVal;
-  }
-
-  async function save() {
-    const id = document.getElementById('edit-id').value;
-    const body = getForm();
-    if (!body.firstname) { showToast('First name is required', 'error'); return; }
-    const res = id ? await apiPatch(`/clients?id=${id}`, body) : await apiPost('/clients', body);
-    if (res && res.ok) {
-      showToast(id ? 'Client updated' : 'Client created', 'success');
-      closeModal('client-modal'); clearForm(); load();
-    } else {
-      const data = res ? await res.json().catch(() => ({})) : {};
-      showToast('Save failed: ' + (data.detail || data.error || res?.status || 'unknown error'), 'error');
-    }
-  }
-
-  async function doDelete() {
-    const id = document.getElementById('edit-id').value;
-    if (!id || !confirm2('Delete this client?')) return;
-    const res = await apiDelete(`/clients?id=${id}`);
-    if (res && res.ok) { showToast('Deleted', 'success'); closeModal('client-modal'); load(); }
-    else showToast('Delete failed', 'error');
-  }
-
-  document.getElementById('client-modal').addEventListener('click', e => { if (e.target === e.currentTarget) { closeModal('client-modal'); clearForm(); } });
   load();
 </script>
 </body>

@@ -148,7 +148,7 @@ function initNav(activeKey) {
 
   // Build topbar
   const pageTitles = {
-    dashboard: 'Dashboard', clients: 'Clients', leads: 'Leads', tasks: 'Tasks',
+    dashboard: 'Dashboard', clients: 'Clients', 'client-record': 'Client Record', leads: 'Leads', tasks: 'Tasks',
     reminders: 'Reminders', batch: 'Batch Orders', 'temp-batch': 'Temp Batch',
     'glp1-ready': 'GLP1 — Ready to Assign', 'glp1-assigned': 'GLP1 — Assigned',
     'glp1-report': 'GLP1 — Ready to Assign Report', 'glp1-record': 'Member Record',
