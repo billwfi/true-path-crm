@@ -61,7 +61,7 @@
         </div>
         <div class="form-group flex-1">
           <label class="form-label">Role</label>
-          <select class="form-control" id="f-role">
+          <select class="form-control" id="f-role" onchange="onRoleChange()">
             <option>Staff</option>
             <option>Client Concierge</option>
             <option>Call Center Manager</option>
@@ -72,6 +72,7 @@
       <div class="form-group">
         <label class="form-label">Nav Access</label>
         <p id="nav-admin-note" class="text-xs text-amber-600 mb-1" style="display:none">Admins can access every section.</p>
+        <p id="nav-role-note" class="text-xs text-amber-600 mb-1" style="display:none"></p>
         <div id="nav-access-boxes" class="flex flex-col gap-1"></div>
       </div>
     </div>
@@ -109,7 +110,9 @@
   initNav('user-management');
 
   // Assignable nav sections (Settings is always admin-only, so not listed).
-  const SECTIONS = ['Main', 'Pharmacy', 'GLP1', 'Admin'];
+  const SECTIONS = ['Main', 'Pharmacy', 'GLP1', 'Call Center', 'Admin'];
+  // Roles that are locked to a fixed nav-access set (no other sections selectable).
+  const ROLE_NAV_LOCK = { 'Client Concierge': ['Call Center'] };
   let users = [];
 
   // Guard: only Admins may use this page.
@@ -162,12 +165,36 @@
       <label class="flex items-center gap-2 text-sm">
         <input type="checkbox" class="nav-box" value="${s}" ${set.has(s) ? 'checked' : ''}> ${s}
       </label>`).join('');
+    applyRoleNavLock();
   }
+
+  // Some roles are pinned to a fixed nav-access set: force those boxes checked and
+  // disable every box so no other section can be selected. (Disabled-but-checked
+  // boxes are still read by selectedNavAccess via the :checked selector.)
+  function applyRoleNavLock() {
+    const locked = ROLE_NAV_LOCK[document.getElementById('f-role').value] || null;
+    const note = document.getElementById('nav-role-note');
+    document.querySelectorAll('.nav-box').forEach(b => {
+      if (locked) { b.checked = locked.includes(b.value); b.disabled = true; }
+      else { b.disabled = false; }
+    });
+    if (locked) {
+      note.textContent = `${document.getElementById('f-role').value} is limited to ${locked.join(', ')} access.`;
+      note.style.display = '';
+    } else {
+      note.style.display = 'none';
+    }
+  }
+
+  function onRoleChange() { applyRoleNavLock(); }
 
   function onTypeChange() {
     const isAdmin = document.getElementById('f-user-type').value === 'Admin';
     document.getElementById('nav-admin-note').style.display = isAdmin ? '' : 'none';
     document.getElementById('nav-access-boxes').style.display = isAdmin ? 'none' : '';
+    // Admins access everything, so role-based nav locks don't apply to them.
+    if (isAdmin) document.getElementById('nav-role-note').style.display = 'none';
+    else applyRoleNavLock();
   }
 
   function selectedNavAccess() {
