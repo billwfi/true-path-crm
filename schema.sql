@@ -53,8 +53,13 @@ CREATE TABLE IF NOT EXISTS tp_clients (
   account_coordinator INT REFERENCES tp_staff(id),
   groups              VARCHAR(500),
   notes               TEXT,
+  -- iRx client identifier: matches dbo.eligibility.CARRIER (SQL Server) to drive
+  -- the client's Eligibility tab. Added via ALTER (see below) on existing dbs.
+  irx_client_id       VARCHAR(50),
   created_at          TIMESTAMP DEFAULT NOW()
 );
+-- For already-provisioned databases:
+-- ALTER TABLE tp_clients ADD COLUMN IF NOT EXISTS irx_client_id VARCHAR(50);
 
 CREATE TABLE IF NOT EXISTS tp_leads (
   id           SERIAL PRIMARY KEY,

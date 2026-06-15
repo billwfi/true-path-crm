@@ -37,10 +37,10 @@ exports.handler = async function (event) {
     if (event.httpMethod === 'POST') {
       const b = JSON.parse(event.body || '{}');
       const r = await db(
-        `INSERT INTO tp_clients (firstname, lastname, email, phone, company_id, broker_id, account_coordinator, groups, notes)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING id`,
+        `INSERT INTO tp_clients (firstname, lastname, email, phone, company_id, broker_id, account_coordinator, groups, notes, irx_client_id)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING id`,
         [b.firstname||'', b.lastname||'', b.email||null, b.phone||null,
-         parseInt(b.company_id)||null, parseInt(b.broker_id)||null, parseInt(b.account_coordinator)||null, b.groups||null, b.notes||null]);
+         parseInt(b.company_id)||null, parseInt(b.broker_id)||null, parseInt(b.account_coordinator)||null, b.groups||null, b.notes||null, b.irx_client_id||null]);
       return created({ id: r.rows[0].id });
     }
 
@@ -49,9 +49,9 @@ exports.handler = async function (event) {
       const b = JSON.parse(event.body || '{}');
       await db(
         `UPDATE tp_clients SET firstname=$1, lastname=$2, email=$3, phone=$4, active=$5,
-         company_id=$6, broker_id=$7, account_coordinator=$8, groups=$9, notes=$10 WHERE id=$11`,
+         company_id=$6, broker_id=$7, account_coordinator=$8, groups=$9, notes=$10, irx_client_id=$11 WHERE id=$12`,
         [b.firstname, b.lastname, b.email||null, b.phone||null, b.active !== false && b.active !== 0,
-         parseInt(b.company_id)||null, parseInt(b.broker_id)||null, parseInt(b.account_coordinator)||null, b.groups||null, b.notes||null, id]);
+         parseInt(b.company_id)||null, parseInt(b.broker_id)||null, parseInt(b.account_coordinator)||null, b.groups||null, b.notes||null, b.irx_client_id||null, id]);
       return ok({ id });
     }
 

@@ -26,6 +26,7 @@
           Contacts <span id="tab-contacts" class="badge badge-blue ml-1">0</span></button>
         <button class="tab-btn" data-tab="contracts" onclick="showTab('contracts')">
           Contracts <span id="tab-contracts" class="badge badge-blue ml-1">0</span></button>
+        <button class="tab-btn" data-tab="eligibility" onclick="showTab('eligibility')">Eligibility</button>
       </div>
 
       <!-- Demographics panel -->
@@ -45,6 +46,9 @@
               <div class="form-group mb-0"><label class="form-label">Groups</label><input class="form-control" id="f-groups" placeholder="e.g. 340B, VIP"></div>
               <div class="form-group mb-0"><label class="form-label">Active</label>
                 <select class="form-control" id="f-active"><option value="1">Yes</option><option value="0">No</option></select></div>
+              <div class="form-group mb-0"><label class="form-label">iRx Client ID (CARRIER)</label>
+                <input class="form-control" id="f-irx_client_id" placeholder="Matches eligibility CARRIER"></div>
+              <div class="form-group mb-0"></div>
               <div class="form-group mb-0 md:col-span-2"><label class="form-label">Notes</label><textarea class="form-control" id="f-notes" rows="3"></textarea></div>
             </div>
             <div class="flex items-center gap-3 mt-4">
@@ -78,6 +82,28 @@
           <button class="btn btn-primary btn-sm ml-auto" onclick="openContract()"><i class="fa-solid fa-plus"></i> Add Contract</button>
         </div>
         <div id="contracts-list"></div>
+      </div>
+
+      <!-- Eligibility panel (read-only, from irx.dbo.eligibility by CARRIER) -->
+      <div class="tab-panel" data-panel="eligibility" style="display:none">
+        <div class="search-bar">
+          <input type="text" id="elig-search" class="form-control" placeholder="Search member ID or name…" oninput="debounceElig()">
+          <span class="text-sm text-slate-500" id="elig-meta"></span>
+        </div>
+        <div class="card">
+          <div class="card-body">
+            <div id="elig-empty" class="text-center py-10 text-slate-400" style="display:none"></div>
+            <div id="elig-table-wrap" style="overflow-x:auto">
+              <table class="data-table">
+                <thead><tr>
+                  <th>Member ID</th><th>Name</th><th>DOB</th><th>Sex</th><th>Rel</th><th>Type</th>
+                  <th>Group</th><th>Effective</th><th>Term</th><th>City</th><th>State</th>
+                </tr></thead>
+                <tbody id="elig-body"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
       </div>
     </main>
   </div>
@@ -169,18 +195,20 @@
   const params = new URLSearchParams(location.search);
   let clientId = parseInt(params.get('id'), 10) || null;
   let contacts = [], contracts = [];
+  let clientIrxId = null, eligLoaded = false, eligDebounce;
 
   const CONTRACT_COLORS = { Active: 'green', Pending: 'yellow', Expired: 'gray', Cancelled: 'red' };
 
   function showTab(name) {
     document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === name));
     document.querySelectorAll('.tab-panel').forEach(p => p.style.display = p.dataset.panel === name ? '' : 'none');
+    if (name === 'eligibility' && !eligLoaded) loadEligibility();
   }
 
-  // Contacts/Contracts need a saved client. Disable those tabs until one exists.
+  // Sub-resource tabs need a saved client. Disable them until one exists.
   function gateTabs() {
     const enabled = !!clientId;
-    document.querySelectorAll('.tab-btn[data-tab="contacts"], .tab-btn[data-tab="contracts"]').forEach(b => {
+    document.querySelectorAll('.tab-btn[data-tab="contacts"], .tab-btn[data-tab="contracts"], .tab-btn[data-tab="eligibility"]').forEach(b => {
       b.style.opacity = enabled ? '' : '0.4';
       b.style.pointerEvents = enabled ? '' : 'none';
       b.title = enabled ? '' : 'Save the client first';
@@ -218,6 +246,9 @@
     document.getElementById('f-groups').value = c.groups || '';
     document.getElementById('f-notes').value = c.notes || '';
     document.getElementById('f-active').value = c.active ? '1' : '0';
+    document.getElementById('f-irx_client_id').value = c.irx_client_id || '';
+    clientIrxId = c.irx_client_id || null;
+    eligLoaded = false;  // re-evaluate eligibility after (re)load
     document.getElementById('client-name').textContent = `${c.firstname || ''} ${c.lastname || ''}`.trim() || `Client #${c.id}`;
     document.getElementById('delete-btn').style.display = '';
     gateTabs();
@@ -235,6 +266,7 @@
       groups: document.getElementById('f-groups').value.trim(),
       notes: document.getElementById('f-notes').value.trim(),
       active: document.getElementById('f-active').value === '1',
+      irx_client_id: document.getElementById('f-irx_client_id').value.trim(),
     };
   }
 
@@ -269,6 +301,47 @@
     contracts = data.contracts || [];
     renderContacts();
     renderContracts();
+  }
+
+  /* ── Eligibility (read-only from irx.dbo.eligibility, matched on CARRIER) ── */
+  function debounceElig() { clearTimeout(eligDebounce); eligDebounce = setTimeout(loadEligibility, 350); }
+
+  async function loadEligibility() {
+    const empty = document.getElementById('elig-empty');
+    const wrap = document.getElementById('elig-table-wrap');
+    const meta = document.getElementById('elig-meta');
+    if (!clientIrxId) {
+      eligLoaded = true;
+      wrap.style.display = 'none'; meta.textContent = '';
+      empty.style.display = ''; empty.textContent = 'Set the iRx Client ID (CARRIER) on the Demographics tab to view eligibility.';
+      return;
+    }
+    const search = document.getElementById('elig-search').value;
+    const url = `/client-detail?resource=eligibility&carrier=${encodeURIComponent(clientIrxId)}${
+      search ? '&search=' + encodeURIComponent(search) : ''}`;
+    const rows = await apiGet(url) || [];
+    eligLoaded = true;
+    if (!rows.length) {
+      wrap.style.display = 'none';
+      empty.style.display = ''; empty.textContent = search ? 'No matching members.' : 'No eligibility records for this CARRIER.';
+      meta.textContent = '';
+      return;
+    }
+    empty.style.display = 'none'; wrap.style.display = '';
+    meta.textContent = `${rows.length}${rows.length === 1000 ? '+ (showing first 1000)' : ''} member${rows.length === 1 ? '' : 's'}`;
+    document.getElementById('elig-body').innerHTML = rows.map(r => `<tr>
+      <td class="font-mono text-xs">${esc(r.MEMBER_ID) || '—'}</td>
+      <td class="font-medium">${esc(r.LAST_NAME || '')}, ${esc(r.FIRST_NAME || '')}</td>
+      <td class="text-xs">${esc(r.DATE_OF_BIRTH) || '—'}</td>
+      <td>${esc(r.SEX) || '—'}</td>
+      <td>${esc(r.RELATIONSHIP_CODE) || '—'}</td>
+      <td>${esc(r.MEMBER_TYPE) || '—'}</td>
+      <td class="text-xs">${esc(r.GroupName || r.GRP) || '—'}</td>
+      <td class="text-xs">${esc(r.MEMBER_FROM_DATE) || '—'}</td>
+      <td class="text-xs">${esc(r.MEMBER_THRU_DATE) || '—'}</td>
+      <td>${esc(r.CITY) || '—'}</td>
+      <td>${esc(r.STATE) || '—'}</td>
+    </tr>`).join('');
   }
 
   function renderContacts() {

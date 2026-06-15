@@ -17,10 +17,26 @@ exports.handler = async function (event) {
   const user = verifyToken(event);
   if (!user) return unauthorized();
 
-  const { client_id, contract_id, id, resource } = event.queryStringParameters || {};
+  const { client_id, contract_id, id, resource, carrier, search } = event.queryStringParameters || {};
 
   try {
     if (event.httpMethod === 'GET') {
+      if (resource === 'eligibility') {
+        // Read-only eligibility roster from irx.dbo.eligibility, matched on CARRIER
+        // (the client's irx_client_id). GROUP is a reserved word -> bracketed.
+        if (!carrier) return badRequest('carrier is required');
+        const r = await mssql(
+          `SELECT TOP 1000 MEMBER_ID, LAST_NAME, FIRST_NAME, DATE_OF_BIRTH, SEX,
+                  RELATIONSHIP_CODE, MEMBER_TYPE, CARRIER, ACCOUNT, [GROUP] AS GRP, GroupName,
+                  MEMBER_FROM_DATE, MEMBER_THRU_DATE, CITY, STATE, ZIP, PHONE, EMail_Address
+           FROM dbo.eligibility
+           WHERE CARRIER = @carrier
+             AND (@search IS NULL OR LAST_NAME LIKE @search OR FIRST_NAME LIKE @search OR MEMBER_ID LIKE @search)
+           ORDER BY LAST_NAME, FIRST_NAME`,
+          { carrier, search: search ? `%${search}%` : null });
+        return ok(r.recordset);
+      }
+
       const cid = parseInt(client_id, 10);
       if (!cid) return badRequest('client_id is required');
       const contacts = await mssql(
