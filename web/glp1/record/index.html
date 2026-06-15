@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>GLP1 — Member Record — True Path CRM</title>
+  <title>Member Record — True Path CRM</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
   <link rel="stylesheet" href="/assets/css/app.css">
@@ -25,6 +25,7 @@
         <button class="tab-btn" data-tab="contact" onclick="showTab('contact')">
           Contact Tracking <span id="tab-attempts" class="badge badge-blue ml-1">0</span></button>
         <button class="tab-btn" data-tab="intake" onclick="showTab('intake')">Intake Status</button>
+        <button class="tab-btn" data-tab="questionnaire" onclick="showTab('questionnaire')">Intake Questionnaire</button>
       </div>
 
       <!-- Demographics panel -->
@@ -87,6 +88,19 @@
           </div>
         </div>
       </div>
+
+      <!-- Intake Questionnaire panel -->
+      <div class="tab-panel" data-panel="questionnaire" style="display:none">
+        <div id="q-dq-banner" class="flex items-center gap-2 bg-red-50 border border-red-300 text-red-700 rounded-md px-4 py-3 mb-4 text-sm" style="display:none">
+          <i class="fa-solid fa-triangle-exclamation"></i>
+          <span><strong>Possible disqualification.</strong> <span id="q-dq-reasons"></span></span>
+        </div>
+        <div id="q-form"></div>
+        <div class="flex items-center gap-3 mt-2">
+          <button class="btn btn-primary" onclick="saveQuestionnaire()"><i class="fa-solid fa-floppy-disk"></i> Save Questionnaire</button>
+          <span class="text-xs text-slate-400" id="q-updated"></span>
+        </div>
+      </div>
     </main>
   </div>
 </div>
@@ -132,7 +146,7 @@
 
   const params = new URLSearchParams(location.search);
   const indx = params.get('indx');
-  let record = null, memberKey = null, contacts = [], intake = null;
+  let record = null, memberKey = null, contacts = [], intake = null, qData = null;
 
   function opt(v, sel) { return `<option ${v === sel ? 'selected' : ''}>${esc(v)}</option>`; }
   function dInput(d) { return d ? String(d).slice(0, 10) : ''; }
@@ -168,8 +182,10 @@
     const data = await apiGet(`/glp1-tracking?member=${encodeURIComponent(memberKey)}`) || {};
     contacts = data.contacts || [];
     intake = data.intake;
+    qData = data.questionnaire;
     renderIntake();
     renderContacts();
+    renderQuestionnaire();
   }
 
   /* ── Intake ── */
@@ -274,6 +290,192 @@
   }
 
   document.getElementById('contact-modal').addEventListener('click', e => { if (e.target === e.currentTarget) closeModal('contact-modal'); });
+
+  /* ── Intake Questionnaire ──
+     Schema-driven so the question set can grow without reworking the markup.
+     Answers are serialised to a JSON object and stored per member. Fields
+     flagged `dq` contribute to the disqualification banner. */
+  const Q_MEDS = ['Semaglutide', 'Tirzepatide', 'Liraglutide', 'Other'];
+  const YESNO = ['Yes', 'No'];
+  const SUICIDAL = ['Never', 'Rarely', 'Sometimes', 'Often'];
+  const ALCOHOL = [
+    'Less than 2 drinks per day and/or less than 5 drinks on one occasion',
+    '2 or more drinks per day and/or 5 or more drinks on one occasion',
+    'Almost Never or Never',
+  ];
+  const CURRENT_DX = ['High Cholesterol', 'Fatty Liver Disease', 'High Blood Pressure',
+    'Obstructive Sleep Apnea', 'PreDiabetes / Type 2 Diabetes / HbA1c above 5.7', 'None of the Above'];
+  const HISTORY_DX = ['Chronic pancreatitis or previous episode of pancreatitis due to GLP-1',
+    'History of Type 1 Diabetes', 'History of Severe GI Disease (e.g. Crohn’s or Ulcerative Colitis)',
+    'History of Diabetic Retinopathy', 'History of Medullary Thyroid Cancer',
+    'Recent Bariatric Surgery or other GI surgery (within the last 6 months)',
+    'History of MEN2 (multiple endocrine neoplasia syndrome type 2)',
+    'History of Gallbladder Disease (not including gallbladder removal / cholecystectomy)',
+    'Liver Disease / Cirrhosis', 'Leber Hereditary Optic Neuropathy (LHON)', 'None Of The Above'];
+  const KIDNEY_DX = ['History of Kidney Failure', 'History of Chronic Renal Failure',
+    'Seen a Kidney Specialist in The Past 12 Months', 'History of Solitary Kidney or Kidney Transplant',
+    'None Of The Above'];
+  const FAMILY_DX = HISTORY_DX.slice(0, -1).concat(KIDNEY_DX.slice(0, -1)).concat(['None Of The Above']);
+
+  const Q_SCHEMA = [
+    { title: 'Personal & Medical Information', fields: [
+      { id: 'intake_date', label: 'Intake Date', type: 'date', w: 2 },
+      { id: 'followup_date', label: 'Follow-up Date', type: 'date', w: 2 },
+      { id: 'age', label: 'Age', type: 'number', w: 1, hint: 'Under 18 is disqualified', dq: 'age' },
+      { id: 'height_feet', label: 'Height (Feet)', type: 'number', w: 1, bmi: true },
+      { id: 'height_inches', label: 'Height (Inches)', type: 'number', w: 1, bmi: true },
+      { id: 'weight', label: 'Weight (lbs)', type: 'number', w: 1, bmi: true },
+      { id: 'bmi', label: 'BMI', type: 'number', w: 1, readonly: true, hint: 'If BMI is 23–35, Sync clearance required' },
+      { id: 'medication_selected', label: 'Medication Selected', type: 'select', options: Q_MEDS, w: 3 },
+      { id: 'terms_privacy', label: 'Accepted Terms of Use and Privacy Policy', type: 'checkbox', w: 2 },
+      { id: 'consent_text', label: 'Consents to Receive Text Messages', type: 'checkbox', w: 2 },
+      { id: 'over18_accurate', label: 'Over 18 and agrees to answer completely and accurately', type: 'checkbox', w: 4 },
+    ] },
+    { title: 'Pregnancy', fields: [
+      { id: 'pregnant', label: 'Currently pregnant or breastfeeding, or planning to be within the next 12 months', type: 'checkbox', w: 4, hint: 'Check if Yes — disqualifying', dq: 'check' },
+    ] },
+    { title: 'Current Diagnoses', subtitle: 'Have you been diagnosed with any of the following conditions?', fields: [
+      { id: 'diagnoses_current', type: 'checkgroup', options: CURRENT_DX, w: 4 },
+    ] },
+    { title: 'Medical History', subtitle: 'Have you at any time been diagnosed with any of the following conditions? (any selection is disqualifying)', fields: [
+      { id: 'history_dq', type: 'checkgroup', options: HISTORY_DX, w: 4, dq: 'group' },
+    ] },
+    { title: 'Kidney History', subtitle: 'Have you at any time been diagnosed with any of the following conditions? (any selection is disqualifying)', fields: [
+      { id: 'kidney_dq', type: 'checkgroup', options: KIDNEY_DX, w: 4, dq: 'group' },
+    ] },
+    { title: 'Family History', subtitle: 'Do you have a family history of any of the following conditions?', fields: [
+      { id: 'family_history', type: 'checkgroup', options: FAMILY_DX, w: 4 },
+    ] },
+    { title: 'Lifestyle & Screening', fields: [
+      { id: 'alcohol', label: 'On average, how often do you have a drink that contains alcohol?', type: 'radiogroup', options: ALCOHOL, w: 4 },
+      { id: 'suicidal', label: 'Experienced suicidal thoughts within the past 3 months?', type: 'select', options: SUICIDAL, w: 2 },
+      { id: 'bp_systolic', label: 'BP Systolic', type: 'number', w: 1 },
+      { id: 'bp_diastolic', label: 'BP Diastolic', type: 'number', w: 1 },
+      { id: 'ongoing_conditions', label: 'Diagnosed with any ongoing medical conditions, or undergone surgeries/hospitalization, within the last year?', type: 'select', options: YESNO, w: 4 },
+      { id: 'weightloss_rx', label: 'Currently taking prescription medication for weight loss? (if yes, request a copy of the prescription)', type: 'select', options: YESNO, w: 4 },
+      { id: 'glp1_allergy', label: 'Ever experienced an allergic reaction to semaglutide, tirzepatide, liraglutide, or any GLP-1 medication?', type: 'select', options: YESNO, w: 2 },
+      { id: 'glp1_allergy_reactions', label: 'List Reactions', type: 'textarea', w: 2 },
+      { id: 'bloodwork', label: 'Recently completed any blood work you would like to share with your medical provider?', type: 'select', options: YESNO, w: 4 },
+      { id: 'additional_meds', label: 'Currently taking any additional prescribed medications not related to weight loss? (if yes, upload or send image)', type: 'select', options: YESNO, w: 2 },
+      { id: 'additional_meds_list', label: 'List Medications', type: 'textarea', w: 2 },
+      { id: 'med_allergies', label: 'Medication allergies (include the type of reaction each causes)', type: 'textarea', w: 4 },
+    ] },
+  ];
+  const Q_FIELDS = Q_SCHEMA.flatMap(s => s.fields);
+  const SPAN = { 1: 'md:col-span-1', 2: 'md:col-span-2', 3: 'md:col-span-3', 4: 'md:col-span-4' };
+
+  function qControl(f) {
+    const id = 'q_' + f.id;
+    if (f.type === 'textarea') return `<textarea id="${id}" class="form-control" rows="3"></textarea>`;
+    if (f.type === 'select')
+      return `<select id="${id}" class="form-control"><option value="">— Select —</option>${
+        f.options.map(o => `<option value="${esc(o)}">${esc(o)}</option>`).join('')}</select>`;
+    if (f.type === 'checkbox')
+      return `<label class="flex items-center gap-2 text-sm py-1"><input type="checkbox" id="${id}" onchange="refreshDQ()"> ${esc(f.label)}</label>`;
+    if (f.type === 'checkgroup')
+      return `<div class="grid grid-cols-1 md:grid-cols-2 gap-1">${f.options.map(o =>
+        `<label class="flex items-center gap-2 text-sm"><input type="checkbox" class="${id}" value="${esc(o)}" onchange="refreshDQ()"> ${esc(o)}</label>`).join('')}</div>`;
+    if (f.type === 'radiogroup')
+      return `<div class="flex flex-col gap-1">${f.options.map(o =>
+        `<label class="flex items-center gap-2 text-sm"><input type="radio" name="${id}" value="${esc(o)}"> ${esc(o)}</label>`).join('')}</div>`;
+    const t = f.type === 'date' ? 'date' : f.type === 'number' ? 'number' : 'text';
+    const extra = f.readonly ? ' readonly' : f.bmi ? ' oninput="recomputeBMI()"' : '';
+    return `<input type="${t}" id="${id}" class="form-control"${extra}>`;
+  }
+
+  function qFieldHTML(f) {
+    const span = SPAN[f.w] || SPAN[4];
+    if (f.type === 'checkbox') return `<div class="${span} col-span-full md:col-auto">${qControl(f)}${
+      f.hint ? `<p class="text-xs text-amber-600 mt-0.5">${esc(f.hint)}</p>` : ''}</div>`;
+    return `<div class="${span} col-span-full md:col-auto form-group mb-0">
+      ${f.label ? `<label class="form-label">${esc(f.label)}</label>` : ''}
+      ${qControl(f)}
+      ${f.hint ? `<p class="text-xs text-amber-600 mt-0.5">${esc(f.hint)}</p>` : ''}</div>`;
+  }
+
+  function renderQuestionnaire() {
+    document.getElementById('q-form').innerHTML = Q_SCHEMA.map(sec => `
+      <div class="card mb-4">
+        <div class="card-header"><span class="card-title">${esc(sec.title)}</span></div>
+        <div class="card-body">
+          ${sec.subtitle ? `<p class="text-sm text-slate-500 mb-3">${esc(sec.subtitle)}</p>` : ''}
+          <div class="grid grid-cols-1 md:grid-cols-4 gap-4 items-start">
+            ${sec.fields.map(qFieldHTML).join('')}
+          </div>
+        </div>
+      </div>`).join('');
+
+    const a = (qData && qData.answers) || {};
+    if (!a.intake_date) a.intake_date = (record && dInput(record.assigned_at)) || new Date().toISOString().slice(0, 10);
+    Q_FIELDS.forEach(f => {
+      const id = 'q_' + f.id, v = a[f.id];
+      if (f.type === 'checkbox') { const el = document.getElementById(id); if (el) el.checked = !!v; }
+      else if (f.type === 'checkgroup') {
+        const set = new Set(Array.isArray(v) ? v : []);
+        document.querySelectorAll('.' + id).forEach(b => b.checked = set.has(b.value));
+      } else if (f.type === 'radiogroup') {
+        document.querySelectorAll(`input[name="${id}"]`).forEach(b => b.checked = b.value === v);
+      } else { const el = document.getElementById(id); if (el && v != null) el.value = v; }
+    });
+    recomputeBMI();
+    refreshDQ();
+    document.getElementById('q-updated').textContent =
+      qData && qData.updated_at ? 'Last saved ' + fmtDate(qData.updated_at) : 'Not started';
+  }
+
+  function recomputeBMI() {
+    const ft = parseFloat(document.getElementById('q_height_feet').value) || 0;
+    const inch = parseFloat(document.getElementById('q_height_inches').value) || 0;
+    const lbs = parseFloat(document.getElementById('q_weight').value) || 0;
+    const totalIn = ft * 12 + inch;
+    const bmi = totalIn > 0 && lbs > 0 ? (703 * lbs / (totalIn * totalIn)) : 0;
+    document.getElementById('q_bmi').value = bmi ? bmi.toFixed(1) : '';
+  }
+
+  function collectQuestionnaire() {
+    const a = {};
+    Q_FIELDS.forEach(f => {
+      const id = 'q_' + f.id;
+      if (f.type === 'checkbox') a[f.id] = document.getElementById(id).checked;
+      else if (f.type === 'checkgroup')
+        a[f.id] = Array.from(document.querySelectorAll('.' + id + ':checked')).map(b => b.value);
+      else if (f.type === 'radiogroup') {
+        const sel = document.querySelector(`input[name="${id}"]:checked`);
+        a[f.id] = sel ? sel.value : '';
+      } else a[f.id] = document.getElementById(id).value;
+    });
+    return a;
+  }
+
+  function computeDQ(a) {
+    const reasons = [];
+    Q_FIELDS.forEach(f => {
+      if (f.dq === 'age' && a.age !== '' && Number(a.age) < 18) reasons.push('Age under 18');
+      if (f.dq === 'check' && a[f.id] === true) reasons.push(f.label);
+      if (f.dq === 'group' && Array.isArray(a[f.id]) && a[f.id].some(v => !/^none/i.test(v)))
+        reasons.push(...a[f.id].filter(v => !/^none/i.test(v)));
+    });
+    return reasons;
+  }
+
+  function refreshDQ() {
+    const reasons = computeDQ(collectQuestionnaire());
+    const banner = document.getElementById('q-dq-banner');
+    banner.style.display = reasons.length ? 'flex' : 'none';
+    document.getElementById('q-dq-reasons').textContent = reasons.join('; ');
+  }
+
+  async function saveQuestionnaire() {
+    const answers = collectQuestionnaire();
+    const disqualified = computeDQ(answers).length > 0;
+    const res = await apiPatch(`/glp1-tracking?member=${encodeURIComponent(memberKey)}&action=questionnaire`,
+      { answers, disqualified });
+    if (res && res.ok) {
+      qData = { answers, disqualified, updated_at: new Date().toISOString() };
+      showToast('Questionnaire saved', 'success');
+      document.getElementById('q-updated').textContent = 'Last saved ' + fmtDate(qData.updated_at);
+    } else showToast('Save failed', 'error');
+  }
 
   showTab('demographics');
   (async () => { if (await loadRecord()) await loadTracking(); })();

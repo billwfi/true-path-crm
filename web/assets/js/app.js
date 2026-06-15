@@ -151,7 +151,7 @@ function initNav(activeKey) {
     dashboard: 'Dashboard', clients: 'Clients', leads: 'Leads', tasks: 'Tasks',
     reminders: 'Reminders', batch: 'Batch Orders', 'temp-batch': 'Temp Batch',
     'glp1-ready': 'GLP1 — Ready to Assign', 'glp1-assigned': 'GLP1 — Assigned',
-    'glp1-report': 'GLP1 — Ready to Assign Report', 'glp1-record': 'GLP1 — Member Record',
+    'glp1-report': 'GLP1 — Ready to Assign Report', 'glp1-record': 'Member Record',
     'cc-in-progress': 'Call Center — In Progress', 'cc-other': 'Call Center — Other Statuses',
     companies: 'Companies', brokers: 'Brokers', 'user-management': 'User Management',
   };

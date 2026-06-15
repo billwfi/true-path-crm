@@ -30,10 +30,25 @@ exports.handler = async function (event) {
         `SELECT member_key, status, status_date, sub_status, updated_by, updated_at
          FROM dbo.GLP1_Intake WHERE category = @category AND member_key = @member`,
         { category: cat, member });
+      // Tolerate the questionnaire table not existing yet (pre-migration) so the
+      // contact log and intake status still load.
+      let q = null;
+      try {
+        const quest = await mssql(
+          `SELECT answers, disqualified, updated_by, updated_at
+           FROM dbo.GLP1_Questionnaire WHERE category = @category AND member_key = @member`,
+          { category: cat, member });
+        q = quest.recordset[0] || null;
+      } catch (e) { q = null; }
       return ok({
         contacts: contacts.recordset,
         attempts: contacts.recordset.length,
         intake: intake.recordset[0] || null,
+        questionnaire: q ? {
+          answers: safeParse(q.answers),
+          disqualified: !!q.disqualified,
+          updated_at: q.updated_at,
+        } : null,
       });
     }
 
@@ -60,6 +75,26 @@ exports.handler = async function (event) {
     }
 
     if (event.httpMethod === 'PATCH') {
+      if (action === 'questionnaire') {
+        // Upsert the member's intake questionnaire (answers stored as JSON).
+        if (!member) return badRequest('member is required');
+        const b = JSON.parse(event.body || '{}');
+        const answers = JSON.stringify(b.answers || {});
+        const dq = b.disqualified ? 1 : 0;
+        const r = await mssql(
+          `MERGE dbo.GLP1_Questionnaire AS t
+           USING (SELECT @member AS member_key, @category AS category) AS s
+           ON t.member_key = s.member_key AND t.category = s.category
+           WHEN MATCHED THEN UPDATE SET answers=@answers, disqualified=@dq,
+             updated_by=@updated_by, updated_at=GETDATE()
+           WHEN NOT MATCHED THEN INSERT (member_key, category, answers, disqualified, updated_by)
+             VALUES (@member, @category, @answers, @dq, @updated_by)
+           OUTPUT INSERTED.disqualified, INSERTED.updated_at;`,
+          { member, category: cat, answers, dq, updated_by: user.id || null });
+        return ok({ ok: true, disqualified: !!(r.recordset[0] || {}).disqualified,
+                    updated_at: (r.recordset[0] || {}).updated_at });
+      }
+
       if (action === 'intake') {
         // Upsert the member's intake record.
         if (!member) return badRequest('member is required');
@@ -122,3 +157,8 @@ exports.handler = async function (event) {
     return serverError(err);
   }
 };
+
+function safeParse(json) {
+  if (!json) return {};
+  try { return JSON.parse(json); } catch { return {}; }
+}
