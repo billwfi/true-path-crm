@@ -110,6 +110,10 @@
   <!-- Confirmation -->
   <div id="confirmed" class="hidden">
     <div class="card"><div class="card-body" style="padding:48px 24px; text-align:center;">
+      <div id="confirmed-brand" class="hidden flex items-center justify-center gap-3 mb-5 pb-5" style="border-bottom:1px solid #f1f5f9;">
+        <img id="confirmed-logo" alt="Client logo" style="max-height:52px; max-width:180px;">
+        <span id="confirmed-name" class="text-base font-semibold text-slate-700"></span>
+      </div>
       <div style="font-size:48px; color:#22c55e;"><i class="fa-solid fa-circle-check"></i></div>
       <h2 class="text-xl font-bold text-slate-800 mt-3">You're booked!</h2>
       <p class="text-slate-500 mt-1" id="c-detail"></p>
@@ -126,7 +130,7 @@
 <script>
   const API = '/.netlify/functions';
   const slug = new URLSearchParams(location.search).get('s');
-  let selected = null, schedName = '';
+  let selected = null, schedName = '', clientLogo = '', clientName = '';
   let slotsByDate = {};                 // 'YYYY-MM-DD' -> [{start, remaining}]
   let calYear, calMonth, selectedDate = null;
   const DOW_LETTERS = ['S','M','T','W','T','F','S'];
@@ -153,10 +157,12 @@
     const s = data.scheduler;
     schedName = s.name;
     document.getElementById('s-name').textContent = s.name;
-    if (s.logo_data) {
-      document.getElementById('client-logo').src = s.logo_data;
-      document.getElementById('client-logo').alt = s.client_name || 'Client logo';
-      document.getElementById('client-name').textContent = s.client_name || '';
+    clientLogo = s.logo_data || '';
+    clientName = s.client_name || '';
+    if (clientLogo) {
+      document.getElementById('client-logo').src = clientLogo;
+      document.getElementById('client-logo').alt = clientName || 'Client logo';
+      document.getElementById('client-name').textContent = clientName;
       show('client-brand');
     }
     // Client-specific schedule: pre-fill the registrant's Company Name.
@@ -278,6 +284,13 @@
     });
     if (res.ok) {
       document.getElementById('c-detail').textContent = `${schedName} — ${fmtFull(selected)}`;
+      if (clientLogo || clientName) {
+        const logoEl = document.getElementById('confirmed-logo');
+        if (clientLogo) { logoEl.src = clientLogo; logoEl.alt = clientName || 'Client logo'; }
+        else { logoEl.classList.add('hidden'); }
+        document.getElementById('confirmed-name').textContent = clientName;
+        show('confirmed-brand');
+      }
       hide('content'); show('confirmed');
     } else {
       const e = await res.json().catch(() => ({}));
