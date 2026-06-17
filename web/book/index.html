@@ -159,6 +159,8 @@
       document.getElementById('client-name').textContent = s.client_name || '';
       show('client-brand');
     }
+    // Client-specific schedule: pre-fill the registrant's Company Name.
+    if (s.client_company) document.getElementById('b-company').value = s.client_company;
     const desc = document.getElementById('s-desc');
     if (s.description) desc.textContent = s.description; else desc.classList.add('hidden');
     const meta = [];

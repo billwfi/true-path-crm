@@ -291,12 +291,14 @@
   async function save() {
     const id = document.getElementById('f-id').value;
     const clientSel = document.getElementById('f-client');
+    const client = clientSel.value ? clients.find(c => String(c.id) === clientSel.value) : null;
     const body = {
       name: document.getElementById('f-name').value.trim(),
       description: document.getElementById('f-desc').value.trim(),
       location: document.getElementById('f-loc').value.trim(),
-      client_id: clientSel.value ? parseInt(clientSel.value, 10) : null,
-      client_name: clientSel.value ? clientSel.options[clientSel.selectedIndex].text : null,
+      client_id: client ? client.id : null,
+      client_name: client ? clientLabel(client) : null,
+      client_company: client ? (client.company || null) : null,
       start_date: document.getElementById('f-start').value,
       end_date: document.getElementById('f-end').value,
       day_start_time: document.getElementById('f-dstart').value,
