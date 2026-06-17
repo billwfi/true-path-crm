@@ -184,10 +184,19 @@
       clients.map(c => `<option value="${c.id}">${esc(clientLabel(c))}</option>`).join('');
   }
 
-  function fmtSlot(d) {
-    const dt = new Date(d);
-    if (isNaN(dt)) return d;
-    return `${dt.getMonth()+1}/${dt.getDate()}/${dt.getFullYear()} ${dt.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'})}`;
+  // The SQL driver returns DATETIME/DATE values tagged as UTC (…Z), but they are
+  // stored as wall-clock. Parse the string parts directly so the browser's local
+  // zone never shifts them (otherwise 9:00 AM renders as 4:00 AM, dates as -1 day).
+  function fmtSlot(s) {
+    const m = String(s || '').match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/);
+    if (!m) return s || '—';
+    const [, Y, Mo, D, hh, mi] = m, h = +hh;
+    const ap = h >= 12 ? 'PM' : 'AM', h12 = ((h + 11) % 12) + 1;
+    return `${+Mo}/${+D}/${Y} ${h12}:${mi} ${ap}`;
+  }
+  function fmtDateSafe(s) {
+    const m = String(s || '').match(/^(\d{4})-(\d{2})-(\d{2})/);
+    return m ? `${+m[2]}/${+m[3]}/${m[1]}` : '—';
   }
 
   async function load() {
@@ -198,7 +207,7 @@
     document.getElementById('tbl-body').innerHTML = rows.length
       ? rows.map(s => `<tr>
           <td class="font-medium">${esc(s.name)}${s.client_name ? `<div class="text-xs text-slate-400 font-normal"><i class="fa-regular fa-building mr-1"></i>${esc(s.client_name)}</div>` : ''}</td>
-          <td class="text-xs">${fmtDate(s.start_date)} – ${fmtDate(s.end_date)}</td>
+          <td class="text-xs">${fmtDateSafe(s.start_date)} – ${fmtDateSafe(s.end_date)}</td>
           <td class="text-xs">${esc(s.day_start_time)}–${esc(s.day_end_time)}</td>
           <td>${s.interval_minutes} min</td>
           <td>${s.capacity_per_slot}</td>
@@ -361,10 +370,10 @@
           <td class="font-medium">${fmtSlot(b.slot_start)}</td>
           <td>${esc(b.company_name) || '—'}</td>
           <td>${esc(b.name || (b.first_name + ' ' + b.last_name))}</td>
-          <td>${b.dob ? fmtDate(b.dob) : '—'}</td>
+          <td>${fmtDateSafe(b.dob)}</td>
           <td>${esc(b.phone) || '—'}</td>
           <td>${esc(b.email) || '—'}</td>
-          <td class="text-xs text-slate-400">${fmtDate(b.created_at)}</td>
+          <td class="text-xs text-slate-400">${fmtDateSafe(b.created_at)}</td>
         </tr>`).join('')
       : '<tr><td colspan="7" class="text-center py-8 text-slate-400">No bookings yet</td></tr>';
     openModal('bookingsModal');
