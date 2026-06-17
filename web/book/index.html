@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Book an Appointment</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+  <link rel="stylesheet" href="/assets/css/app.css">
+  <style>
+    .slot-btn { padding: 7px 10px; border-radius: 7px; border: 1px solid #e2e8f0; background:#fff;
+      font-size: 13px; cursor: pointer; transition: all .12s; }
+    .slot-btn:hover:not(:disabled) { border-color:#0ea5e9; color:#0284c7; }
+    .slot-btn.active { background:#0ea5e9; border-color:#0ea5e9; color:#fff; }
+    .slot-btn:disabled { opacity:.4; cursor:not-allowed; }
+    .day-block { margin-bottom: 18px; }
+    .day-label { font-size: 13px; font-weight: 700; color:#475569; margin-bottom: 8px; }
+    .slot-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px,1fr)); gap: 8px; }
+  </style>
+</head>
+<body class="bg-slate-100 text-slate-700">
+<div class="max-w-3xl mx-auto p-4 md:p-8">
+
+  <div class="brand mb-4" style="border:none; padding:0;">
+    <img src="/assets/img/truepath-logo.png" alt="True Path Sourcing" style="height:48px; width:auto;">
+  </div>
+
+  <div id="loading" class="card"><div class="card-body" style="padding:40px; text-align:center;" class="text-slate-400">Loading…</div></div>
+
+  <div id="content" class="hidden">
+    <div class="card mb-4">
+      <div class="card-body" style="padding:22px 24px;">
+        <h1 id="s-name" class="text-xl font-bold text-slate-800"></h1>
+        <p id="s-desc" class="text-sm text-slate-500 mt-1"></p>
+        <div id="s-meta" class="flex flex-wrap gap-x-6 gap-y-1 mt-3 text-sm text-slate-500"></div>
+      </div>
+    </div>
+
+    <div class="card mb-4">
+      <div class="card-header"><span class="card-title"><i class="fa-regular fa-clock text-sky-500 mr-2"></i>Choose a time</span></div>
+      <div class="card-body" style="padding:18px 20px;">
+        <div id="slots"></div>
+      </div>
+    </div>
+
+    <div class="card" id="form-card">
+      <div class="card-header"><span class="card-title"><i class="fa-regular fa-user text-sky-500 mr-2"></i>Your details</span></div>
+      <div class="card-body form-pad">
+        <div class="field-grid">
+          <div class="form-group full">
+            <label class="form-label">Selected time</label>
+            <input type="text" id="b-slot" class="form-control" readonly placeholder="Pick a time above" style="background:#f8fafc;">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Full name *</label>
+            <input type="text" id="b-name" class="form-control">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Email</label>
+            <input type="email" id="b-email" class="form-control">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Phone</label>
+            <input type="tel" id="b-phone" class="form-control">
+          </div>
+          <div class="form-group span2 full">
+            <label class="form-label">Notes</label>
+            <textarea id="b-notes" class="form-control" rows="2"></textarea>
+          </div>
+        </div>
+        <button class="btn btn-primary" onclick="submitBooking()" style="margin-top:6px;">
+          <i class="fa-solid fa-calendar-check"></i> Confirm Booking
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Confirmation -->
+  <div id="confirmed" class="hidden">
+    <div class="card"><div class="card-body" style="padding:48px 24px; text-align:center;">
+      <div style="font-size:48px; color:#22c55e;"><i class="fa-solid fa-circle-check"></i></div>
+      <h2 class="text-xl font-bold text-slate-800 mt-3">You're booked!</h2>
+      <p class="text-slate-500 mt-1" id="c-detail"></p>
+      <button class="btn btn-outline mt-5" onclick="location.reload()">Book another time</button>
+    </div></div>
+  </div>
+
+  <div id="notfound" class="hidden card"><div class="card-body" style="padding:48px 24px; text-align:center;">
+    <div style="font-size:40px; color:#94a3b8;"><i class="fa-regular fa-calendar-xmark"></i></div>
+    <p class="text-slate-500 mt-3">This booking page is not available.</p>
+  </div></div>
+</div>
+
+<script>
+  const API = '/.netlify/functions';
+  const slug = new URLSearchParams(location.search).get('s');
+  let selected = null, schedName = '';
+
+  function esc(s) { return (s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+  function show(id) { document.getElementById(id).classList.remove('hidden'); }
+  function hide(id) { document.getElementById(id).classList.add('hidden'); }
+
+  function fmtTime(d) { return new Date(d).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }); }
+  function fmtDay(d) { return new Date(d).toLocaleDateString('en-US', { weekday:'long', month:'long', day:'numeric' }); }
+  function fmtFull(d) { return `${fmtDay(d)} at ${fmtTime(d)}`; }
+
+  async function load() {
+    if (!slug) { hide('loading'); show('notfound'); return; }
+    let data;
+    try {
+      const res = await fetch(`${API}/marketing-schedulers?s=${encodeURIComponent(slug)}`);
+      if (!res.ok) throw new Error();
+      data = await res.json();
+    } catch { hide('loading'); show('notfound'); return; }
+
+    const s = data.scheduler;
+    schedName = s.name;
+    document.getElementById('s-name').textContent = s.name;
+    const desc = document.getElementById('s-desc');
+    if (s.description) desc.textContent = s.description; else desc.classList.add('hidden');
+    const meta = [];
+    if (s.location) meta.push(`<span><i class="fa-solid fa-location-dot mr-1 text-slate-400"></i>${esc(s.location)}</span>`);
+    meta.push(`<span><i class="fa-regular fa-clock mr-1 text-slate-400"></i>${s.interval_minutes} min appointments</span>`);
+    document.getElementById('s-meta').innerHTML = meta.join('');
+
+    renderSlots(data.slots);
+    hide('loading'); show('content');
+  }
+
+  function renderSlots(slots) {
+    const open = slots.filter(s => s.remaining > 0);
+    const box = document.getElementById('slots');
+    if (!open.length) {
+      box.innerHTML = '<p class="text-slate-400 text-sm py-4 text-center">No times are currently available.</p>';
+      document.getElementById('form-card').classList.add('hidden');
+      return;
+    }
+    const byDay = {};
+    open.forEach(s => {
+      const day = s.start.slice(0, 10);
+      (byDay[day] = byDay[day] || []).push(s);
+    });
+    box.innerHTML = Object.keys(byDay).sort().map(day => `
+      <div class="day-block">
+        <div class="day-label">${fmtDay(byDay[day][0].start)}</div>
+        <div class="slot-grid">
+          ${byDay[day].map(s => `<button class="slot-btn" data-slot="${s.start}" onclick="pick(this)">
+            ${fmtTime(s.start)}<span class="block text-[10px] opacity-70">${s.remaining} left</span>
+          </button>`).join('')}
+        </div>
+      </div>`).join('');
+  }
+
+  function pick(btn) {
+    document.querySelectorAll('.slot-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    selected = btn.dataset.slot;
+    document.getElementById('b-slot').value = fmtFull(selected);
+    document.getElementById('b-name').focus();
+  }
+
+  async function submitBooking() {
+    if (!selected) return alert('Please pick a time slot.');
+    const name = document.getElementById('b-name').value.trim();
+    if (!name) return alert('Please enter your name.');
+    const body = {
+      slot_start: selected, name,
+      email: document.getElementById('b-email').value.trim(),
+      phone: document.getElementById('b-phone').value.trim(),
+      notes: document.getElementById('b-notes').value.trim(),
+    };
+    const res = await fetch(`${API}/marketing-schedulers?s=${encodeURIComponent(slug)}`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+    });
+    if (res.ok) {
+      document.getElementById('c-detail').textContent = `${schedName} — ${fmtFull(selected)}`;
+      hide('content'); show('confirmed');
+    } else {
+      const e = await res.json().catch(() => ({}));
+      alert(e.error || 'Sorry, we could not complete that booking. Please try another time.');
+      load();
+    }
+  }
+
+  load();
+</script>
+</body>
+</html>

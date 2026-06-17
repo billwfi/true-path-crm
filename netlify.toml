@@ -63,6 +63,16 @@
   status = 301
 
 [[redirects]]
+  from = "/marketing/schedulers"
+  to = "/marketing/schedulers/"
+  status = 301
+
+[[redirects]]
+  from = "/book"
+  to = "/book/"
+  status = 301
+
+[[redirects]]
   from = "/companies"
   to = "/companies/"
   status = 301

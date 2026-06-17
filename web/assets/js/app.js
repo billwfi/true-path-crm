@@ -85,6 +85,8 @@ const NAV_ITEMS = [
   { href: '/leads/',     icon: 'fa-user-plus',         label: 'Leads',       key: 'leads' },
   { href: '/tasks/',     icon: 'fa-list-check',        label: 'Tasks',       key: 'tasks' },
   { href: '/reminders/',icon: 'fa-bell',              label: 'Reminders',   key: 'reminders' },
+  { section: 'Marketing' },
+  { href: '/marketing/schedulers/', icon: 'fa-calendar-check', label: 'Schedulers', key: 'marketing-schedulers' },
   { section: 'Pharmacy' },
   { href: '/batch/',     icon: 'fa-pills',             label: 'Batch Orders',key: 'batch' },
   { href: '/temp-batch/',icon: 'fa-inbox',             label: 'Temp Batch',  key: 'temp-batch' },
@@ -149,7 +151,8 @@ function initNav(activeKey) {
   // Build topbar
   const pageTitles = {
     dashboard: 'Dashboard', clients: 'Clients', 'client-record': 'Client Record', leads: 'Leads', tasks: 'Tasks',
-    reminders: 'Reminders', batch: 'Batch Orders', 'temp-batch': 'Temp Batch',
+    reminders: 'Reminders', 'marketing-schedulers': 'Marketing — Schedulers',
+    batch: 'Batch Orders', 'temp-batch': 'Temp Batch',
     'glp1-ready': 'GLP1 — Ready to Assign', 'glp1-assigned': 'GLP1 — Assigned',
     'glp1-report': 'GLP1 — Ready to Assign Report', 'glp1-record': 'Member Record',
     'cc-in-progress': 'Call Center — In Progress', 'cc-other': 'Call Center — Other Statuses',

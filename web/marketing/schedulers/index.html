@@ -1,0 +1,304 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Schedulers — True Path CRM</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+  <link rel="stylesheet" href="/assets/css/app.css">
+</head>
+<body class="bg-slate-100 text-slate-700">
+<div id="app" class="flex h-screen overflow-hidden">
+  <div id="nav-placeholder"></div>
+  <div class="flex-1 flex flex-col overflow-hidden">
+    <div id="topbar"></div>
+    <main class="flex-1 overflow-y-auto p-6">
+
+      <div class="search-bar">
+        <input type="text" id="search" class="form-control" placeholder="Search schedulers…" oninput="debounceLoad()">
+        <button class="btn btn-primary" onclick="openEdit()"><i class="fa-solid fa-plus"></i> New Scheduler</button>
+      </div>
+
+      <div class="card">
+        <div class="card-body">
+          <table class="data-table">
+            <thead><tr>
+              <th>Name</th><th>Date Range</th><th>Window</th><th>Interval</th>
+              <th>Per Slot</th><th>Bookings</th><th>Status</th><th></th>
+            </tr></thead>
+            <tbody id="tbl-body"><tr><td colspan="8" class="text-center py-10 text-slate-400">Loading…</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+    </main>
+  </div>
+</div>
+
+<!-- ── Create / Edit modal ── -->
+<div id="editModal" class="modal-backdrop hidden">
+  <div class="modal">
+    <div class="modal-header">
+      <span class="modal-title" id="editTitle">New Scheduler</span>
+      <button class="modal-close" onclick="closeModal('editModal')">&times;</button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="f-id">
+      <div class="form-group">
+        <label class="form-label">Name *</label>
+        <input type="text" id="f-name" class="form-control" placeholder="e.g. Free Wellness Consultation">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Description</label>
+        <textarea id="f-desc" class="form-control" rows="2" placeholder="Shown on the public booking page"></textarea>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Location</label>
+        <input type="text" id="f-loc" class="form-control" placeholder="e.g. Main St. Pharmacy, or a phone number / link">
+      </div>
+      <div class="form-grid">
+        <div class="form-group">
+          <label class="form-label">Start Date *</label>
+          <input type="date" id="f-start" class="form-control">
+        </div>
+        <div class="form-group">
+          <label class="form-label">End Date *</label>
+          <input type="date" id="f-end" class="form-control">
+        </div>
+      </div>
+      <div class="form-grid">
+        <div class="form-group">
+          <label class="form-label">Daily Start Time</label>
+          <input type="time" id="f-dstart" class="form-control" value="09:00">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Daily End Time</label>
+          <input type="time" id="f-dend" class="form-control" value="17:00">
+        </div>
+      </div>
+      <div class="form-grid">
+        <div class="form-group">
+          <label class="form-label">Time Interval</label>
+          <select id="f-interval" class="form-control">
+            <option value="15">15 minutes</option>
+            <option value="30" selected>30 minutes</option>
+            <option value="45">45 minutes</option>
+            <option value="60">60 minutes</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Appointments per Interval</label>
+          <input type="number" id="f-capacity" class="form-control" min="1" value="10">
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Active Days</label>
+        <div id="f-dows" class="flex flex-wrap gap-2"></div>
+      </div>
+      <div class="form-group">
+        <label class="form-label inline-flex items-center gap-2">
+          <input type="checkbox" id="f-active" checked> Active (accepting bookings)
+        </label>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeModal('editModal')">Cancel</button>
+      <button class="btn btn-primary" onclick="save()"><i class="fa-solid fa-floppy-disk"></i> Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Share modal (URL + QR) ── -->
+<div id="shareModal" class="modal-backdrop hidden">
+  <div class="modal">
+    <div class="modal-header">
+      <span class="modal-title">Share Booking Page</span>
+      <button class="modal-close" onclick="closeModal('shareModal')">&times;</button>
+    </div>
+    <div class="modal-body text-center">
+      <p class="text-sm text-slate-500 mb-4" id="share-name"></p>
+      <div class="form-group flex gap-2">
+        <input type="text" id="share-url" class="form-control" readonly onclick="this.select()">
+        <button class="btn btn-outline" onclick="copyUrl()"><i class="fa-solid fa-copy"></i> Copy</button>
+      </div>
+      <div id="qrcode" class="flex justify-center my-4"></div>
+      <div class="flex justify-center gap-2">
+        <a id="share-open" class="btn btn-outline" target="_blank"><i class="fa-solid fa-up-right-from-square"></i> Open Page</a>
+        <button class="btn btn-primary" onclick="downloadQr()"><i class="fa-solid fa-download"></i> Download QR</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── Bookings modal ── -->
+<div id="bookingsModal" class="modal-backdrop hidden">
+  <div class="modal modal-lg">
+    <div class="modal-header">
+      <span class="modal-title" id="bk-title">Bookings</span>
+      <button class="modal-close" onclick="closeModal('bookingsModal')">&times;</button>
+    </div>
+    <div class="modal-body">
+      <table class="data-table">
+        <thead><tr><th>When</th><th>Name</th><th>Email</th><th>Phone</th><th>Notes</th><th>Booked</th></tr></thead>
+        <tbody id="bk-body"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<script src="/assets/js/app.js"></script>
+<script>
+  initNav('marketing-schedulers');
+  const DOW = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+  let debounce, all = [];
+
+  function debounceLoad() { clearTimeout(debounce); debounce = setTimeout(load, 300); }
+
+  function fmtSlot(d) {
+    const dt = new Date(d);
+    if (isNaN(dt)) return d;
+    return `${dt.getMonth()+1}/${dt.getDate()}/${dt.getFullYear()} ${dt.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'})}`;
+  }
+
+  async function load() {
+    const data = await apiGet('/marketing-schedulers');
+    all = data || [];
+    const q = document.getElementById('search').value.toLowerCase();
+    const rows = all.filter(s => !q || (s.name || '').toLowerCase().includes(q));
+    document.getElementById('tbl-body').innerHTML = rows.length
+      ? rows.map(s => `<tr>
+          <td class="font-medium">${esc(s.name)}</td>
+          <td class="text-xs">${fmtDate(s.start_date)} – ${fmtDate(s.end_date)}</td>
+          <td class="text-xs">${esc(s.day_start_time)}–${esc(s.day_end_time)}</td>
+          <td>${s.interval_minutes} min</td>
+          <td>${s.capacity_per_slot}</td>
+          <td><button class="btn btn-outline btn-sm" onclick="viewBookings(${s.id})"><i class="fa-regular fa-calendar"></i> ${s.booking_count}</button></td>
+          <td>${s.active ? '<span class="badge badge-green">Active</span>' : '<span class="badge badge-gray">Inactive</span>'}</td>
+          <td class="text-right whitespace-nowrap">
+            <button class="btn btn-outline btn-sm" onclick="share('${s.public_id}','${esc(s.name).replace(/'/g,"&#39;")}')"><i class="fa-solid fa-share-nodes"></i> Share</button>
+            <button class="btn btn-outline btn-sm" onclick="openEdit(${s.id})"><i class="fa-solid fa-pen"></i></button>
+            <button class="btn btn-outline btn-sm" onclick="del(${s.id})"><i class="fa-solid fa-trash text-red-500"></i></button>
+          </td>
+        </tr>`).join('')
+      : '<tr><td colspan="8" class="text-center py-10 text-slate-400">No schedulers yet. Create one to generate a booking link.</td></tr>';
+  }
+
+  function renderDows(selected) {
+    const set = new Set((selected || '1,2,3,4,5').split(',').map(Number));
+    document.getElementById('f-dows').innerHTML = DOW.map((d, i) =>
+      `<label class="filter-btn ${set.has(i) ? 'active' : ''}" style="cursor:pointer">
+         <input type="checkbox" class="hidden dow-cb" value="${i}" ${set.has(i) ? 'checked' : ''}
+                onchange="this.closest('label').classList.toggle('active', this.checked)"> ${d}
+       </label>`).join('');
+  }
+  function collectDows() {
+    return [...document.querySelectorAll('.dow-cb')].filter(c => c.checked).map(c => c.value).join(',');
+  }
+
+  function openEdit(id) {
+    const s = id ? all.find(x => x.id === id) : null;
+    document.getElementById('editTitle').textContent = s ? 'Edit Scheduler' : 'New Scheduler';
+    document.getElementById('f-id').value = s ? s.id : '';
+    document.getElementById('f-name').value = s ? s.name : '';
+    document.getElementById('f-desc').value = s ? (s.description || '') : '';
+    document.getElementById('f-loc').value = s ? (s.location || '') : '';
+    document.getElementById('f-start').value = s ? (s.start_date || '').slice(0, 10) : '';
+    document.getElementById('f-end').value = s ? (s.end_date || '').slice(0, 10) : '';
+    document.getElementById('f-dstart').value = s ? s.day_start_time : '09:00';
+    document.getElementById('f-dend').value = s ? s.day_end_time : '17:00';
+    document.getElementById('f-interval').value = s ? s.interval_minutes : '30';
+    document.getElementById('f-capacity').value = s ? s.capacity_per_slot : '10';
+    document.getElementById('f-active').checked = s ? !!s.active : true;
+    renderDows(s ? s.days_of_week : '1,2,3,4,5');
+    openModal('editModal');
+  }
+
+  async function save() {
+    const id = document.getElementById('f-id').value;
+    const body = {
+      name: document.getElementById('f-name').value.trim(),
+      description: document.getElementById('f-desc').value.trim(),
+      location: document.getElementById('f-loc').value.trim(),
+      start_date: document.getElementById('f-start').value,
+      end_date: document.getElementById('f-end').value,
+      day_start_time: document.getElementById('f-dstart').value,
+      day_end_time: document.getElementById('f-dend').value,
+      interval_minutes: parseInt(document.getElementById('f-interval').value, 10),
+      capacity_per_slot: parseInt(document.getElementById('f-capacity').value, 10),
+      days_of_week: collectDows(),
+      active: document.getElementById('f-active').checked,
+    };
+    if (!body.name) return showToast('Name is required', 'error');
+    if (!body.start_date || !body.end_date) return showToast('Start and end dates are required', 'error');
+    if (body.end_date < body.start_date) return showToast('End date must be on or after start date', 'error');
+    if (!body.days_of_week) return showToast('Select at least one active day', 'error');
+
+    const res = id
+      ? await apiPatch(`/marketing-schedulers?id=${id}`, body)
+      : await apiPost('/marketing-schedulers', body);
+    if (res && res.ok) {
+      closeModal('editModal');
+      showToast('Saved', 'success');
+      load();
+    } else {
+      showToast('Save failed', 'error');
+    }
+  }
+
+  async function del(id) {
+    if (!confirm2('Delete this scheduler and all its bookings?')) return;
+    const res = await apiDelete(`/marketing-schedulers?id=${id}`);
+    if (res && res.ok) { showToast('Deleted', 'success'); load(); }
+    else showToast('Delete failed', 'error');
+  }
+
+  function bookingUrl(publicId) { return `${location.origin}/book/?s=${publicId}`; }
+
+  function share(publicId, name) {
+    const url = bookingUrl(publicId);
+    document.getElementById('share-name').textContent = name;
+    document.getElementById('share-url').value = url;
+    document.getElementById('share-open').href = url;
+    const box = document.getElementById('qrcode');
+    box.innerHTML = '';
+    new QRCode(box, { text: url, width: 200, height: 200, correctLevel: QRCode.CorrectLevel.M });
+    openModal('shareModal');
+  }
+
+  function copyUrl() {
+    const el = document.getElementById('share-url');
+    el.select();
+    navigator.clipboard.writeText(el.value).then(() => showToast('Link copied', 'success'));
+  }
+
+  function downloadQr() {
+    const canvas = document.querySelector('#qrcode canvas');
+    if (!canvas) return;
+    const a = document.createElement('a');
+    a.href = canvas.toDataURL('image/png');
+    a.download = 'booking-qr.png';
+    a.click();
+  }
+
+  async function viewBookings(id) {
+    const s = await apiGet(`/marketing-schedulers?id=${id}`);
+    if (!s) return;
+    document.getElementById('bk-title').textContent = `Bookings — ${s.name}`;
+    const rows = s.bookings || [];
+    document.getElementById('bk-body').innerHTML = rows.length
+      ? rows.map(b => `<tr>
+          <td class="font-medium">${fmtSlot(b.slot_start)}</td>
+          <td>${esc(b.name)}</td>
+          <td>${esc(b.email) || '—'}</td>
+          <td>${esc(b.phone) || '—'}</td>
+          <td class="text-xs text-slate-500">${esc(b.notes) || '—'}</td>
+          <td class="text-xs text-slate-400">${fmtDate(b.created_at)}</td>
+        </tr>`).join('')
+      : '<tr><td colspan="6" class="text-center py-8 text-slate-400">No bookings yet</td></tr>';
+    openModal('bookingsModal');
+  }
+
+  load();
+</script>
+</body>
+</html>
