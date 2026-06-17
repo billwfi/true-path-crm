@@ -90,7 +90,15 @@ exports.handler = async function (event) {
 
       if (event.httpMethod === 'POST') {
         const b = JSON.parse(event.body || '{}');
-        if (!b.name) return badRequest('Your name is required.');
+        const company = (b.company_name || '').trim();
+        const first = (b.first_name || '').trim();
+        const last = (b.last_name || '').trim();
+        const phone = (b.phone || '').trim();
+        if (!company) return badRequest('Company name is required.');
+        if (!first) return badRequest('First name is required.');
+        if (!last) return badRequest('Last name is required.');
+        if (!b.dob) return badRequest('Date of birth is required.');
+        if (!phone) return badRequest('Phone number is required.');
         if (!b.slot_start) return badRequest('A time slot is required.');
 
         // Validate the requested slot is real and in the future.
@@ -105,11 +113,13 @@ exports.handler = async function (event) {
         if (c.recordset[0].taken >= sched.capacity_per_slot) return badRequest('Sorry, that time slot is now full.');
 
         const r = await mssql(
-          `INSERT INTO dbo.Bookings (scheduler_id, slot_start, name, email, phone, notes)
+          `INSERT INTO dbo.Bookings
+             (scheduler_id, slot_start, name, company_name, first_name, last_name, dob, email, phone, notes)
            OUTPUT INSERTED.id, INSERTED.slot_start
-           VALUES (@sid, @slot, @name, @email, @phone, @notes)`,
-          { sid: sched.id, slot: b.slot_start, name: b.name,
-            email: b.email || null, phone: b.phone || null, notes: b.notes || null });
+           VALUES (@sid, @slot, @name, @company, @first, @last, @dob, @email, @phone, @notes)`,
+          { sid: sched.id, slot: b.slot_start, name: `${first} ${last}`,
+            company, first, last, dob: b.dob,
+            email: (b.email || '').trim() || null, phone, notes: (b.notes || '').trim() || null });
         return created(r.recordset[0]);
       }
 
@@ -127,7 +137,7 @@ exports.handler = async function (event) {
           FROM dbo.Booking_Schedulers WHERE id = @sid`, { sid });
         if (!sr.recordset[0]) return notFound();
         const bk = await mssql(
-          `SELECT id, slot_start, name, email, phone, notes, created_at
+          `SELECT id, slot_start, name, company_name, first_name, last_name, dob, email, phone, notes, created_at
            FROM dbo.Bookings WHERE scheduler_id = @sid ORDER BY slot_start, created_at`, { sid });
         return ok({ ...sr.recordset[0], bookings: bk.recordset });
       }
@@ -146,7 +156,7 @@ exports.handler = async function (event) {
         `INSERT INTO dbo.Booking_Schedulers
            (public_id, name, description, location, start_date, end_date,
             day_start_time, day_end_time, interval_minutes, capacity_per_slot, days_of_week, active, created_by)
-         OUTPUT INSERTED.${SAFE_FIELDS}
+         OUTPUT INSERTED.*
          VALUES (@pub, @name, @desc, @loc, @start, @end,
             @dstart, @dend, @interval, @capacity, @dows, @active, @by)`,
         { pub: randomToken(), name: b.name, desc: b.description || null, loc: b.location || null,
@@ -168,7 +178,7 @@ exports.handler = async function (event) {
          SET name=@name, description=@desc, location=@loc, start_date=@start, end_date=@end,
              day_start_time=@dstart, day_end_time=@dend, interval_minutes=@interval,
              capacity_per_slot=@capacity, days_of_week=@dows, active=@active, updated_at=GETDATE()
-         OUTPUT INSERTED.${SAFE_FIELDS} WHERE id=@sid`,
+         OUTPUT INSERTED.* WHERE id=@sid`,
         { sid, name: b.name, desc: b.description || null, loc: b.location || null,
           start: b.start_date, end: b.end_date,
           dstart: b.day_start_time || '09:00', dend: b.day_end_time || '17:00',

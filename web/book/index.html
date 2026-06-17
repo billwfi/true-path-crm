@@ -20,8 +20,9 @@
 <body class="bg-slate-100 text-slate-700">
 <div class="max-w-3xl mx-auto p-4 md:p-8">
 
-  <div class="brand mb-4" style="border:none; padding:0;">
-    <img src="/assets/img/truepath-logo.png" alt="True Path Sourcing" style="height:48px; width:auto;">
+  <div class="text-center mb-5">
+    <img src="/assets/img/truepath-logo.png" alt="True Path Sourcing"
+         style="height:64px; width:auto; display:inline-block;">
   </div>
 
   <div id="loading" class="card"><div class="card-body" style="padding:40px; text-align:center;" class="text-slate-400">Loading…</div></div>
@@ -50,21 +51,29 @@
             <label class="form-label">Selected time</label>
             <input type="text" id="b-slot" class="form-control" readonly placeholder="Pick a time above" style="background:#f8fafc;">
           </div>
-          <div class="form-group">
-            <label class="form-label">Full name *</label>
-            <input type="text" id="b-name" class="form-control">
+          <div class="form-group full">
+            <label class="form-label">Company Name *</label>
+            <input type="text" id="b-company" class="form-control">
           </div>
           <div class="form-group">
-            <label class="form-label">Email</label>
-            <input type="email" id="b-email" class="form-control">
+            <label class="form-label">First Name *</label>
+            <input type="text" id="b-first" class="form-control">
           </div>
           <div class="form-group">
-            <label class="form-label">Phone</label>
+            <label class="form-label">Last Name *</label>
+            <input type="text" id="b-last" class="form-control">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Date of Birth *</label>
+            <input type="date" id="b-dob" class="form-control">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Phone Number *</label>
             <input type="tel" id="b-phone" class="form-control">
           </div>
-          <div class="form-group span2 full">
-            <label class="form-label">Notes</label>
-            <textarea id="b-notes" class="form-control" rows="2"></textarea>
+          <div class="form-group full">
+            <label class="form-label">Email</label>
+            <input type="email" id="b-email" class="form-control">
           </div>
         </div>
         <button class="btn btn-primary" onclick="submitBooking()" style="margin-top:6px;">
@@ -160,13 +169,18 @@
 
   async function submitBooking() {
     if (!selected) return alert('Please pick a time slot.');
-    const name = document.getElementById('b-name').value.trim();
-    if (!name) return alert('Please enter your name.');
+    const val = id => document.getElementById(id).value.trim();
+    const company = val('b-company'), first = val('b-first'), last = val('b-last');
+    const dob = val('b-dob'), phone = val('b-phone');
+    if (!company) return alert('Please enter your company name.');
+    if (!first) return alert('Please enter your first name.');
+    if (!last) return alert('Please enter your last name.');
+    if (!dob) return alert('Please enter your date of birth.');
+    if (!phone) return alert('Please enter your phone number.');
     const body = {
-      slot_start: selected, name,
-      email: document.getElementById('b-email').value.trim(),
-      phone: document.getElementById('b-phone').value.trim(),
-      notes: document.getElementById('b-notes').value.trim(),
+      slot_start: selected,
+      company_name: company, first_name: first, last_name: last, dob, phone,
+      email: val('b-email'),
     };
     const res = await fetch(`${API}/marketing-schedulers?s=${encodeURIComponent(slug)}`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),

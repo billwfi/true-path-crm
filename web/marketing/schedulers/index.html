@@ -139,7 +139,7 @@
     </div>
     <div class="modal-body">
       <table class="data-table">
-        <thead><tr><th>When</th><th>Name</th><th>Email</th><th>Phone</th><th>Notes</th><th>Booked</th></tr></thead>
+        <thead><tr><th>When</th><th>Company</th><th>Name</th><th>DOB</th><th>Phone</th><th>Email</th><th>Booked</th></tr></thead>
         <tbody id="bk-body"></tbody>
       </table>
     </div>
@@ -288,13 +288,14 @@
     document.getElementById('bk-body').innerHTML = rows.length
       ? rows.map(b => `<tr>
           <td class="font-medium">${fmtSlot(b.slot_start)}</td>
-          <td>${esc(b.name)}</td>
-          <td>${esc(b.email) || '—'}</td>
+          <td>${esc(b.company_name) || '—'}</td>
+          <td>${esc(b.name || (b.first_name + ' ' + b.last_name))}</td>
+          <td>${b.dob ? fmtDate(b.dob) : '—'}</td>
           <td>${esc(b.phone) || '—'}</td>
-          <td class="text-xs text-slate-500">${esc(b.notes) || '—'}</td>
+          <td>${esc(b.email) || '—'}</td>
           <td class="text-xs text-slate-400">${fmtDate(b.created_at)}</td>
         </tr>`).join('')
-      : '<tr><td colspan="6" class="text-center py-8 text-slate-400">No bookings yet</td></tr>';
+      : '<tr><td colspan="7" class="text-center py-8 text-slate-400">No bookings yet</td></tr>';
     openModal('bookingsModal');
   }
 
