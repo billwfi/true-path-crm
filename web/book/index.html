@@ -46,8 +46,9 @@
   <div id="content" class="hidden">
     <div class="card mb-4">
       <div class="card-body" style="padding:22px 24px;">
-        <div id="client-brand" class="hidden text-center mb-4 pb-4" style="border-bottom:1px solid #f1f5f9;">
-          <img id="client-logo" alt="Client logo" style="max-height:64px; max-width:220px; display:inline-block;">
+        <div id="client-brand" class="hidden mb-4 pb-4 flex items-center gap-4" style="border-bottom:1px solid #f1f5f9;">
+          <img id="client-logo" alt="Client logo" style="max-height:64px; max-width:220px; flex-shrink:0;">
+          <span id="client-name" class="text-lg font-semibold text-slate-700"></span>
         </div>
         <h1 id="s-name" class="text-xl font-bold text-slate-800"></h1>
         <p id="s-desc" class="text-sm text-slate-500 mt-1"></p>
@@ -155,6 +156,7 @@
     if (s.logo_data) {
       document.getElementById('client-logo').src = s.logo_data;
       document.getElementById('client-logo').alt = s.client_name || 'Client logo';
+      document.getElementById('client-name').textContent = s.client_name || '';
       show('client-brand');
     }
     const desc = document.getElementById('s-desc');
