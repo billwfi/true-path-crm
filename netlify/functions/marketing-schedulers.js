@@ -14,8 +14,9 @@ const { verifyToken, unauthorized, ok, created, badRequest, notFound, serverErro
 //   GET    ?s=<public_id>  -> scheduler (safe fields) + available slots w/ remaining capacity
 //   POST   ?s=<public_id>  -> create a booking (body: { slot_start, name, email, phone, notes })
 
-const SAFE_FIELDS = `id, public_id, name, description, location, start_date, end_date,
-  day_start_time, day_end_time, interval_minutes, capacity_per_slot, days_of_week, active`;
+const SAFE_FIELDS = `id, public_id, name, description, location, client_id, client_name,
+  start_date, end_date, day_start_time, day_end_time, interval_minutes,
+  capacity_per_slot, days_of_week, active`;
 
 function randomToken() {
   const chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
@@ -69,7 +70,7 @@ exports.handler = async function (event) {
     // ── Public flow (shared link) ──────────────────────────────────────────
     if (slug) {
       const sr = await mssql(
-        `SELECT ${SAFE_FIELDS} FROM dbo.Booking_Schedulers WHERE public_id = @slug AND active = 1`,
+        `SELECT ${SAFE_FIELDS}, logo_data FROM dbo.Booking_Schedulers WHERE public_id = @slug AND active = 1`,
         { slug });
       const sched = sr.recordset[0];
       if (!sched) return notFound('This scheduler is not available.');
@@ -133,7 +134,7 @@ exports.handler = async function (event) {
     if (event.httpMethod === 'GET') {
       if (id) {
         const sid = parseInt(id, 10);
-        const sr = await mssql(`SELECT ${SAFE_FIELDS}, created_at, updated_at
+        const sr = await mssql(`SELECT ${SAFE_FIELDS}, logo_data, created_at, updated_at
           FROM dbo.Booking_Schedulers WHERE id = @sid`, { sid });
         if (!sr.recordset[0]) return notFound();
         const bk = await mssql(
@@ -154,12 +155,15 @@ exports.handler = async function (event) {
       if (!b.start_date || !b.end_date) return badRequest('start_date and end_date are required');
       const r = await mssql(
         `INSERT INTO dbo.Booking_Schedulers
-           (public_id, name, description, location, start_date, end_date,
-            day_start_time, day_end_time, interval_minutes, capacity_per_slot, days_of_week, active, created_by)
+           (public_id, name, description, location, client_id, client_name, logo_data,
+            start_date, end_date, day_start_time, day_end_time, interval_minutes,
+            capacity_per_slot, days_of_week, active, created_by)
          OUTPUT INSERTED.*
-         VALUES (@pub, @name, @desc, @loc, @start, @end,
-            @dstart, @dend, @interval, @capacity, @dows, @active, @by)`,
+         VALUES (@pub, @name, @desc, @loc, @clientId, @clientName, @logo,
+            @start, @end, @dstart, @dend, @interval, @capacity, @dows, @active, @by)`,
         { pub: randomToken(), name: b.name, desc: b.description || null, loc: b.location || null,
+          clientId: parseInt(b.client_id, 10) || null, clientName: b.client_name || null,
+          logo: b.logo_data || null,
           start: b.start_date, end: b.end_date,
           dstart: b.day_start_time || '09:00', dend: b.day_end_time || '17:00',
           interval: parseInt(b.interval_minutes, 10) || 30,
@@ -173,13 +177,19 @@ exports.handler = async function (event) {
       const sid = parseInt(id, 10);
       if (!sid) return badRequest('id is required');
       const b = JSON.parse(event.body || '{}');
+      // logo_data: omit the key to keep the existing logo; send '' to clear it.
+      const setLogo = Object.prototype.hasOwnProperty.call(b, 'logo_data');
       const r = await mssql(
         `UPDATE dbo.Booking_Schedulers
-         SET name=@name, description=@desc, location=@loc, start_date=@start, end_date=@end,
+         SET name=@name, description=@desc, location=@loc, client_id=@clientId, client_name=@clientName,
+             ${setLogo ? 'logo_data=@logo,' : ''}
+             start_date=@start, end_date=@end,
              day_start_time=@dstart, day_end_time=@dend, interval_minutes=@interval,
              capacity_per_slot=@capacity, days_of_week=@dows, active=@active, updated_at=GETDATE()
          OUTPUT INSERTED.* WHERE id=@sid`,
         { sid, name: b.name, desc: b.description || null, loc: b.location || null,
+          clientId: parseInt(b.client_id, 10) || null, clientName: b.client_name || null,
+          ...(setLogo ? { logo: b.logo_data || null } : {}),
           start: b.start_date, end: b.end_date,
           dstart: b.day_start_time || '09:00', dend: b.day_end_time || '17:00',
           interval: parseInt(b.interval_minutes, 10) || 30,

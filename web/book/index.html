@@ -8,13 +8,29 @@
   <link rel="stylesheet" href="/assets/css/app.css">
   <style>
     .slot-btn { padding: 7px 10px; border-radius: 7px; border: 1px solid #e2e8f0; background:#fff;
-      font-size: 13px; cursor: pointer; transition: all .12s; }
+      font-size: 13px; cursor: pointer; transition: all .12s; text-align:center; }
     .slot-btn:hover:not(:disabled) { border-color:#0ea5e9; color:#0284c7; }
     .slot-btn.active { background:#0ea5e9; border-color:#0ea5e9; color:#fff; }
     .slot-btn:disabled { opacity:.4; cursor:not-allowed; }
-    .day-block { margin-bottom: 18px; }
-    .day-label { font-size: 13px; font-weight: 700; color:#475569; margin-bottom: 8px; }
-    .slot-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px,1fr)); gap: 8px; }
+
+    /* Calendar */
+    .cal { width: 300px; max-width: 100%; flex-shrink: 0; }
+    .cal-head { display:flex; align-items:center; justify-content:space-between; margin-bottom:10px; }
+    .cal-title { font-size:14px; font-weight:700; color:#1e293b; }
+    .cal-nav { width:30px; height:30px; border-radius:7px; border:1px solid #e2e8f0; background:#fff; cursor:pointer; color:#475569; }
+    .cal-nav:hover:not(:disabled) { border-color:#0ea5e9; color:#0284c7; }
+    .cal-nav:disabled { opacity:.3; cursor:not-allowed; }
+    .cal-grid { display:grid; grid-template-columns:repeat(7,1fr); gap:4px; }
+    .cal-dow { text-align:center; font-size:10.5px; font-weight:700; color:#94a3b8; padding:4px 0; text-transform:uppercase; }
+    .cal-day { aspect-ratio:1; display:flex; align-items:center; justify-content:center; border-radius:8px; font-size:13px; color:#cbd5e1; }
+    .cal-day.empty { visibility:hidden; }
+    .cal-day.avail { background:#e0f2fe; color:#0369a1; font-weight:600; cursor:pointer; }
+    .cal-day.avail:hover { background:#bae6fd; }
+    .cal-day.selected { background:#0ea5e9; color:#fff; }
+
+    .times-label { font-size:13px; font-weight:700; color:#475569; margin-bottom:10px; }
+    .times-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(92px,1fr)); gap:8px; }
+    .times-hint { color:#94a3b8; font-size:13px; padding-top:8px; }
   </style>
 </head>
 <body class="bg-slate-100 text-slate-700">
@@ -30,6 +46,9 @@
   <div id="content" class="hidden">
     <div class="card mb-4">
       <div class="card-body" style="padding:22px 24px;">
+        <div id="client-brand" class="hidden text-center mb-4 pb-4" style="border-bottom:1px solid #f1f5f9;">
+          <img id="client-logo" alt="Client logo" style="max-height:64px; max-width:220px; display:inline-block;">
+        </div>
         <h1 id="s-name" class="text-xl font-bold text-slate-800"></h1>
         <p id="s-desc" class="text-sm text-slate-500 mt-1"></p>
         <div id="s-meta" class="flex flex-wrap gap-x-6 gap-y-1 mt-3 text-sm text-slate-500"></div>
@@ -37,9 +56,13 @@
     </div>
 
     <div class="card mb-4">
-      <div class="card-header"><span class="card-title"><i class="fa-regular fa-clock text-sky-500 mr-2"></i>Choose a time</span></div>
+      <div class="card-header"><span class="card-title"><i class="fa-regular fa-calendar text-sky-500 mr-2"></i>Pick a date &amp; time</span></div>
       <div class="card-body" style="padding:18px 20px;">
-        <div id="slots"></div>
+        <div id="no-slots" class="hidden text-slate-400 text-sm py-4 text-center">No times are currently available.</div>
+        <div id="picker" class="md:flex md:gap-8">
+          <div id="calendar" class="cal"></div>
+          <div id="times" class="flex-1 mt-5 md:mt-0"></div>
+        </div>
       </div>
     </div>
 
@@ -103,10 +126,15 @@
   const API = '/.netlify/functions';
   const slug = new URLSearchParams(location.search).get('s');
   let selected = null, schedName = '';
+  let slotsByDate = {};                 // 'YYYY-MM-DD' -> [{start, remaining}]
+  let calYear, calMonth, selectedDate = null;
+  const DOW_LETTERS = ['S','M','T','W','T','F','S'];
 
   function esc(s) { return (s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
   function show(id) { document.getElementById(id).classList.remove('hidden'); }
   function hide(id) { document.getElementById(id).classList.add('hidden'); }
+  function pad(n) { return String(n).padStart(2, '0'); }
+  function monthIdx(y, m) { return y * 12 + m; }
 
   function fmtTime(d) { return new Date(d).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }); }
   function fmtDay(d) { return new Date(d).toLocaleDateString('en-US', { weekday:'long', month:'long', day:'numeric' }); }
@@ -124,6 +152,11 @@
     const s = data.scheduler;
     schedName = s.name;
     document.getElementById('s-name').textContent = s.name;
+    if (s.logo_data) {
+      document.getElementById('client-logo').src = s.logo_data;
+      document.getElementById('client-logo').alt = s.client_name || 'Client logo';
+      show('client-brand');
+    }
     const desc = document.getElementById('s-desc');
     if (s.description) desc.textContent = s.description; else desc.classList.add('hidden');
     const meta = [];
@@ -131,32 +164,86 @@
     meta.push(`<span><i class="fa-regular fa-clock mr-1 text-slate-400"></i>${s.interval_minutes} min appointments</span>`);
     document.getElementById('s-meta').innerHTML = meta.join('');
 
-    renderSlots(data.slots);
+    buildSlotData(data.slots);
     hide('loading'); show('content');
   }
 
-  function renderSlots(slots) {
-    const open = slots.filter(s => s.remaining > 0);
-    const box = document.getElementById('slots');
-    if (!open.length) {
-      box.innerHTML = '<p class="text-slate-400 text-sm py-4 text-center">No times are currently available.</p>';
+  // Group open slots by date and seed the calendar on the first available day.
+  function buildSlotData(slots) {
+    slotsByDate = {};
+    slots.filter(s => s.remaining > 0).forEach(s => {
+      const day = s.start.slice(0, 10);
+      (slotsByDate[day] = slotsByDate[day] || []).push(s);
+    });
+    const dates = Object.keys(slotsByDate).sort();
+    if (!dates.length) {
+      hide('picker'); show('no-slots');
       document.getElementById('form-card').classList.add('hidden');
       return;
     }
-    const byDay = {};
-    open.forEach(s => {
-      const day = s.start.slice(0, 10);
-      (byDay[day] = byDay[day] || []).push(s);
-    });
-    box.innerHTML = Object.keys(byDay).sort().map(day => `
-      <div class="day-block">
-        <div class="day-label">${fmtDay(byDay[day][0].start)}</div>
-        <div class="slot-grid">
-          ${byDay[day].map(s => `<button class="slot-btn" data-slot="${s.start}" onclick="pick(this)">
-            ${fmtTime(s.start)}<span class="block text-[10px] opacity-70">${s.remaining} left</span>
-          </button>`).join('')}
-        </div>
-      </div>`).join('');
+    const first = dates[0];
+    [calYear, calMonth] = [+first.slice(0, 4), +first.slice(5, 7) - 1];
+    selectedDate = first;
+    renderCalendar();
+    renderTimes(first);
+  }
+
+  function renderCalendar() {
+    const dates = Object.keys(slotsByDate).sort();
+    const minIdx = monthIdx(+dates[0].slice(0, 4), +dates[0].slice(5, 7) - 1);
+    const lastD = dates[dates.length - 1];
+    const maxIdx = monthIdx(+lastD.slice(0, 4), +lastD.slice(5, 7) - 1);
+    const curIdx = monthIdx(calYear, calMonth);
+
+    const startDow = new Date(calYear, calMonth, 1).getDay();
+    const daysInMonth = new Date(calYear, calMonth + 1, 0).getDate();
+    const title = new Date(calYear, calMonth, 1).toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+
+    let cells = '';
+    for (let i = 0; i < startDow; i++) cells += '<div class="cal-day empty"></div>';
+    for (let d = 1; d <= daysInMonth; d++) {
+      const iso = `${calYear}-${pad(calMonth + 1)}-${pad(d)}`;
+      if (slotsByDate[iso]) {
+        const sel = iso === selectedDate ? ' selected' : '';
+        cells += `<div class="cal-day avail${sel}" onclick="selectDate('${iso}')">${d}</div>`;
+      } else {
+        cells += `<div class="cal-day">${d}</div>`;
+      }
+    }
+    document.getElementById('calendar').innerHTML = `
+      <div class="cal-head">
+        <button class="cal-nav" onclick="changeMonth(-1)" ${curIdx <= minIdx ? 'disabled' : ''}><i class="fa-solid fa-chevron-left"></i></button>
+        <span class="cal-title">${title}</span>
+        <button class="cal-nav" onclick="changeMonth(1)" ${curIdx >= maxIdx ? 'disabled' : ''}><i class="fa-solid fa-chevron-right"></i></button>
+      </div>
+      <div class="cal-grid">
+        ${DOW_LETTERS.map(d => `<div class="cal-dow">${d}</div>`).join('')}
+        ${cells}
+      </div>`;
+  }
+
+  function changeMonth(delta) {
+    let idx = monthIdx(calYear, calMonth) + delta;
+    calYear = Math.floor(idx / 12);
+    calMonth = idx % 12;
+    renderCalendar();
+  }
+
+  function selectDate(iso) {
+    selectedDate = iso;
+    renderCalendar();
+    renderTimes(iso);
+  }
+
+  function renderTimes(iso) {
+    const list = slotsByDate[iso] || [];
+    document.getElementById('times').innerHTML = `
+      <div class="times-label">${fmtDay(iso + 'T00:00:00')}</div>
+      <div class="times-grid">
+        ${list.map(s => `<button class="slot-btn" data-slot="${s.start}" onclick="pick(this)">
+          ${fmtTime(s.start)}<span class="block text-[10px] opacity-70">${s.remaining} left</span>
+        </button>`).join('')}
+      </div>`;
   }
 
   function pick(btn) {
@@ -164,7 +251,7 @@
     btn.classList.add('active');
     selected = btn.dataset.slot;
     document.getElementById('b-slot').value = fmtFull(selected);
-    document.getElementById('b-name').focus();
+    document.getElementById('b-company').focus();
   }
 
   async function submitBooking() {

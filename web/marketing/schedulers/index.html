@@ -56,6 +56,22 @@
         <label class="form-label">Location</label>
         <input type="text" id="f-loc" class="form-control" placeholder="e.g. Main St. Pharmacy, or a phone number / link">
       </div>
+      <div class="form-group">
+        <label class="form-label">Client (optional)</label>
+        <select id="f-client" class="form-control">
+          <option value="">— None (general schedule) —</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Client Logo (optional)</label>
+        <input type="file" id="f-logo" accept="image/png,image/jpeg,image/gif,image/svg+xml,image/webp"
+               class="form-control" onchange="onLogoPick(event)">
+        <p class="text-xs text-slate-400 mt-1">Shown on the public booking page. PNG/JPG/SVG, up to ~600&nbsp;KB.</p>
+        <div id="logo-preview" class="hidden mt-2 flex items-center gap-3">
+          <img id="logo-img" alt="Logo preview" style="max-height:56px; max-width:180px; border:1px solid #e2e8f0; border-radius:6px; padding:4px; background:#fff;">
+          <button type="button" class="btn btn-outline btn-sm" onclick="clearLogo()"><i class="fa-solid fa-xmark"></i> Remove</button>
+        </div>
+      </div>
       <div class="form-grid">
         <div class="form-group">
           <label class="form-label">Start Date *</label>
@@ -150,9 +166,23 @@
 <script>
   initNav('marketing-schedulers');
   const DOW = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
-  let debounce, all = [];
+  let debounce, all = [], clients = [];
+  let logoData = null;     // current logo data URL (or '' once removed)
+  let logoTouched = false; // only send logo_data when the user changed it
 
   function debounceLoad() { clearTimeout(debounce); debounce = setTimeout(load, 300); }
+
+  function clientLabel(c) {
+    const name = `${c.firstname || ''} ${c.lastname || ''}`.trim();
+    return c.company ? `${name} — ${c.company}` : name;
+  }
+
+  async function loadClients() {
+    clients = await apiGet('/clients') || [];
+    document.getElementById('f-client').innerHTML =
+      '<option value="">— None (general schedule) —</option>' +
+      clients.map(c => `<option value="${c.id}">${esc(clientLabel(c))}</option>`).join('');
+  }
 
   function fmtSlot(d) {
     const dt = new Date(d);
@@ -167,7 +197,7 @@
     const rows = all.filter(s => !q || (s.name || '').toLowerCase().includes(q));
     document.getElementById('tbl-body').innerHTML = rows.length
       ? rows.map(s => `<tr>
-          <td class="font-medium">${esc(s.name)}</td>
+          <td class="font-medium">${esc(s.name)}${s.client_name ? `<div class="text-xs text-slate-400 font-normal"><i class="fa-regular fa-building mr-1"></i>${esc(s.client_name)}</div>` : ''}</td>
           <td class="text-xs">${fmtDate(s.start_date)} – ${fmtDate(s.end_date)}</td>
           <td class="text-xs">${esc(s.day_start_time)}–${esc(s.day_end_time)}</td>
           <td>${s.interval_minutes} min</td>
@@ -195,13 +225,46 @@
     return [...document.querySelectorAll('.dow-cb')].filter(c => c.checked).map(c => c.value).join(',');
   }
 
-  function openEdit(id) {
-    const s = id ? all.find(x => x.id === id) : null;
+  function setLogoPreview(data) {
+    const wrap = document.getElementById('logo-preview');
+    if (data) {
+      document.getElementById('logo-img').src = data;
+      wrap.classList.remove('hidden');
+    } else {
+      wrap.classList.add('hidden');
+      document.getElementById('logo-img').removeAttribute('src');
+    }
+  }
+
+  function onLogoPick(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+    if (file.size > 600 * 1024) {
+      showToast('Logo is too large (max ~600 KB). Please pick a smaller image.', 'error');
+      e.target.value = '';
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => { logoData = reader.result; logoTouched = true; setLogoPreview(logoData); };
+    reader.readAsDataURL(file);
+  }
+
+  function clearLogo() {
+    logoData = ''; logoTouched = true;
+    document.getElementById('f-logo').value = '';
+    setLogoPreview(null);
+  }
+
+  async function openEdit(id) {
+    // Fetch the full record when editing so we have logo_data (the list omits it).
+    const s = id ? await apiGet(`/marketing-schedulers?id=${id}`) : null;
     document.getElementById('editTitle').textContent = s ? 'Edit Scheduler' : 'New Scheduler';
     document.getElementById('f-id').value = s ? s.id : '';
     document.getElementById('f-name').value = s ? s.name : '';
     document.getElementById('f-desc').value = s ? (s.description || '') : '';
     document.getElementById('f-loc').value = s ? (s.location || '') : '';
+    document.getElementById('f-client').value = s && s.client_id ? String(s.client_id) : '';
+    document.getElementById('f-logo').value = '';
     document.getElementById('f-start').value = s ? (s.start_date || '').slice(0, 10) : '';
     document.getElementById('f-end').value = s ? (s.end_date || '').slice(0, 10) : '';
     document.getElementById('f-dstart').value = s ? s.day_start_time : '09:00';
@@ -210,15 +273,21 @@
     document.getElementById('f-capacity').value = s ? s.capacity_per_slot : '10';
     document.getElementById('f-active').checked = s ? !!s.active : true;
     renderDows(s ? s.days_of_week : '1,2,3,4,5');
+    logoData = s ? (s.logo_data || '') : '';
+    logoTouched = false;
+    setLogoPreview(logoData || null);
     openModal('editModal');
   }
 
   async function save() {
     const id = document.getElementById('f-id').value;
+    const clientSel = document.getElementById('f-client');
     const body = {
       name: document.getElementById('f-name').value.trim(),
       description: document.getElementById('f-desc').value.trim(),
       location: document.getElementById('f-loc').value.trim(),
+      client_id: clientSel.value ? parseInt(clientSel.value, 10) : null,
+      client_name: clientSel.value ? clientSel.options[clientSel.selectedIndex].text : null,
       start_date: document.getElementById('f-start').value,
       end_date: document.getElementById('f-end').value,
       day_start_time: document.getElementById('f-dstart').value,
@@ -232,6 +301,8 @@
     if (!body.start_date || !body.end_date) return showToast('Start and end dates are required', 'error');
     if (body.end_date < body.start_date) return showToast('End date must be on or after start date', 'error');
     if (!body.days_of_week) return showToast('Select at least one active day', 'error');
+    // Only send logo_data when the user added/changed/removed it.
+    if (logoTouched) body.logo_data = logoData;
 
     const res = id
       ? await apiPatch(`/marketing-schedulers?id=${id}`, body)
@@ -299,6 +370,7 @@
     openModal('bookingsModal');
   }
 
+  loadClients();
   load();
 </script>
 </body>
