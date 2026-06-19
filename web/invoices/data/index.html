@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Invoices &amp; Statements — Invoice Data — True Path CRM</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+  <link rel="stylesheet" href="/assets/css/app.css">
+  <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+</head>
+<body class="bg-slate-100 text-slate-700">
+<div id="app" class="flex h-screen overflow-hidden">
+  <div id="nav-placeholder"></div>
+  <div class="flex-1 flex flex-col overflow-hidden">
+    <div id="topbar"></div>
+    <main class="flex-1 overflow-y-auto p-6">
+
+      <div class="search-bar flex-wrap gap-2">
+        <input id="q" class="input" placeholder="Search name or group…" oninput="render()" style="max-width:240px">
+        <select id="f-group" class="input" onchange="render()" style="max-width:200px"><option value="">All groups</option></select>
+        <select id="f-med" class="input" onchange="render()" style="max-width:170px"><option value="">All medications</option></select>
+        <select id="f-status" class="input" onchange="render()" style="max-width:180px"><option value="">All statuses</option></select>
+        <span id="count" class="text-sm text-slate-500 ml-1"></span>
+        <div class="flex gap-2 ml-auto">
+          <button class="btn btn-primary" onclick="exportExcel()"><i class="fa-solid fa-file-excel"></i> Export to Excel</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-body">
+          <table class="data-table">
+            <thead><tr>
+              <th>GroupName</th>
+              <th>LastName</th>
+              <th>FirstName</th>
+              <th>DateofBirth</th>
+              <th>Medication</th>
+              <th>Status</th>
+              <th class="text-center">IsCompleted</th>
+              <th>CompletedDate</th>
+            </tr></thead>
+            <tbody id="tbody"></tbody>
+          </table>
+        </div>
+      </div>
+
+    </main>
+  </div>
+</div>
+
+<script src="/assets/js/app.js"></script>
+<script>
+  initNav('invoices-data');
+
+  let ROWS = [];
+
+  function uniq(arr) { return [...new Set(arr.filter(Boolean))].sort(); }
+
+  async function load() {
+    ROWS = await apiGet('/invoices?detail=1') || [];
+    fillSelect('f-group', uniq(ROWS.map(r => r.group_name)));
+    fillSelect('f-med',   uniq(ROWS.map(r => r.medication)));
+    fillSelect('f-status',uniq(ROWS.map(r => r.status)));
+    render();
+  }
+
+  function fillSelect(id, vals) {
+    const el = document.getElementById(id);
+    el.innerHTML = el.children[0].outerHTML + vals.map(v => `<option value="${esc(v)}">${esc(v)}</option>`).join('');
+  }
+
+  function filtered() {
+    const q = document.getElementById('q').value.trim().toLowerCase();
+    const g = document.getElementById('f-group').value;
+    const m = document.getElementById('f-med').value;
+    const s = document.getElementById('f-status').value;
+    return ROWS.filter(r =>
+      (!g || r.group_name === g) &&
+      (!m || r.medication === m) &&
+      (!s || r.status === s) &&
+      (!q || `${r.last_name || ''} ${r.first_name || ''} ${r.group_name || ''}`.toLowerCase().includes(q)));
+  }
+
+  function render() {
+    const rows = filtered();
+    document.getElementById('count').textContent = `${rows.length} of ${ROWS.length} rows`;
+    document.getElementById('tbody').innerHTML = rows.length
+      ? rows.map(r => `<tr>
+          <td class="font-medium">${esc(r.group_name)}</td>
+          <td>${esc(r.last_name)}</td>
+          <td>${esc(r.first_name)}</td>
+          <td>${esc(r.date_of_birth)}</td>
+          <td>${esc(r.medication)}</td>
+          <td>${esc(r.status)}</td>
+          <td class="text-center">${r.is_completed == 1 ? 'Yes' : 'No'}</td>
+          <td>${esc(r.completed_date) || '—'}</td>
+        </tr>`).join('')
+      : `<tr><td colspan="8" class="text-center py-10 text-slate-400">No matching rows</td></tr>`;
+  }
+
+  function exportExcel() {
+    const rows = filtered();
+    if (!rows.length) { showToast('Nothing to export', 'error'); return; }
+    const header = ['GroupName','LastName','FirstName','DateofBirth','medication','status','iscompleted','completed_at'];
+    const body = rows.map(r => [r.group_name, r.last_name, r.first_name, r.date_of_birth,
+      r.medication, r.status, r.is_completed, r.completed_date]);
+    const ws = XLSX.utils.aoa_to_sheet([header, ...body]);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Invoice Data');
+    XLSX.writeFile(wb, `invoice-data-detail-${new Date().toISOString().slice(0,10)}.xlsx`);
+  }
+
+  load();
+</script>
+</body>
+</html>

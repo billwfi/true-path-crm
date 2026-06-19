@@ -97,6 +97,11 @@
   to = "/invoices/dashboard/"
   status = 301
 
+[[redirects]]
+  from = "/invoices/data"
+  to = "/invoices/data/"
+  status = 301
+
 [[headers]]
   for = "/*"
   [headers.values]

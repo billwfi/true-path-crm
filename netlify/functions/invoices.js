@@ -12,7 +12,25 @@ exports.handler = async function (event) {
   if (!user) return unauthorized();
   if (event.httpMethod !== 'GET') return { statusCode: 405, body: 'Method Not Allowed' };
 
+  const { detail } = event.queryStringParameters || {};
+
   try {
+    // Row-level detail for the Invoice Data export.
+    if (detail) {
+      const r = await mssql(
+        `SELECT GroupName            AS group_name,
+                last_name            AS last_name,
+                first_name           AS first_name,
+                patient_dob          AS date_of_birth,
+                medication           AS medication,
+                status               AS status,
+                is_completed         AS is_completed,
+                CONVERT(varchar(10), ${CDT}, 101) AS completed_date
+         FROM ${TABLE}
+         ORDER BY GroupName, last_name, first_name`);
+      return ok(r.recordset);
+    }
+
     // Per-group rollup: distinct members, total rows, and completed (billable) rows.
     const groupsP = mssql(
       `SELECT GroupName AS group_name,

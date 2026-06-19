@@ -98,6 +98,7 @@ const NAV_ITEMS = [
   { href: '/call-center/other/',       icon: 'fa-list-check',     label: 'Other Statuses', key: 'cc-other' },
   { section: 'Invoices & Statements' },
   { href: '/invoices/dashboard/', icon: 'fa-chart-pie', label: 'Dashboard', key: 'invoices-dashboard' },
+  { href: '/invoices/data/',      icon: 'fa-table',     label: 'Invoice Data', key: 'invoices-data' },
   { section: 'Admin' },
   { href: '/companies/', icon: 'fa-building',          label: 'Companies',   key: 'companies' },
   { href: '/brokers/',   icon: 'fa-handshake',         label: 'Brokers',     key: 'brokers' },
@@ -159,6 +160,7 @@ function initNav(activeKey) {
     'glp1-report': 'GLP1 — Ready to Assign Report', 'glp1-record': 'Member Record',
     'cc-in-progress': 'Call Center — In Progress', 'cc-other': 'Call Center — Other Statuses',
     'invoices-dashboard': 'Invoices & Statements — Dashboard',
+    'invoices-data': 'Invoices & Statements — Invoice Data',
     companies: 'Companies', brokers: 'Brokers', 'user-management': 'User Management',
   };
   document.getElementById('topbar').innerHTML = `
