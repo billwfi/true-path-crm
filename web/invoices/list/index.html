@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Invoices — True Path CRM</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+  <link rel="stylesheet" href="/assets/css/app.css">
+</head>
+<body class="bg-slate-100 text-slate-700">
+<div id="app" class="flex h-screen overflow-hidden">
+  <div id="nav-placeholder"></div>
+  <div class="flex-1 flex flex-col overflow-hidden">
+    <div id="topbar"></div>
+    <main class="flex-1 overflow-y-auto p-6">
+
+      <div class="search-bar">
+        <input type="text" id="search" class="form-control" placeholder="Search invoice # or client…" oninput="render()">
+        <button class="btn btn-primary" onclick="openNew()"><i class="fa-solid fa-plus"></i> New Invoice</button>
+      </div>
+
+      <div class="card">
+        <div class="card-body">
+          <table class="data-table">
+            <thead><tr>
+              <th>Invoice #</th><th>Client</th><th>Billing Period</th><th>Invoice Date</th>
+              <th>Status</th><th class="text-right">Amount Due</th><th></th>
+            </tr></thead>
+            <tbody id="tbl-body"></tbody>
+          </table>
+        </div>
+      </div>
+    </main>
+  </div>
+</div>
+
+<!-- New Invoice modal -->
+<div id="new-modal" class="modal-backdrop hidden">
+  <div class="modal">
+    <div class="modal-header"><span class="modal-title">New Invoice</span>
+      <button class="modal-close" onclick="closeModal('new-modal')">×</button></div>
+    <div class="modal-body">
+      <div class="form-group"><label class="form-label">Client *</label>
+        <select class="form-control" id="n-client"><option value="">— Select client —</option></select></div>
+      <div class="flex gap-3">
+        <div class="form-group flex-1"><label class="form-label">Billing Start *</label><input type="date" class="form-control" id="n-start"></div>
+        <div class="form-group flex-1"><label class="form-label">Billing End *</label><input type="date" class="form-control" id="n-end"></div>
+      </div>
+      <div class="form-group"><label class="form-label">Invoice Date</label><input type="date" class="form-control" id="n-idate"></div>
+      <p class="text-xs text-slate-500">Line items are pulled from completed WellSync transactions in the billing period, priced by the client's GLP1 benefit rates.</p>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeModal('new-modal')">Cancel</button>
+      <button class="btn btn-primary" onclick="createInvoice()">Create &amp; Open</button>
+    </div>
+  </div>
+</div>
+
+<script src="/assets/js/app.js"></script>
+<script>
+  initNav('invoices-list');
+  let INV = [];
+  const STATUS_COLOR = { Open: 'blue', Sent: 'yellow', Paid: 'green', Void: 'gray' };
+
+  async function load() {
+    INV = await apiGet('/invoice-records') || [];
+    render();
+  }
+
+  function render() {
+    const q = document.getElementById('search').value.trim().toLowerCase();
+    const rows = INV.filter(i => !q ||
+      `${i.invoice_number || ''} ${i.client_name || ''}`.toLowerCase().includes(q));
+    document.getElementById('tbl-body').innerHTML = rows.length
+      ? rows.map(i => `<tr class="clickable" onclick="location.href='/invoices/record/?id=${i.id}'">
+          <td class="font-medium font-mono">${esc(i.invoice_number)}</td>
+          <td>${esc(i.client_name) || '—'}</td>
+          <td class="text-sm">${fmtDate(i.billing_start)} – ${fmtDate(i.billing_end)}</td>
+          <td class="text-sm">${fmtDate(i.invoice_date)}</td>
+          <td><span class="badge badge-${STATUS_COLOR[i.status] || 'gray'}">${esc(i.status)}</span></td>
+          <td class="text-right font-semibold">${fmtCurrency(i.amount_due)}</td>
+          <td class="text-right"><button class="btn btn-outline btn-sm" onclick="event.stopPropagation();location.href='/invoices/record/?id=${i.id}'"><i class="fa-solid fa-folder-open"></i> Open</button></td>
+        </tr>`).join('')
+      : '<tr><td colspan="7" class="text-center py-10 text-slate-400">No invoices yet — create one</td></tr>';
+  }
+
+  async function openNew() {
+    const clients = await apiGet('/clients') || [];
+    document.getElementById('n-client').innerHTML = '<option value="">— Select client —</option>' +
+      clients.map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('');
+    const now = new Date(), first = new Date(now.getFullYear(), now.getMonth(), 1),
+          last = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+    const fmt = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    document.getElementById('n-start').value = fmt(first);
+    document.getElementById('n-end').value = fmt(last);
+    document.getElementById('n-idate').value = fmt(now);
+    openModal('new-modal');
+  }
+
+  async function createInvoice() {
+    const body = {
+      client_id: document.getElementById('n-client').value,
+      billing_start: document.getElementById('n-start').value,
+      billing_end: document.getElementById('n-end').value,
+      invoice_date: document.getElementById('n-idate').value,
+    };
+    if (!body.client_id || !body.billing_start || !body.billing_end) { showToast('Client and billing period required', 'error'); return; }
+    const res = await apiPost('/invoice-records', body);
+    if (res && res.ok) {
+      const d = await res.json().catch(() => ({}));
+      location.href = `/invoices/record/?id=${d.id}`;
+    } else showToast('Create failed', 'error');
+  }
+
+  document.getElementById('new-modal').addEventListener('click', e => { if (e.target === e.currentTarget) closeModal('new-modal'); });
+  load();
+</script>
+</body>
+</html>

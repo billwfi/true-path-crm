@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Invoice — True Path CRM</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+  <link rel="stylesheet" href="/assets/css/app.css">
+</head>
+<body class="bg-slate-100 text-slate-700">
+<div id="app" class="flex h-screen overflow-hidden">
+  <div id="nav-placeholder"></div>
+  <div class="flex-1 flex flex-col overflow-hidden">
+    <div id="topbar"></div>
+    <main class="flex-1 overflow-y-auto p-6">
+
+      <div class="search-bar flex-wrap gap-2">
+        <a class="btn btn-outline" href="/invoices/list/"><i class="fa-solid fa-arrow-left"></i> Back</a>
+        <span class="text-lg font-semibold ml-1" id="inv-title">Invoice</span>
+        <span class="text-sm text-slate-500" id="inv-sub"></span>
+        <div class="flex gap-2 ml-auto">
+          <button class="btn btn-primary" onclick="save(false)"><i class="fa-solid fa-floppy-disk"></i> Save</button>
+          <button class="btn btn-primary" onclick="save(true)" title="Recompute line items from WellSync for the billing period"><i class="fa-solid fa-rotate"></i> Save &amp; Update Details</button>
+          <button class="btn btn-outline" onclick="printInvoice()"><i class="fa-solid fa-print"></i> Print / PDF</button>
+          <button class="btn btn-danger" onclick="del()"><i class="fa-solid fa-trash"></i></button>
+        </div>
+      </div>
+
+      <!-- Invoice information -->
+      <div class="card mb-4">
+        <div class="card-header"><span class="card-title">Invoice Information</span></div>
+        <div class="card-body form-pad">
+          <div class="field-grid">
+            <div class="form-group mb-0"><label class="form-label">Invoice #</label><input class="form-control" id="f-number" readonly></div>
+            <div class="form-group mb-0"><label class="form-label">Client / Group</label><input class="form-control" id="f-client" readonly></div>
+            <div class="form-group mb-0"><label class="form-label">iRx Client ID</label><input class="form-control" id="f-irx" readonly></div>
+            <div class="form-group mb-0"><label class="form-label">Status</label>
+              <select class="form-control" id="f-status">
+                <option>Open</option><option>Sent</option><option>Paid</option><option>Void</option>
+              </select></div>
+            <div class="form-group mb-0"><label class="form-label">Billing Start</label><input type="date" class="form-control" id="f-start"></div>
+            <div class="form-group mb-0"><label class="form-label">Billing End</label><input type="date" class="form-control" id="f-end"></div>
+            <div class="form-group mb-0"><label class="form-label">Invoice Date</label><input type="date" class="form-control" id="f-idate"></div>
+            <div class="form-group mb-0"><label class="form-label">Invoice Due Date</label><input type="date" class="form-control" id="f-ddate"></div>
+            <div class="form-group mb-0"><label class="form-label">Invoice Sent Date</label><input type="date" class="form-control" id="f-sdate"></div>
+            <div class="form-group mb-0"><label class="form-label">Adjustments ($)</label><input type="number" step="0.01" class="form-control" id="f-adj" oninput="recalc()"></div>
+          </div>
+          <div class="flex gap-8 mt-5 text-sm">
+            <div><div class="text-slate-500">Subtotal</div><div class="text-xl font-semibold" id="t-subtotal">—</div></div>
+            <div><div class="text-slate-500">Adjustments</div><div class="text-xl font-semibold" id="t-adj">—</div></div>
+            <div><div class="text-slate-500">Amount Due</div><div class="text-xl font-semibold text-emerald-700" id="t-due">—</div></div>
+            <div><div class="text-slate-500">Line Items</div><div class="text-xl font-semibold" id="t-count">0</div></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Line items -->
+      <div class="card">
+        <div class="card-header"><span class="card-title">Transactions for Period</span></div>
+        <div class="card-body">
+          <table class="data-table">
+            <thead><tr>
+              <th>Dispensing Date</th><th>Category</th><th>Member ID</th><th>Member</th>
+              <th>Product</th><th class="text-right">Units</th><th class="text-right">Amount</th>
+            </tr></thead>
+            <tbody id="lines-body"></tbody>
+            <tfoot id="lines-foot"></tfoot>
+          </table>
+        </div>
+      </div>
+    </main>
+  </div>
+</div>
+
+<script src="/assets/js/app.js"></script>
+<script>
+  initNav('invoices-list');
+  const invId = parseInt(new URLSearchParams(location.search).get('id'), 10) || null;
+  let INV = null;
+
+  async function load() {
+    if (!invId) { location.href = '/invoices/list/'; return; }
+    INV = await apiGet(`/invoice-records?id=${invId}`);
+    if (!INV) { showToast('Invoice not found', 'error'); return; }
+    document.getElementById('inv-title').textContent = INV.invoice_number;
+    document.getElementById('inv-sub').textContent =
+      `${INV.client_name || ''} · Billing: ${fmtDate(INV.billing_start)} – ${fmtDate(INV.billing_end)}`;
+    document.getElementById('f-number').value = INV.invoice_number || '';
+    document.getElementById('f-client').value = INV.client_name || '';
+    document.getElementById('f-irx').value = INV.irx_client_id || '';
+    document.getElementById('f-status').value = INV.status || 'Open';
+    document.getElementById('f-start').value = dval(INV.billing_start);
+    document.getElementById('f-end').value = dval(INV.billing_end);
+    document.getElementById('f-idate').value = dval(INV.invoice_date);
+    document.getElementById('f-ddate').value = dval(INV.due_date);
+    document.getElementById('f-sdate').value = dval(INV.sent_date);
+    document.getElementById('f-adj').value = INV.adjustments != null ? INV.adjustments : 0;
+    renderLines();
+    recalc();
+  }
+
+  function dval(d) { return d ? String(d).slice(0, 10) : ''; }
+  function subtotal() { return (INV.lines || []).reduce((s, l) => s + (Number(l.amount) || 0), 0); }
+
+  function recalc() {
+    const sub = subtotal();
+    const adj = Number(document.getElementById('f-adj').value) || 0;
+    document.getElementById('t-subtotal').textContent = fmtCurrency(sub);
+    document.getElementById('t-adj').textContent = fmtCurrency(adj);
+    document.getElementById('t-due').textContent = fmtCurrency(sub + adj);
+    document.getElementById('t-count').textContent = (INV.lines || []).length;
+  }
+
+  function renderLines() {
+    const ls = INV.lines || [];
+    document.getElementById('lines-body').innerHTML = ls.length
+      ? ls.map(l => `<tr>
+          <td>${fmtDate(l.dispensing_date)}</td><td>${esc(l.category)}</td>
+          <td class="font-mono text-xs">${esc(l.member_id) || '—'}</td><td>${esc(l.member_name) || '—'}</td>
+          <td>${esc(l.product_name) || '—'}</td><td class="text-right">${l.units}</td>
+          <td class="text-right">${fmtCurrency(l.amount)}</td></tr>`).join('')
+      : '<tr><td colspan="7" class="text-center py-8 text-slate-400">No transactions in this billing period</td></tr>';
+    document.getElementById('lines-foot').innerHTML = ls.length
+      ? `<tr class="font-semibold bg-slate-50"><td colspan="5">Total — ${ls.length} records</td>
+          <td class="text-right">${ls.reduce((s, l) => s + (l.units || 0), 0)}</td>
+          <td class="text-right">${fmtCurrency(subtotal())}</td></tr>` : '';
+  }
+
+  function formBody() {
+    return {
+      status: document.getElementById('f-status').value,
+      billing_start: document.getElementById('f-start').value || null,
+      billing_end: document.getElementById('f-end').value || null,
+      invoice_date: document.getElementById('f-idate').value || null,
+      due_date: document.getElementById('f-ddate').value || null,
+      sent_date: document.getElementById('f-sdate').value || null,
+      adjustments: Number(document.getElementById('f-adj').value) || 0,
+    };
+  }
+
+  async function save(regenerate) {
+    const res = await apiPatch(`/invoice-records?id=${invId}${regenerate ? '&regenerate=1' : ''}`, formBody());
+    if (res && res.ok) { showToast(regenerate ? 'Saved & details updated' : 'Saved', 'success'); load(); }
+    else showToast('Save failed', 'error');
+  }
+
+  async function del() {
+    if (!confirm2('Delete this invoice?')) return;
+    const res = await apiDelete(`/invoice-records?id=${invId}`);
+    if (res && res.ok) { showToast('Deleted', 'success'); location.href = '/invoices/list/'; }
+    else showToast('Delete failed', 'error');
+  }
+
+  function printInvoice() {
+    const i = INV, ls = i.lines || [];
+    const sub = subtotal(), adj = Number(document.getElementById('f-adj').value) || 0, due = sub + adj;
+    const addr = [i.address, [i.city, i.state, i.zip_code].filter(Boolean).join(' ')].filter(Boolean).map(x => `<br>${esc(x)}`).join('');
+    const lines = ls.map(l => `<tr>
+      <td>${fmtDate(l.dispensing_date)}</td><td>${esc(l.category)}</td><td>${esc(l.member_id) || ''}</td>
+      <td>${esc(l.member_name) || ''}</td><td>${esc(l.product_name) || ''}</td>
+      <td class="r">${l.units}</td><td class="r">${fmtCurrency(l.amount)}</td></tr>`).join('');
+    const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${esc(i.invoice_number)}</title>
+      <style>body{font-family:Arial,Helvetica,sans-serif;color:#1e293b;margin:40px;font-size:12.5px}
+      .head{display:flex;justify-content:space-between;align-items:flex-start}
+      .head img{height:62px}.meta{text-align:right;line-height:1.6}.meta b{color:#0f172a}
+      .due{color:#15803d;font-weight:bold;font-size:15px}
+      h2{color:#1d4ed8;font-size:15px;border-bottom:2px solid #1d4ed8;padding-bottom:4px;margin:26px 0 10px}
+      .lbl{font-weight:bold;margin:8px 0 4px}
+      table{width:100%;border-collapse:collapse;margin-bottom:10px}
+      th{background:#1d4ed8;color:#fff;padding:7px 8px;text-align:left;font-size:11px;text-transform:uppercase}
+      td{padding:6px 8px;border-bottom:1px solid #e2e8f0}.r{text-align:right}
+      tfoot td{background:#eff6ff;font-weight:bold;border-top:2px solid #1d4ed8}
+      .tot th{background:#1d4ed8}</style></head>
+      <body>
+        <div class="head">
+          <img src="${location.origin}/assets/img/truepath-logo.png" alt="True Path Sourcing">
+          <div class="meta">
+            <div><b>Client Name:</b> ${esc(i.client_name || '')}</div>
+            ${i.irx_client_id ? `<div><b>iRx Client ID:</b> ${esc(i.irx_client_id)}</div>` : ''}
+            <div><b>Billing Period:</b> ${fmtDate(i.billing_start)} – ${fmtDate(i.billing_end)}</div>
+            <div><b>Invoice Date:</b> ${fmtDate(i.invoice_date)}</div>
+            <div><b>Invoice Due Date:</b> ${fmtDate(i.due_date)}</div>
+            <div><b>Invoice #:</b> ${esc(i.invoice_number)}</div>
+            <div class="due">Total Due: ${fmtCurrency(due)}</div>
+          </div>
+        </div>
+        ${addr ? `<div style="margin-top:10px"><b>Bill To:</b>${addr}</div>` : ''}
+        <h2>Transactions for Period</h2>
+        <div class="lbl">Totals:</div>
+        <table class="tot"><thead><tr><th>Activity Start</th><th>Activity End</th>
+          <th class="r">Subtotal</th><th class="r">Adjustments</th><th class="r">Amount Due</th></tr></thead>
+          <tbody><tr><td>${fmtDate(i.billing_start)}</td><td>${fmtDate(i.billing_end)}</td>
+            <td class="r">${fmtCurrency(sub)}</td><td class="r">${fmtCurrency(adj)}</td>
+            <td class="r"><b>${fmtCurrency(due)}</b></td></tr></tbody></table>
+        <div class="lbl">Details:</div>
+        <table><thead><tr><th>Dispensing Date</th><th>Category</th><th>Member ID</th><th>Member</th>
+          <th>Product</th><th class="r">Units</th><th class="r">Amount</th></tr></thead>
+          <tbody>${lines}</tbody>
+          <tfoot><tr><td colspan="5">Totals — ${ls.length} records</td>
+            <td class="r">${ls.reduce((s, l) => s + (l.units || 0), 0)}</td>
+            <td class="r">${fmtCurrency(sub)}</td></tr></tfoot></table>
+        <scr` + `ipt>window.onload=function(){window.print()}</scr` + `ipt>
+      </body></html>`;
+    const w = window.open('', '_blank');
+    if (!w) { showToast('Allow pop-ups to print', 'error'); return; }
+    w.document.write(html); w.document.close();
+  }
+
+  load();
+</script>
+</body>
+</html>

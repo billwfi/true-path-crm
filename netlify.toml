@@ -93,6 +93,16 @@
   status = 301
 
 [[redirects]]
+  from = "/invoices/list"
+  to = "/invoices/list/"
+  status = 301
+
+[[redirects]]
+  from = "/invoices/record"
+  to = "/invoices/record/"
+  status = 301
+
+[[redirects]]
   from = "/invoices/dashboard"
   to = "/invoices/dashboard/"
   status = 301
