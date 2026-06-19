@@ -22,7 +22,7 @@
       <div class="card">
         <div class="card-body">
           <table class="data-table">
-            <thead><tr><th>#</th><th>Name</th><th>Company</th><th>Email</th><th>Phone</th><th>Broker</th><th>Active</th><th>Created</th><th></th></tr></thead>
+            <thead><tr><th>#</th><th>Client Name</th><th>iRx Client ID</th><th>Email</th><th>Phone</th><th>Broker</th><th>Active</th><th>Created</th><th></th></tr></thead>
             <tbody id="tbl-body"></tbody>
           </table>
         </div>
@@ -45,8 +45,8 @@
     document.getElementById('tbl-body').innerHTML = data.length
       ? data.map(c => `<tr class="clickable" onclick="openClient(${c.id})">
           <td class="text-slate-400 font-mono text-xs">#${c.id}</td>
-          <td class="font-medium">${esc(c.firstname)} ${esc(c.lastname)}</td>
-          <td>${esc(c.company) || '—'}</td>
+          <td class="font-medium">${esc(c.name) || '—'}</td>
+          <td class="font-mono text-xs">${esc(c.irx_client_id) || '—'}</td>
           <td>${esc(c.email) || '—'}</td>
           <td>${esc(c.phone) || '—'}</td>
           <td>${esc(c.broker) || '—'}</td>

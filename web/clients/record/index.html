@@ -35,19 +35,20 @@
           <div class="card-header"><span class="card-title"><i class="fa-solid fa-id-card text-slate-400 mr-2"></i>Demographics</span></div>
           <div class="card-body form-pad">
             <div class="field-grid">
-              <div class="form-group mb-0"><label class="form-label">First Name *</label><input class="form-control" id="f-firstname"></div>
-              <div class="form-group mb-0"><label class="form-label">Last Name</label><input class="form-control" id="f-lastname"></div>
-              <div class="form-group mb-0"><label class="form-label">Email</label><input class="form-control" type="email" id="f-email"></div>
-              <div class="form-group mb-0"><label class="form-label">Phone</label><input class="form-control" id="f-phone"></div>
-              <div class="form-group mb-0"><label class="form-label">Company</label>
-                <select class="form-control" id="f-company_id"><option value="">— None —</option></select></div>
+              <div class="form-group mb-0 full"><label class="form-label">Client / Company Name *</label><input class="form-control" id="f-name"></div>
+              <div class="form-group mb-0"><label class="form-label">iRx Client ID (CARRIER)</label>
+                <input class="form-control" id="f-irx_client_id" placeholder="Matches eligibility CARRIER"></div>
               <div class="form-group mb-0"><label class="form-label">Broker</label>
                 <select class="form-control" id="f-broker_id"><option value="">— None —</option></select></div>
+              <div class="form-group mb-0"><label class="form-label">Email</label><input class="form-control" type="email" id="f-email"></div>
+              <div class="form-group mb-0"><label class="form-label">Phone</label><input class="form-control" id="f-phone"></div>
+              <div class="form-group mb-0 full"><label class="form-label">Address</label><input class="form-control" id="f-address"></div>
+              <div class="form-group mb-0"><label class="form-label">City</label><input class="form-control" id="f-city"></div>
+              <div class="form-group mb-0"><label class="form-label">State</label><input class="form-control" id="f-state"></div>
+              <div class="form-group mb-0"><label class="form-label">Zip</label><input class="form-control" id="f-zip_code"></div>
               <div class="form-group mb-0"><label class="form-label">Groups</label><input class="form-control" id="f-groups" placeholder="e.g. 340B, VIP"></div>
               <div class="form-group mb-0"><label class="form-label">Active</label>
                 <select class="form-control" id="f-active"><option value="1">Yes</option><option value="0">No</option></select></div>
-              <div class="form-group mb-0"><label class="form-label">iRx Client ID (CARRIER)</label>
-                <input class="form-control" id="f-irx_client_id" placeholder="Matches eligibility CARRIER"></div>
               <div class="form-group mb-0 full"><label class="form-label">Notes</label><textarea class="form-control" id="f-notes" rows="3"></textarea></div>
             </div>
             <div class="flex items-center gap-3 mt-5">
@@ -215,15 +216,10 @@
   }
 
   /* ── Demographics ── */
-  async function populateDropdowns(selCompany, selBroker) {
-    const [companies, brokers] = await Promise.all([
-      apiGet('/companies').catch(() => []), apiGet('/brokers').catch(() => []),
-    ]);
-    document.getElementById('f-company_id').innerHTML = '<option value="">— None —</option>' +
-      (companies || []).map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('');
+  async function populateDropdowns(selBroker) {
+    const brokers = await apiGet('/brokers').catch(() => []);
     document.getElementById('f-broker_id').innerHTML = '<option value="">— None —</option>' +
       (brokers || []).map(b => `<option value="${b.id}">${esc(b.name)}</option>`).join('');
-    if (selCompany != null) document.getElementById('f-company_id').value = selCompany || '';
     if (selBroker != null) document.getElementById('f-broker_id').value = selBroker || '';
   }
 
@@ -236,11 +232,13 @@
     }
     const c = await apiGet(`/clients?id=${clientId}`);
     if (!c) { showToast('Client not found', 'error'); return; }
-    document.getElementById('f-firstname').value = c.firstname || '';
-    document.getElementById('f-lastname').value = c.lastname || '';
+    document.getElementById('f-name').value = c.name || '';
     document.getElementById('f-email').value = c.email || '';
     document.getElementById('f-phone').value = c.phone || '';
-    document.getElementById('f-company_id').value = c.company_id || '';
+    document.getElementById('f-address').value = c.address || '';
+    document.getElementById('f-city').value = c.city || '';
+    document.getElementById('f-state').value = c.state || '';
+    document.getElementById('f-zip_code').value = c.zip_code || '';
     document.getElementById('f-broker_id').value = c.broker_id || '';
     document.getElementById('f-groups').value = c.groups || '';
     document.getElementById('f-notes').value = c.notes || '';
@@ -248,7 +246,7 @@
     document.getElementById('f-irx_client_id').value = c.irx_client_id || '';
     clientIrxId = c.irx_client_id || null;
     eligLoaded = false;  // re-evaluate eligibility after (re)load
-    document.getElementById('client-name').textContent = `${c.firstname || ''} ${c.lastname || ''}`.trim() || `Client #${c.id}`;
+    document.getElementById('client-name').textContent = (c.name || '').trim() || `Client #${c.id}`;
     document.getElementById('delete-btn').style.display = '';
     gateTabs();
     await loadDetail();
@@ -256,11 +254,13 @@
 
   function demoForm() {
     return {
-      firstname: document.getElementById('f-firstname').value.trim(),
-      lastname: document.getElementById('f-lastname').value.trim(),
+      name: document.getElementById('f-name').value.trim(),
       email: document.getElementById('f-email').value.trim(),
       phone: document.getElementById('f-phone').value.trim(),
-      company_id: parseInt(document.getElementById('f-company_id').value) || null,
+      address: document.getElementById('f-address').value.trim(),
+      city: document.getElementById('f-city').value.trim(),
+      state: document.getElementById('f-state').value.trim(),
+      zip_code: document.getElementById('f-zip_code').value.trim(),
       broker_id: parseInt(document.getElementById('f-broker_id').value) || null,
       groups: document.getElementById('f-groups').value.trim(),
       notes: document.getElementById('f-notes').value.trim(),
@@ -271,7 +271,7 @@
 
   async function saveDemographics() {
     const body = demoForm();
-    if (!body.firstname) { showToast('First name is required', 'error'); return; }
+    if (!body.name) { showToast('Client / Company name is required', 'error'); return; }
     if (clientId) {
       const res = await apiPatch(`/clients?id=${clientId}`, body);
       if (res && res.ok) { showToast('Client updated', 'success'); loadClient(); }

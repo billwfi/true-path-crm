@@ -1,6 +1,8 @@
 const { mssql } = require('./_mssql');
 const { verifyToken, unauthorized, ok, created, badRequest, notFound, serverError, options } = require('./_auth');
 
+// A "client" is an organization/company. Sub-resources (contacts, contracts) key on
+// tp_clients.id; the Eligibility tab keys on irx_client_id (= eligibility CARRIER).
 exports.handler = async function (event) {
   if (event.httpMethod === 'OPTIONS') return options();
   if (!verifyToken(event)) return unauthorized();
@@ -11,26 +13,22 @@ exports.handler = async function (event) {
     if (event.httpMethod === 'GET') {
       if (id) {
         const r = await mssql(
-          `SELECT c.*, co.name AS company, co.id AS company_id, b.name AS broker, b.id AS broker_id,
+          `SELECT c.*, b.name AS broker, b.id AS broker_id,
            CONCAT(s.firstname, ' ', s.lastname) AS coordinator
            FROM tp_clients c
-           LEFT JOIN tp_companies co ON co.id = c.company_id
            LEFT JOIN tp_brokers b ON b.id = c.broker_id
            LEFT JOIN tp_staff s ON s.id = c.account_coordinator
            WHERE c.id = @id`, { id: parseInt(id, 10) });
         return r.recordset[0] ? ok(r.recordset[0]) : notFound();
       }
       const r = await mssql(
-        `SELECT c.id, c.firstname, c.lastname, c.email, c.phone, c.active, c.groups, c.created_at,
-         co.name AS company, co.id AS company_id, b.name AS broker, b.id AS broker_id,
-         CONCAT(s.firstname, ' ', s.lastname) AS coordinator
+        `SELECT c.id, c.name, c.email, c.phone, c.city, c.state, c.active, c.groups,
+                c.irx_client_id, c.created_at, b.name AS broker, b.id AS broker_id
          FROM tp_clients c
-         LEFT JOIN tp_companies co ON co.id = c.company_id
          LEFT JOIN tp_brokers b ON b.id = c.broker_id
-         LEFT JOIN tp_staff s ON s.id = c.account_coordinator
-         WHERE (@search IS NULL OR CONCAT(c.firstname, ' ', c.lastname) LIKE @search
-                OR c.email LIKE @search OR co.name LIKE @search)
-         ORDER BY c.created_at DESC`,
+         WHERE (@search IS NULL OR c.name LIKE @search OR c.email LIKE @search
+                OR c.irx_client_id LIKE @search OR c.city LIKE @search)
+         ORDER BY c.name`,
         { search: search ? `%${search}%` : null });
       return ok(r.recordset);
     }
@@ -38,13 +36,16 @@ exports.handler = async function (event) {
     if (event.httpMethod === 'POST') {
       const b = JSON.parse(event.body || '{}');
       const r = await mssql(
-        `INSERT INTO tp_clients (firstname, lastname, email, phone, company_id, broker_id, account_coordinator, groups, notes, irx_client_id)
-         VALUES (@firstname,@lastname,@email,@phone,@company_id,@broker_id,@account_coordinator,@groups,@notes,@irx_client_id);
+        `INSERT INTO tp_clients (name, email, phone, address, city, state, zip_code,
+           broker_id, account_coordinator, groups, notes, irx_client_id, active)
+         VALUES (@name,@email,@phone,@address,@city,@state,@zip_code,
+           @broker_id,@account_coordinator,@groups,@notes,@irx_client_id,@active);
          SELECT CAST(SCOPE_IDENTITY() AS INT) AS id;`,
-        { firstname: b.firstname || '', lastname: b.lastname || '', email: b.email || null, phone: b.phone || null,
-          company_id: parseInt(b.company_id) || null, broker_id: parseInt(b.broker_id) || null,
-          account_coordinator: parseInt(b.account_coordinator) || null, groups: b.groups || null,
-          notes: b.notes || null, irx_client_id: b.irx_client_id || null });
+        { name: b.name || '', email: b.email || null, phone: b.phone || null,
+          address: b.address || null, city: b.city || null, state: b.state || null, zip_code: b.zip_code || null,
+          broker_id: parseInt(b.broker_id) || null, account_coordinator: parseInt(b.account_coordinator) || null,
+          groups: b.groups || null, notes: b.notes || null, irx_client_id: b.irx_client_id || null,
+          active: (b.active === false || b.active === 0) ? 0 : 1 });
       return created({ id: r.recordset[0].id });
     }
 
@@ -52,14 +53,16 @@ exports.handler = async function (event) {
       if (!id) return badRequest('id required');
       const b = JSON.parse(event.body || '{}');
       await mssql(
-        `UPDATE tp_clients SET firstname=@firstname, lastname=@lastname, email=@email, phone=@phone, active=@active,
-         company_id=@company_id, broker_id=@broker_id, account_coordinator=@account_coordinator,
-         groups=@groups, notes=@notes, irx_client_id=@irx_client_id WHERE id=@id`,
-        { firstname: b.firstname, lastname: b.lastname, email: b.email || null, phone: b.phone || null,
+        `UPDATE tp_clients SET name=@name, email=@email, phone=@phone, address=@address, city=@city,
+           state=@state, zip_code=@zip_code, active=@active, broker_id=@broker_id,
+           account_coordinator=@account_coordinator, groups=@groups, notes=@notes, irx_client_id=@irx_client_id
+         WHERE id=@id`,
+        { name: b.name, email: b.email || null, phone: b.phone || null, address: b.address || null,
+          city: b.city || null, state: b.state || null, zip_code: b.zip_code || null,
           active: (b.active !== false && b.active !== 0) ? 1 : 0,
-          company_id: parseInt(b.company_id) || null, broker_id: parseInt(b.broker_id) || null,
-          account_coordinator: parseInt(b.account_coordinator) || null, groups: b.groups || null,
-          notes: b.notes || null, irx_client_id: b.irx_client_id || null, id: parseInt(id, 10) });
+          broker_id: parseInt(b.broker_id) || null, account_coordinator: parseInt(b.account_coordinator) || null,
+          groups: b.groups || null, notes: b.notes || null, irx_client_id: b.irx_client_id || null,
+          id: parseInt(id, 10) });
       return ok({ id });
     }
 
