@@ -79,11 +79,18 @@
 
       <!-- Invoice data: completed by group x month -->
       <div class="card mb-4">
-        <div class="card-header"><h3 class="font-semibold">Invoice Data — Completed by Group &amp; Month</h3></div>
+        <div class="card-header flex items-center justify-between">
+          <h3 class="font-semibold" id="month-chart-title">Invoice Data — Completed by Group &amp; Month</h3>
+          <label class="text-sm text-slate-500">Show
+            <select id="inv-metric" class="input ml-1" style="width:auto;display:inline-block" onchange="setMetric(this.value)">
+              <option value="count">Counts</option>
+              <option value="amount">Invoice $</option>
+            </select></label>
+        </div>
         <div class="card-body"><div style="height:360px"><canvas id="monthChart"></canvas></div></div>
       </div>
       <div class="card">
-        <div class="card-header"><h3 class="font-semibold">Completed Counts by Group &amp; Month</h3></div>
+        <div class="card-header"><h3 class="font-semibold" id="inv-table-title">Completed Counts by Group &amp; Month</h3></div>
         <div class="card-body">
           <table class="data-table">
             <thead><tr id="inv-head"></tr></thead>
@@ -105,7 +112,7 @@
   const PALETTE = ['#2563eb','#16a34a','#d97706','#dc2626','#7c3aed','#0891b2','#db2777','#65a30d','#9333ea','#0d9488','#ca8a04','#0ea5e9'];
 
   let ROWS = [];
-  let periods = [], invGroups = [], matrix = {};
+  let periods = [], invGroups = [], matrix = {}, amtMatrix = {}, metric = 'count';
   let groupChart, statusChart, monthChart;
 
   function num(n) { return Number(n || 0).toLocaleString('en-US'); }
@@ -118,7 +125,9 @@
     return `${y}-${m.padStart(2, '0')}`;
   }
   function periodLabel(key) { const [y, m] = key.split('-'); return `${MONTHS[parseInt(m,10)]} ${y}`; }
-  function cellVal(p, g) { return (matrix[p] && matrix[p][g]) || 0; }
+  function cellVal(p, g) { const m = metric === 'amount' ? amtMatrix : matrix; return (m[p] && m[p][g]) || 0; }
+  function fmtCell(v) { return metric === 'amount' ? (v ? fmtCurrency(v) : '—') : (v || '—'); }
+  function fmtTot(v)  { return metric === 'amount' ? fmtCurrency(v) : num(v); }
   function periodTotal(p) { return invGroups.reduce((s, g) => s + cellVal(p, g), 0); }
   function groupTotal(g) { return periods.reduce((s, p) => s + cellVal(p, g), 0); }
   function grandTotal() { return periods.reduce((s, p) => s + periodTotal(p), 0); }
@@ -265,25 +274,41 @@
 
   function buildMatrix(rows) {
     const pset = new Set(), gset = new Set();
-    matrix = {};
+    matrix = {}; amtMatrix = {};
     rows.filter(r => r.status === 'completed').forEach(r => {
       const p = periodKeyFromDate(r.completed_date); if (!p) return;
       const g = r.group_name || '(no group)';
       pset.add(p); gset.add(g);
       (matrix[p] = matrix[p] || {})[g] = (matrix[p][g] || 0) + 1;
+      const rt = RATEMAP[g.trim().toLowerCase()] || {};
+      const amt = r.medication === 'Tirzepatide' ? (rt.tirz_rate || 0)
+                : r.medication === 'Semaglutide' ? (rt.sema_rate || 0) : 0;
+      (amtMatrix[p] = amtMatrix[p] || {})[g] = (amtMatrix[p][g] || 0) + amt;
     });
     periods = [...pset].sort();
     invGroups = [...gset].sort();
   }
 
+  function setMetric(v) {
+    metric = v;
+    const isAmt = metric === 'amount';
+    document.getElementById('month-chart-title').textContent =
+      isAmt ? 'Invoice Data — Invoice $ by Group & Month' : 'Invoice Data — Completed by Group & Month';
+    document.getElementById('inv-table-title').textContent =
+      isAmt ? 'Invoice $ by Group & Month' : 'Completed Counts by Group & Month';
+    renderMonthChart();
+    renderInvoiceTable();
+  }
+
   function renderMonthChart() {
+    const isAmt = metric === 'amount';
     const datasets = invGroups.map((g, i) => ({ label: g, data: periods.map(p => cellVal(p, g)), backgroundColor: PALETTE[i % PALETTE.length] }));
     const cfg = {
       type: 'bar',
       data: { labels: periods.map(periodLabel), datasets },
       options: { responsive: true, maintainAspectRatio: false,
-        plugins: { title: { display: true, text: 'Completed transactions by group, by month' }, legend: { position: 'bottom' } },
-        scales: { x: { stacked: true }, y: { stacked: true, beginAtZero: true, title: { display: true, text: 'Completed' } } } },
+        plugins: { title: { display: true, text: isAmt ? 'Invoice $ by group, by month' : 'Completed transactions by group, by month' }, legend: { position: 'bottom' } },
+        scales: { x: { stacked: true }, y: { stacked: true, beginAtZero: true, title: { display: true, text: isAmt ? 'Invoice $' : 'Completed' } } } },
     };
     if (monthChart) { monthChart.data = cfg.data; monthChart.update(); } else monthChart = new Chart(document.getElementById('monthChart'), cfg);
   }
@@ -293,13 +318,13 @@
       `<th>Group Name</th>${periods.map(p => `<th class="text-right">${esc(periodLabel(p))}</th>`).join('')}<th class="text-right">Total</th>`;
     document.getElementById('inv-body').innerHTML = invGroups.length
       ? invGroups.map(g => `<tr><td class="font-medium">${esc(g)}</td>
-          ${periods.map(p => `<td class="text-right">${cellVal(p, g) || '—'}</td>`).join('')}
-          <td class="text-right font-semibold">${num(groupTotal(g))}</td></tr>`).join('')
+          ${periods.map(p => `<td class="text-right">${fmtCell(cellVal(p, g))}</td>`).join('')}
+          <td class="text-right font-semibold">${fmtTot(groupTotal(g))}</td></tr>`).join('')
       : `<tr><td colspan="${periods.length + 2}" class="text-center py-10 text-slate-400">No completed transactions</td></tr>`;
     document.getElementById('inv-foot').innerHTML = invGroups.length
       ? `<tr class="font-semibold bg-slate-50"><td>Total</td>
-          ${periods.map(p => `<td class="text-right">${num(periodTotal(p))}</td>`).join('')}
-          <td class="text-right">${num(grandTotal())}</td></tr>` : '';
+          ${periods.map(p => `<td class="text-right">${fmtTot(periodTotal(p))}</td>`).join('')}
+          <td class="text-right">${fmtTot(grandTotal())}</td></tr>` : '';
   }
 
   function exportExcel() {
