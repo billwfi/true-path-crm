@@ -73,7 +73,7 @@
         <label class="form-label">Nav Access</label>
         <p id="nav-admin-note" class="text-xs text-amber-600 mb-1" style="display:none">Admins can access every section.</p>
         <p id="nav-role-note" class="text-xs text-amber-600 mb-1" style="display:none"></p>
-        <div id="nav-access-boxes" class="flex flex-col gap-1"></div>
+        <div id="nav-access-boxes" class="grid grid-cols-2 gap-x-4 gap-y-1"></div>
       </div>
     </div>
     <div class="modal-footer">
@@ -110,7 +110,7 @@
   initNav('user-management');
 
   // Assignable nav sections (Settings is always admin-only, so not listed).
-  const SECTIONS = ['Main', 'Marketing', 'Pharmacy', 'GLP1', 'Call Center', 'Admin'];
+  const SECTIONS = ['Main', 'Marketing', 'Pharmacy', 'GLP1', 'Call Center', 'Invoices & Statements', 'Admin'];
   // Roles that are locked to a fixed nav-access set (no other sections selectable).
   const ROLE_NAV_LOCK = { 'Client Concierge': ['Call Center'] };
   let users = [];
