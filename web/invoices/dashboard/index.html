@@ -16,8 +16,12 @@
     <div id="topbar"></div>
     <main class="flex-1 overflow-y-auto p-6">
 
-      <div class="search-bar">
-        <span class="text-sm text-slate-500">WellSync transactions by client group, status, and completed-by-month (invoice basis).</span>
+      <div class="search-bar flex-wrap gap-2">
+        <label class="text-sm text-slate-500">Group Name</label>
+        <select id="f-group" class="input" onchange="renderAll()" style="max-width:220px"><option value="">All groups</option></select>
+        <label class="text-sm text-slate-500 ml-2">Status</label>
+        <select id="f-status" class="input" onchange="renderAll()" style="max-width:200px"><option value="">All statuses</option></select>
+        <span id="count" class="text-sm text-slate-500 ml-1"></span>
         <div class="flex gap-2 ml-auto">
           <button class="btn btn-primary" id="export-btn" onclick="exportExcel()"><i class="fa-solid fa-file-excel"></i> Export Invoice Data</button>
         </div>
@@ -26,7 +30,7 @@
       <!-- Summary stat cards -->
       <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4" id="stats"></div>
 
-      <!-- Group breakdown -->
+      <!-- Group breakdown + status -->
       <div class="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-4">
         <div class="card lg:col-span-2">
           <div class="card-header"><h3 class="font-semibold">Transactions by Group</h3></div>
@@ -82,41 +86,63 @@
   const MONTHS = ['', 'Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
   const PALETTE = ['#2563eb','#16a34a','#d97706','#dc2626','#7c3aed','#0891b2','#db2777','#65a30d','#9333ea','#0d9488','#ca8a04','#0ea5e9'];
 
-  let DATA = { groups: [], statuses: [], invoiceByMonth: [] };
+  let ROWS = [];
   let periods = [], invGroups = [], matrix = {};
   let groupChart, statusChart, monthChart;
 
-  function periodKey(r) { return (r.yr == null) ? 'Unknown' : `${r.yr}-${String(r.mo).padStart(2,'0')}`; }
-  function periodLabel(key) {
-    if (key === 'Unknown') return 'Unknown';
-    const [y, m] = key.split('-'); return `${MONTHS[parseInt(m,10)]} ${y}`;
+  function num(n) { return Number(n || 0).toLocaleString('en-US'); }
+  function uniq(a) { return [...new Set(a.filter(Boolean))].sort(); }
+
+  // completed_date is 'MM/DD/YYYY'; build a 'YYYY-MM' period key.
+  function periodKeyFromDate(d) {
+    if (!d) return null;
+    const [m, , y] = d.split('/');
+    return `${y}-${m.padStart(2, '0')}`;
   }
+  function periodLabel(key) { const [y, m] = key.split('-'); return `${MONTHS[parseInt(m,10)]} ${y}`; }
   function cellVal(p, g) { return (matrix[p] && matrix[p][g]) || 0; }
   function periodTotal(p) { return invGroups.reduce((s, g) => s + cellVal(p, g), 0); }
   function groupTotal(g) { return periods.reduce((s, p) => s + cellVal(p, g), 0); }
   function grandTotal() { return periods.reduce((s, p) => s + periodTotal(p), 0); }
-  function num(n) { return Number(n || 0).toLocaleString('en-US'); }
 
   async function load() {
-    DATA = await apiGet('/invoices') || { groups: [], statuses: [], invoiceByMonth: [] };
-    renderStats();
-    renderGroupChart();
-    renderGroupTable();
-    renderStatusChart();
-    buildMatrix();
+    ROWS = await apiGet('/invoices?detail=1') || [];
+    fillSelect('f-group', uniq(ROWS.map(r => r.group_name)));
+    fillSelect('f-status', uniq(ROWS.map(r => r.status)));
+    renderAll();
+  }
+
+  function fillSelect(id, vals) {
+    const el = document.getElementById(id);
+    el.innerHTML = el.children[0].outerHTML + vals.map(v => `<option value="${esc(v)}">${esc(v)}</option>`).join('');
+  }
+
+  function filteredRows() {
+    const g = document.getElementById('f-group').value;
+    const s = document.getElementById('f-status').value;
+    return ROWS.filter(r => (!g || r.group_name === g) && (!s || r.status === s));
+  }
+
+  function renderAll() {
+    const rows = filteredRows();
+    document.getElementById('count').textContent = `${rows.length} of ${ROWS.length} transactions`;
+    renderStats(rows);
+    renderGroupChartAndTable(rows);
+    renderStatusChart(rows);
+    buildMatrix(rows);
     renderMonthChart();
     renderInvoiceTable();
   }
 
-  function renderStats() {
-    const txns = DATA.groups.reduce((s, g) => s + g.row_count, 0);
-    const members = DATA.groups.reduce((s, g) => s + g.members, 0);
-    const completed = DATA.groups.reduce((s, g) => s + g.completed, 0);
+  function renderStats(rows) {
+    const members = new Set(rows.map(r => r.memberid).filter(Boolean)).size;
+    const completed = rows.filter(r => r.status === 'completed').length;
+    const groups = new Set(rows.map(r => r.group_name)).size;
     const cards = [
-      ['Transactions', num(txns), 'fa-file-invoice', 'text-blue-600'],
+      ['Transactions', num(rows.length), 'fa-file-invoice', 'text-blue-600'],
       ['Distinct Members', num(members), 'fa-users', 'text-emerald-600'],
       ['Completed (billable)', num(completed), 'fa-circle-check', 'text-amber-600'],
-      ['Client Groups', num(DATA.groups.length), 'fa-building', 'text-violet-600'],
+      ['Client Groups', num(groups), 'fa-building', 'text-violet-600'],
     ];
     document.getElementById('stats').innerHTML = cards.map(([label, val, icon, color]) => `
       <div class="card"><div class="card-body flex items-center gap-3">
@@ -126,101 +152,94 @@
       </div></div>`).join('');
   }
 
-  function renderGroupChart() {
-    const labels = DATA.groups.map(g => g.group_name);
+  function groupAgg(rows) {
+    const map = {};
+    rows.forEach(r => {
+      const g = r.group_name || '(no group)';
+      const o = map[g] || (map[g] = { group_name: g, members: new Set(), row_count: 0, completed: 0 });
+      o.members.add(r.memberid); o.row_count++;
+      if (r.status === 'completed') o.completed++;
+    });
+    return Object.values(map)
+      .map(o => ({ group_name: o.group_name, members: o.members.size, row_count: o.row_count, completed: o.completed }))
+      .sort((a, b) => b.row_count - a.row_count);
+  }
+
+  function renderGroupChartAndTable(rows) {
+    const g = groupAgg(rows);
     const cfg = {
       type: 'bar',
-      data: { labels, datasets: [
-        { label: 'Transactions', data: DATA.groups.map(g => g.row_count), backgroundColor: '#2563eb' },
-        { label: 'Completed',    data: DATA.groups.map(g => g.completed), backgroundColor: '#16a34a' },
+      data: { labels: g.map(x => x.group_name), datasets: [
+        { label: 'Transactions', data: g.map(x => x.row_count), backgroundColor: '#2563eb' },
+        { label: 'Completed',    data: g.map(x => x.completed), backgroundColor: '#16a34a' },
       ]},
-      options: {
-        responsive: true, maintainAspectRatio: false,
-        plugins: { legend: { position: 'bottom' } },
-        scales: { x: { ticks: { autoSkip: false, maxRotation: 60, minRotation: 30 } }, y: { beginAtZero: true } },
-      },
+      options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom' } },
+        scales: { x: { ticks: { autoSkip: false, maxRotation: 60, minRotation: 30 } }, y: { beginAtZero: true } } },
     };
-    if (groupChart) { groupChart.data = cfg.data; groupChart.update(); }
-    else groupChart = new Chart(document.getElementById('groupChart'), cfg);
-  }
+    if (groupChart) { groupChart.data = cfg.data; groupChart.update(); } else groupChart = new Chart(document.getElementById('groupChart'), cfg);
 
-  function renderGroupTable() {
-    const g = DATA.groups;
     document.getElementById('group-body').innerHTML = g.length
-      ? g.map(r => `<tr>
-          <td class="font-medium">${esc(r.group_name)}</td>
+      ? g.map(r => `<tr><td class="font-medium">${esc(r.group_name)}</td>
           <td class="text-right">${num(r.members)}</td>
           <td class="text-right">${num(r.row_count)}</td>
-          <td class="text-right">${num(r.completed)}</td>
-        </tr>`).join('')
+          <td class="text-right">${num(r.completed)}</td></tr>`).join('')
       : `<tr><td colspan="4" class="text-center py-10 text-slate-400">No data</td></tr>`;
     document.getElementById('group-foot').innerHTML = g.length
-      ? `<tr class="font-semibold bg-slate-50">
-          <td>Total</td>
+      ? `<tr class="font-semibold bg-slate-50"><td>Total</td>
           <td class="text-right">${num(g.reduce((s,r)=>s+r.members,0))}</td>
           <td class="text-right">${num(g.reduce((s,r)=>s+r.row_count,0))}</td>
-          <td class="text-right">${num(g.reduce((s,r)=>s+r.completed,0))}</td>
-        </tr>` : '';
+          <td class="text-right">${num(g.reduce((s,r)=>s+r.completed,0))}</td></tr>` : '';
   }
 
-  function renderStatusChart() {
-    const labels = DATA.statuses.map(s => s.status);
+  function renderStatusChart(rows) {
+    const map = {};
+    rows.forEach(r => { map[r.status] = (map[r.status] || 0) + 1; });
+    const labels = Object.keys(map).sort((a, b) => map[b] - map[a]);
     const cfg = {
       type: 'doughnut',
-      data: { labels, datasets: [{ data: DATA.statuses.map(s => s.n), backgroundColor: PALETTE }] },
+      data: { labels, datasets: [{ data: labels.map(l => map[l]), backgroundColor: PALETTE }] },
       options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom' } } },
     };
-    if (statusChart) { statusChart.data = cfg.data; statusChart.update(); }
-    else statusChart = new Chart(document.getElementById('statusChart'), cfg);
+    if (statusChart) { statusChart.data = cfg.data; statusChart.update(); } else statusChart = new Chart(document.getElementById('statusChart'), cfg);
   }
 
-  function buildMatrix() {
+  function buildMatrix(rows) {
     const pset = new Set(), gset = new Set();
     matrix = {};
-    DATA.invoiceByMonth.forEach(r => {
-      const p = periodKey(r), g = r.group_name || '(no group)';
+    rows.filter(r => r.status === 'completed').forEach(r => {
+      const p = periodKeyFromDate(r.completed_date); if (!p) return;
+      const g = r.group_name || '(no group)';
       pset.add(p); gset.add(g);
-      (matrix[p] = matrix[p] || {})[g] = (matrix[p][g] || 0) + r.n;
+      (matrix[p] = matrix[p] || {})[g] = (matrix[p][g] || 0) + 1;
     });
     periods = [...pset].sort();
     invGroups = [...gset].sort();
   }
 
   function renderMonthChart() {
-    const datasets = invGroups.map((g, i) => ({
-      label: g,
-      data: periods.map(p => cellVal(p, g)),
-      backgroundColor: PALETTE[i % PALETTE.length],
-    }));
+    const datasets = invGroups.map((g, i) => ({ label: g, data: periods.map(p => cellVal(p, g)), backgroundColor: PALETTE[i % PALETTE.length] }));
     const cfg = {
       type: 'bar',
       data: { labels: periods.map(periodLabel), datasets },
-      options: {
-        responsive: true, maintainAspectRatio: false,
+      options: { responsive: true, maintainAspectRatio: false,
         plugins: { title: { display: true, text: 'Completed transactions by group, by month' }, legend: { position: 'bottom' } },
-        scales: { x: { stacked: true }, y: { stacked: true, beginAtZero: true, title: { display: true, text: 'Completed' } } },
-      },
+        scales: { x: { stacked: true }, y: { stacked: true, beginAtZero: true, title: { display: true, text: 'Completed' } } } },
     };
-    if (monthChart) { monthChart.data = cfg.data; monthChart.update(); }
-    else monthChart = new Chart(document.getElementById('monthChart'), cfg);
+    if (monthChart) { monthChart.data = cfg.data; monthChart.update(); } else monthChart = new Chart(document.getElementById('monthChart'), cfg);
   }
 
   function renderInvoiceTable() {
     document.getElementById('inv-head').innerHTML =
       `<th>Group Name</th>${periods.map(p => `<th class="text-right">${esc(periodLabel(p))}</th>`).join('')}<th class="text-right">Total</th>`;
     document.getElementById('inv-body').innerHTML = invGroups.length
-      ? invGroups.map(g => `<tr>
-          <td class="font-medium">${esc(g)}</td>
+      ? invGroups.map(g => `<tr><td class="font-medium">${esc(g)}</td>
           ${periods.map(p => `<td class="text-right">${cellVal(p, g) || '—'}</td>`).join('')}
-          <td class="text-right font-semibold">${num(groupTotal(g))}</td>
-        </tr>`).join('')
+          <td class="text-right font-semibold">${num(groupTotal(g))}</td></tr>`).join('')
       : `<tr><td colspan="${periods.length + 2}" class="text-center py-10 text-slate-400">No completed transactions</td></tr>`;
     document.getElementById('inv-foot').innerHTML = invGroups.length
-      ? `<tr class="font-semibold bg-slate-50">
-          <td>Total</td>
+      ? `<tr class="font-semibold bg-slate-50"><td>Total</td>
           ${periods.map(p => `<td class="text-right">${num(periodTotal(p))}</td>`).join('')}
-          <td class="text-right">${num(grandTotal())}</td>
-        </tr>` : '';
+          <td class="text-right">${num(grandTotal())}</td></tr>` : '';
   }
 
   function exportExcel() {

@@ -19,6 +19,7 @@ exports.handler = async function (event) {
     if (detail) {
       const r = await mssql(
         `SELECT GroupName            AS group_name,
+                memberid             AS memberid,
                 last_name            AS last_name,
                 first_name           AS first_name,
                 patient_dob          AS date_of_birth,
