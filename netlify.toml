@@ -92,6 +92,11 @@
   to = "/call-center/other/"
   status = 301
 
+[[redirects]]
+  from = "/invoices/dashboard"
+  to = "/invoices/dashboard/"
+  status = 301
+
 [[headers]]
   for = "/*"
   [headers.values]
