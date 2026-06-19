@@ -21,6 +21,10 @@
         <select id="f-group" class="input" onchange="renderAll()" style="max-width:220px"><option value="">All groups</option></select>
         <label class="text-sm text-slate-500 ml-2">Status</label>
         <select id="f-status" class="input" onchange="renderAll()" style="max-width:200px"><option value="">All statuses</option></select>
+        <label class="text-sm text-slate-500 ml-2">Year</label>
+        <select id="f-year" class="input" onchange="renderAll()" style="max-width:120px"><option value="">All years</option></select>
+        <label class="text-sm text-slate-500 ml-2">Month</label>
+        <select id="f-month" class="input" onchange="renderAll()" style="max-width:140px"><option value="">All months</option></select>
         <span id="count" class="text-sm text-slate-500 ml-1"></span>
         <div class="flex gap-2 ml-auto">
           <button class="btn btn-primary" id="export-btn" onclick="exportExcel()"><i class="fa-solid fa-file-excel"></i> Export Invoice Data</button>
@@ -141,6 +145,12 @@
     (rates || []).forEach(r => { RATEMAP[(r.name || '').trim().toLowerCase()] = r; });
     fillSelect('f-group', uniq(ROWS.map(r => r.group_name)));
     fillSelect('f-status', uniq(ROWS.map(r => r.status)));
+    // Year/Month options derived from completed_date (MM/DD/YYYY).
+    fillSelect('f-year', uniq(ROWS.map(r => r.completed_date ? r.completed_date.split('/')[2] : null)));
+    const months = uniq(ROWS.map(r => r.completed_date ? parseInt(r.completed_date.split('/')[0], 10) : null))
+      .sort((a, b) => a - b);
+    document.getElementById('f-month').innerHTML = '<option value="">All months</option>' +
+      months.map(m => `<option value="${m}">${MONTHS[m]}</option>`).join('');
     renderAll();
   }
 
@@ -152,7 +162,19 @@
   function filteredRows() {
     const g = document.getElementById('f-group').value;
     const s = document.getElementById('f-status').value;
-    return ROWS.filter(r => (!g || r.group_name === g) && (!s || r.status === s));
+    const y = document.getElementById('f-year').value;
+    const m = document.getElementById('f-month').value;
+    return ROWS.filter(r => {
+      if (g && r.group_name !== g) return false;
+      if (s && r.status !== s) return false;
+      if (y || m) {
+        if (!r.completed_date) return false;            // only completed rows carry a date
+        const parts = r.completed_date.split('/');      // MM/DD/YYYY
+        if (y && parts[2] !== y) return false;
+        if (m && parseInt(parts[0], 10) !== parseInt(m, 10)) return false;
+      }
+      return true;
+    });
   }
 
   function renderAll() {
@@ -170,7 +192,19 @@
   // Completed transactions by group x medication, priced by each client's contracted GLP1 rates.
   function renderReconcile() {
     const g = document.getElementById('f-group').value;
-    const completed = ROWS.filter(r => r.status === 'completed' && (!g || r.group_name === g));
+    const y = document.getElementById('f-year').value;
+    const m = document.getElementById('f-month').value;
+    const completed = ROWS.filter(r => {
+      if (r.status !== 'completed') return false;
+      if (g && r.group_name !== g) return false;
+      if (y || m) {
+        if (!r.completed_date) return false;
+        const p = r.completed_date.split('/');
+        if (y && p[2] !== y) return false;
+        if (m && parseInt(p[0], 10) !== parseInt(m, 10)) return false;
+      }
+      return true;
+    });
     const map = {};
     completed.forEach(r => {
       const k = r.group_name || '(no group)';
