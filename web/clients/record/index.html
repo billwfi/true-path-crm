@@ -175,8 +175,18 @@
       <input type="hidden" id="bn-contract-id">
       <div class="form-group"><label class="form-label">Benefit Name *</label><input class="form-control" id="bn-name"></div>
       <div class="flex gap-3">
-        <div class="form-group flex-1"><label class="form-label">Type / Category</label><input class="form-control" id="bn-type"></div>
+        <div class="form-group flex-1"><label class="form-label">Benefit Type</label>
+          <select class="form-control" id="bn-type" onchange="toggleGlp1Fields()">
+            <option value="iRx">iRx</option>
+            <option value="GLP1">GLP1</option>
+          </select></div>
         <div class="form-group flex-1"><label class="form-label">Value / Amount</label><input class="form-control" id="bn-value" placeholder="e.g. $5,000 or 80%"></div>
+      </div>
+      <div class="flex gap-3" id="glp1-amounts" style="display:none">
+        <div class="form-group flex-1"><label class="form-label">Tirzepatide $</label>
+          <input class="form-control" type="number" step="0.01" min="0" id="bn-tirz" placeholder="0.00"></div>
+        <div class="form-group flex-1"><label class="form-label">Semaglutide $</label>
+          <input class="form-control" type="number" step="0.01" min="0" id="bn-sema" placeholder="0.00"></div>
       </div>
       <div class="form-group"><label class="form-label">Coverage Details</label><textarea class="form-control" id="bn-coverage" rows="2"></textarea></div>
       <div class="form-group"><label class="form-label">Notes</label><textarea class="form-control" id="bn-notes" rows="2"></textarea></div>
@@ -384,7 +394,7 @@
                     <td class="font-medium">${esc(b.name)}</td>
                     <td>${esc(b.type) || '—'}</td>
                     <td class="text-sm">${esc(b.coverage) || '—'}</td>
-                    <td>${esc(b.value) || '—'}</td>
+                    <td>${benefitValue(b)}</td>
                     <td class="text-right whitespace-nowrap">
                       <button class="btn btn-outline btn-sm" title="Edit" onclick='openBenefit(${co.id}, ${b.id})'><i class="fa-solid fa-pen"></i></button>
                       <button class="btn btn-danger btn-sm" title="Delete" onclick='deleteBenefit(${b.id})'><i class="fa-solid fa-trash"></i></button>
@@ -468,6 +478,19 @@
   }
 
   /* ── Benefit CRUD ── */
+  function toggleGlp1Fields() {
+    const isGlp1 = document.getElementById('bn-type').value === 'GLP1';
+    document.getElementById('glp1-amounts').style.display = isGlp1 ? '' : 'none';
+  }
+  function benefitValue(b) {
+    if (b.type === 'GLP1') {
+      const parts = [];
+      if (b.tirzepatide_amount != null) parts.push('Tirz ' + fmtCurrency(b.tirzepatide_amount));
+      if (b.semaglutide_amount != null) parts.push('Sema ' + fmtCurrency(b.semaglutide_amount));
+      if (parts.length) return parts.join(' • ');
+    }
+    return esc(b.value) || '—';
+  }
   function openBenefit(contractId, id) {
     let b = null;
     if (id) { const co = contracts.find(x => x.id === contractId); b = co && co.benefits.find(x => x.id === id); }
@@ -475,10 +498,13 @@
     document.getElementById('bn-id').value = b ? b.id : '';
     document.getElementById('bn-contract-id').value = contractId;
     document.getElementById('bn-name').value = b ? (b.name || '') : '';
-    document.getElementById('bn-type').value = b ? (b.type || '') : '';
+    document.getElementById('bn-type').value = (b && b.type === 'GLP1') ? 'GLP1' : 'iRx';
     document.getElementById('bn-value').value = b ? (b.value || '') : '';
+    document.getElementById('bn-tirz').value = (b && b.tirzepatide_amount != null) ? b.tirzepatide_amount : '';
+    document.getElementById('bn-sema').value = (b && b.semaglutide_amount != null) ? b.semaglutide_amount : '';
     document.getElementById('bn-coverage').value = b ? (b.coverage || '') : '';
     document.getElementById('bn-notes').value = b ? (b.notes || '') : '';
+    toggleGlp1Fields();
     openModal('benefit-modal');
   }
   async function saveBenefit() {
@@ -486,8 +512,10 @@
     const contractId = document.getElementById('bn-contract-id').value;
     const body = {
       name: document.getElementById('bn-name').value.trim(),
-      type: document.getElementById('bn-type').value.trim(),
+      type: document.getElementById('bn-type').value,
       value: document.getElementById('bn-value').value.trim(),
+      tirzepatide_amount: document.getElementById('bn-tirz').value.trim() || null,
+      semaglutide_amount: document.getElementById('bn-sema').value.trim() || null,
       coverage: document.getElementById('bn-coverage').value.trim(),
       notes: document.getElementById('bn-notes').value.trim(),
     };

@@ -11,6 +11,10 @@ const { verifyToken, unauthorized, ok, created, badRequest, notFound, serverErro
 //   DELETE ?resource=<r>&id=Y
 
 const CONTRACT_STATUSES = ['Active', 'Pending', 'Expired', 'Cancelled'];
+const BENEFIT_TYPES = ['iRx', 'GLP1'];
+const benefitType = (t) => (BENEFIT_TYPES.includes(t) ? t : 'iRx');
+// GLP1 drug amounts only apply to GLP1 benefits; otherwise null.
+const drugAmt = (type, v) => (benefitType(type) === 'GLP1' && v != null && v !== '' ? Number(v) : null);
 
 exports.handler = async function (event) {
   if (event.httpMethod === 'OPTIONS') return options();
@@ -52,7 +56,8 @@ exports.handler = async function (event) {
         const params = {};
         ids.forEach((v, i) => params['b' + i] = v);
         const r = await mssql(
-          `SELECT id, contract_id, name, type, coverage, value, notes, created_at
+          `SELECT id, contract_id, name, type, coverage, value, notes,
+                  tirzepatide_amount, semaglutide_amount, created_at
            FROM dbo.Client_Contract_Benefits WHERE contract_id IN (${inList}) ORDER BY name`, params);
         benefits = r.recordset;
       }
@@ -98,10 +103,13 @@ exports.handler = async function (event) {
         if (!ctid) return badRequest('contract_id is required');
         if (!b.name) return badRequest('name is required');
         const r = await mssql(
-          `INSERT INTO dbo.Client_Contract_Benefits (contract_id, name, type, coverage, value, notes)
-           OUTPUT INSERTED.* VALUES (@ctid, @name, @type, @coverage, @value, @notes)`,
-          { ctid, name: b.name, type: b.type || null, coverage: b.coverage || null,
-            value: b.value || null, notes: b.notes || null });
+          `INSERT INTO dbo.Client_Contract_Benefits
+             (contract_id, name, type, coverage, value, notes, tirzepatide_amount, semaglutide_amount)
+           OUTPUT INSERTED.*
+           VALUES (@ctid, @name, @type, @coverage, @value, @notes, @tirz, @sema)`,
+          { ctid, name: b.name, type: benefitType(b.type), coverage: b.coverage || null,
+            value: b.value || null, notes: b.notes || null,
+            tirz: drugAmt(b.type, b.tirzepatide_amount), sema: drugAmt(b.type, b.semaglutide_amount) });
         return created(r.recordset[0]);
       }
 
@@ -137,10 +145,13 @@ exports.handler = async function (event) {
 
       if (resource === 'benefit') {
         const r = await mssql(
-          `UPDATE dbo.Client_Contract_Benefits SET name=@name, type=@type, coverage=@coverage, value=@value, notes=@notes
+          `UPDATE dbo.Client_Contract_Benefits
+           SET name=@name, type=@type, coverage=@coverage, value=@value, notes=@notes,
+               tirzepatide_amount=@tirz, semaglutide_amount=@sema
            OUTPUT INSERTED.* WHERE id=@id`,
-          { id: rid, name: b.name, type: b.type || null, coverage: b.coverage || null,
-            value: b.value || null, notes: b.notes || null });
+          { id: rid, name: b.name, type: benefitType(b.type), coverage: b.coverage || null,
+            value: b.value || null, notes: b.notes || null,
+            tirz: drugAmt(b.type, b.tirzepatide_amount), sema: drugAmt(b.type, b.semaglutide_amount) });
         return r.recordset[0] ? ok(r.recordset[0]) : notFound();
       }
 
