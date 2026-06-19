@@ -1,5 +1,5 @@
 const { mssql } = require('./_mssql');
-const { verifyToken, unauthorized, ok, serverError, options } = require('./_auth');
+const { verifyToken, unauthorized, ok, badRequest, notFound, serverError, options } = require('./_auth');
 
 // WellSync transactions loaded for invoicing (see scripts/load_wellsync.py).
 const TABLE = 'dbo.wellsync_data_June';
@@ -12,9 +12,43 @@ exports.handler = async function (event) {
   if (!user) return unauthorized();
   if (event.httpMethod !== 'GET') return { statusCode: 405, body: 'Method Not Allowed' };
 
-  const { detail } = event.queryStringParameters || {};
+  const { detail, client_id, from, to } = event.queryStringParameters || {};
 
   try {
+    // Per-client invoice: completed WellSync transactions in a date range, priced by the
+    // client's GLP1 benefit amounts (Tirzepatide / Semaglutide). Linked by GroupName = client name.
+    if (client_id) {
+      const cid = parseInt(client_id, 10);
+      if (!cid) return badRequest('client_id required');
+      const cl = await mssql(
+        'SELECT id, name, irx_client_id, address, city, state, zip_code FROM tp_clients WHERE id=@id', { id: cid });
+      const client = cl.recordset[0];
+      if (!client) return notFound();
+
+      const rt = await mssql(
+        `SELECT MAX(b.tirzepatide_amount) AS tirz, MAX(b.semaglutide_amount) AS sema
+         FROM dbo.Client_Contracts ct
+         JOIN dbo.Client_Contract_Benefits b ON b.contract_id = ct.id
+         WHERE ct.client_id = @id AND b.type = 'GLP1'`, { id: cid });
+      const tirz = rt.recordset[0].tirz, sema = rt.recordset[0].sema;
+      const fromD = from || '1900-01-01', toD = to || '2999-12-31';
+
+      const det = await mssql(
+        `SELECT last_name, first_name, patient_fullname AS member, patient_dob AS dob,
+                medication, memberid,
+                CONVERT(varchar(10), ${CDT}, 101) AS completed_date,
+                CAST(CASE medication WHEN 'Tirzepatide' THEN @tirz
+                                     WHEN 'Semaglutide' THEN @sema ELSE 0 END AS DECIMAL(18,2)) AS amount
+         FROM ${TABLE}
+         WHERE LTRIM(RTRIM(GroupName)) = @name AND status = 'completed'
+           AND ${CDT} >= @from AND ${CDT} < DATEADD(day, 1, @to)
+         ORDER BY ${CDT}, last_name, first_name`,
+        { name: client.name, tirz: tirz || 0, sema: sema || 0, from: fromD, to: toD });
+
+      return ok({ client, rates: { tirzepatide: tirz, semaglutide: sema },
+        from: fromD, to: toD, detail: det.recordset });
+    }
+
     // Row-level detail for the Invoice Data export.
     if (detail) {
       const r = await mssql(

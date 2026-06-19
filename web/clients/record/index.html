@@ -27,6 +27,7 @@
         <button class="tab-btn" data-tab="contracts" onclick="showTab('contracts')">
           Contracts <span id="tab-contracts" class="badge badge-blue ml-1">0</span></button>
         <button class="tab-btn" data-tab="eligibility" onclick="showTab('eligibility')">Eligibility</button>
+        <button class="tab-btn" data-tab="invoices" onclick="showTab('invoices')">Invoices</button>
       </div>
 
       <!-- Demographics panel -->
@@ -104,6 +105,30 @@
             </div>
           </div>
         </div>
+      </div>
+
+      <!-- Invoices panel (generated from completed WellSync transactions, priced by GLP1 benefit rates) -->
+      <div class="tab-panel" data-panel="invoices" style="display:none">
+        <div class="search-bar flex-wrap gap-2">
+          <label class="text-sm text-slate-500">Completed from</label>
+          <input type="date" id="inv-from" class="form-control" style="max-width:165px">
+          <label class="text-sm text-slate-500">to</label>
+          <input type="date" id="inv-to" class="form-control" style="max-width:165px">
+          <button class="btn btn-primary" onclick="generateInvoice()"><i class="fa-solid fa-file-invoice-dollar"></i> Generate Invoice</button>
+          <button class="btn btn-outline" id="inv-print-btn" onclick="printInvoice()" style="display:none"><i class="fa-solid fa-print"></i> Print</button>
+        </div>
+        <div id="inv-rate-note" class="text-xs text-amber-600 mb-2" style="display:none"></div>
+        <div id="inv-result" style="display:none">
+          <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4" id="inv-cards"></div>
+          <div class="card"><div class="card-body">
+            <table class="data-table">
+              <thead><tr><th>Completed</th><th>Member</th><th>DOB</th><th>Medication</th><th class="text-right">Amount</th></tr></thead>
+              <tbody id="inv-body"></tbody>
+              <tfoot id="inv-foot"></tfoot>
+            </table>
+          </div></div>
+        </div>
+        <div id="inv-empty" class="text-center py-10 text-slate-400" style="display:none">No completed transactions in this period.</div>
       </div>
     </main>
   </div>
@@ -213,12 +238,13 @@
     document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === name));
     document.querySelectorAll('.tab-panel').forEach(p => p.style.display = p.dataset.panel === name ? '' : 'none');
     if (name === 'eligibility' && !eligLoaded) loadEligibility();
+    if (name === 'invoices') invDefaults();
   }
 
   // Sub-resource tabs need a saved client. Disable them until one exists.
   function gateTabs() {
     const enabled = !!clientId;
-    document.querySelectorAll('.tab-btn[data-tab="contacts"], .tab-btn[data-tab="contracts"], .tab-btn[data-tab="eligibility"]').forEach(b => {
+    document.querySelectorAll('.tab-btn[data-tab="contacts"], .tab-btn[data-tab="contracts"], .tab-btn[data-tab="eligibility"], .tab-btn[data-tab="invoices"]').forEach(b => {
       b.style.opacity = enabled ? '' : '0.4';
       b.style.pointerEvents = enabled ? '' : 'none';
       b.title = enabled ? '' : 'Save the client first';
@@ -530,6 +556,100 @@
     if (!confirm2('Delete this benefit?')) return;
     const res = await apiDelete(`/client-detail?resource=benefit&id=${id}`);
     if (res && res.ok) { showToast('Deleted', 'success'); loadDetail(); } else showToast('Delete failed', 'error');
+  }
+
+  /* ── Invoices ── */
+  let lastInvoice = null;
+  function invDefaults() {
+    const f = document.getElementById('inv-from'), t = document.getElementById('inv-to');
+    if (f.value && t.value) return;
+    const now = new Date(), first = new Date(now.getFullYear(), now.getMonth(), 1),
+          last = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+    const fmt = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    if (!f.value) f.value = fmt(first);
+    if (!t.value) t.value = fmt(last);
+  }
+
+  async function generateInvoice() {
+    if (!clientId) return;
+    const from = document.getElementById('inv-from').value, to = document.getElementById('inv-to').value;
+    const data = await apiGet(`/invoices?client_id=${clientId}&from=${from}&to=${to}`);
+    if (!data) { showToast('Failed to load invoice', 'error'); return; }
+    lastInvoice = data;
+    const rates = data.rates || {}, rows = data.detail || [];
+    const note = document.getElementById('inv-rate-note');
+    if (rates.tirzepatide == null && rates.semaglutide == null) {
+      note.textContent = 'No GLP1 benefit rates set for this client — amounts show $0. Add a GLP1 benefit under the Contracts tab.';
+      note.style.display = '';
+    } else note.style.display = 'none';
+
+    let total = 0, tCount = 0, sCount = 0, tAmt = 0, sAmt = 0;
+    rows.forEach(r => {
+      const a = Number(r.amount) || 0; total += a;
+      if (r.medication === 'Tirzepatide') { tCount++; tAmt += a; }
+      else if (r.medication === 'Semaglutide') { sCount++; sAmt += a; }
+    });
+    document.getElementById('inv-result').style.display = rows.length ? '' : 'none';
+    document.getElementById('inv-empty').style.display = rows.length ? 'none' : '';
+    document.getElementById('inv-print-btn').style.display = rows.length ? '' : 'none';
+    if (!rows.length) return;
+
+    const card = (label, val, sub) => `<div class="card"><div class="card-body">
+      <div class="text-2xl font-semibold">${val}</div>
+      <div class="text-xs text-slate-500 uppercase tracking-wide">${label}</div>
+      ${sub ? `<div class="text-xs text-slate-400 mt-1">${sub}</div>` : ''}</div></div>`;
+    document.getElementById('inv-cards').innerHTML =
+      card('Total Invoice', fmtCurrency(total)) +
+      card('Records', rows.length) +
+      card('Tirzepatide', fmtCurrency(tAmt), `${tCount} @ ${fmtCurrency(rates.tirzepatide || 0)}`) +
+      card('Semaglutide', fmtCurrency(sAmt), `${sCount} @ ${fmtCurrency(rates.semaglutide || 0)}`);
+    document.getElementById('inv-body').innerHTML = rows.map(r => `<tr>
+      <td>${esc(r.completed_date)}</td><td class="font-medium">${esc(r.member)}</td>
+      <td>${esc(r.dob)}</td><td>${esc(r.medication)}</td>
+      <td class="text-right">${fmtCurrency(r.amount)}</td></tr>`).join('');
+    document.getElementById('inv-foot').innerHTML =
+      `<tr class="font-semibold bg-slate-50"><td colspan="4">Total — ${rows.length} records</td>
+       <td class="text-right">${fmtCurrency(total)}</td></tr>`;
+  }
+
+  function printInvoice() {
+    if (!lastInvoice) return;
+    const d = lastInvoice, c = d.client, rows = d.detail || [];
+    let total = 0; rows.forEach(r => total += Number(r.amount) || 0);
+    const lines = rows.map(r => `<tr><td>${esc(r.completed_date)}</td><td>${esc(r.member)}</td>
+      <td>${esc(r.dob)}</td><td>${esc(r.medication)}</td>
+      <td class="right">${fmtCurrency(r.amount)}</td></tr>`).join('');
+    const addr = [c.address, [c.city, c.state, c.zip_code].filter(Boolean).join(' ')].filter(Boolean)
+      .map(x => `<br>${esc(x)}`).join('');
+    const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Invoice — ${esc(c.name)}</title>
+      <style>body{font-family:Arial,Helvetica,sans-serif;color:#1e293b;margin:40px;font-size:13px}
+      .head{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:3px solid #0f766e;padding-bottom:12px}
+      .head img{height:58px}h1{font-size:22px;margin:0;color:#0f766e}.muted{color:#64748b;font-size:12px}
+      table{width:100%;border-collapse:collapse;margin-top:18px}
+      th,td{border-bottom:1px solid #e2e8f0;padding:6px 8px;text-align:left}
+      th{background:#f1f5f9;font-size:12px;text-transform:uppercase;letter-spacing:.03em}
+      tfoot td{font-weight:bold;border-top:2px solid #334155}.right{text-align:right}
+      .totbox{margin-top:18px;text-align:right;font-size:16px}</style></head>
+      <body>
+        <div class="head">
+          <img src="${location.origin}/assets/img/truepath-logo.png" alt="True Path Sourcing">
+          <div style="text-align:right"><h1>INVOICE</h1>
+            <div class="muted">Service period: ${esc(d.from)} &ndash; ${esc(d.to)}</div>
+            <div class="muted">Generated: ${new Date().toLocaleDateString()}</div></div>
+        </div>
+        <div style="margin-top:18px"><span class="muted">BILL TO</span><br>
+          <strong>${esc(c.name)}</strong>${c.irx_client_id ? `<br><span class="muted">iRx Client ID: ${esc(c.irx_client_id)}</span>` : ''}${addr}</div>
+        <table>
+          <thead><tr><th>Completed</th><th>Member</th><th>DOB</th><th>Medication</th><th class="right">Amount</th></tr></thead>
+          <tbody>${lines}</tbody>
+          <tfoot><tr><td colspan="4">Total &mdash; ${rows.length} records</td><td class="right">${fmtCurrency(total)}</td></tr></tfoot>
+        </table>
+        <div class="totbox">Total Invoice Amount: <strong>${fmtCurrency(total)}</strong></div>
+        <scr` + `ipt>window.onload=function(){window.print()}</scr` + `ipt>
+      </body></html>`;
+    const w = window.open('', '_blank');
+    if (!w) { showToast('Allow pop-ups to print', 'error'); return; }
+    w.document.write(html); w.document.close();
   }
 
   ['contact-modal', 'contract-modal', 'benefit-modal'].forEach(m =>
