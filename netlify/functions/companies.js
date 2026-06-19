@@ -1,4 +1,4 @@
-const { db } = require('./_db');
+const { mssql } = require('./_mssql');
 const { verifyToken, unauthorized, ok, created, badRequest, notFound, serverError, options } = require('./_auth');
 
 exports.handler = async function (event) {
@@ -10,35 +10,42 @@ exports.handler = async function (event) {
   try {
     if (event.httpMethod === 'GET') {
       if (id) {
-        const r = await db('SELECT * FROM tp_companies WHERE id = $1', [id]);
-        return r.rows[0] ? ok(r.rows[0]) : notFound();
+        const r = await mssql('SELECT * FROM tp_companies WHERE id = @id', { id: parseInt(id, 10) });
+        return r.recordset[0] ? ok(r.recordset[0]) : notFound();
       }
-      const r = await db(
-        'SELECT * FROM tp_companies WHERE ($1::text IS NULL OR name ILIKE $1 OR city ILIKE $1 OR state ILIKE $1) ORDER BY name',
-        [search ? `%${search}%` : null]);
-      return ok(r.rows);
+      const r = await mssql(
+        `SELECT * FROM tp_companies
+         WHERE (@search IS NULL OR name LIKE @search OR city LIKE @search OR state LIKE @search)
+         ORDER BY name`,
+        { search: search ? `%${search}%` : null });
+      return ok(r.recordset);
     }
 
     if (event.httpMethod === 'POST') {
       const b = JSON.parse(event.body || '{}');
-      const r = await db(
-        'INSERT INTO tp_companies (name,phone,address,city,state,zip_code) VALUES ($1,$2,$3,$4,$5,$6) RETURNING id',
-        [b.name||'', b.phone||null, b.address||null, b.city||null, b.state||null, b.zip_code||null]);
-      return created({ id: r.rows[0].id });
+      const r = await mssql(
+        `INSERT INTO tp_companies (name,phone,address,city,state,zip_code)
+         VALUES (@name,@phone,@address,@city,@state,@zip_code);
+         SELECT CAST(SCOPE_IDENTITY() AS INT) AS id;`,
+        { name: b.name || '', phone: b.phone || null, address: b.address || null,
+          city: b.city || null, state: b.state || null, zip_code: b.zip_code || null });
+      return created({ id: r.recordset[0].id });
     }
 
     if (event.httpMethod === 'PATCH') {
       if (!id) return badRequest('id required');
       const b = JSON.parse(event.body || '{}');
-      await db(
-        'UPDATE tp_companies SET name=$1,phone=$2,address=$3,city=$4,state=$5,zip_code=$6 WHERE id=$7',
-        [b.name, b.phone||null, b.address||null, b.city||null, b.state||null, b.zip_code||null, id]);
+      await mssql(
+        `UPDATE tp_companies SET name=@name,phone=@phone,address=@address,city=@city,state=@state,zip_code=@zip_code
+         WHERE id=@id`,
+        { name: b.name, phone: b.phone || null, address: b.address || null, city: b.city || null,
+          state: b.state || null, zip_code: b.zip_code || null, id: parseInt(id, 10) });
       return ok({ id });
     }
 
     if (event.httpMethod === 'DELETE') {
       if (!id) return badRequest('id required');
-      await db('DELETE FROM tp_companies WHERE id = $1', [id]);
+      await mssql('DELETE FROM tp_companies WHERE id = @id', { id: parseInt(id, 10) });
       return ok({ deleted: true });
     }
 

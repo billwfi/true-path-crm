@@ -1,4 +1,4 @@
-const { db } = require('./_db');
+const { mssql } = require('./_mssql');
 const { verifyToken, unauthorized, ok, created, badRequest, notFound, serverError, options } = require('./_auth');
 
 exports.handler = async function (event) {
@@ -10,47 +10,50 @@ exports.handler = async function (event) {
   try {
     if (event.httpMethod === 'GET') {
       if (id) {
-        const r = await db(
-          `SELECT t.*, COALESCE(s.firstname,'')||' '||COALESCE(s.lastname,'') AS assigned_name
-           FROM tp_tasks t LEFT JOIN tp_staff s ON s.id = t.assigned_id WHERE t.id = $1`, [id]);
-        return r.rows[0] ? ok(r.rows[0]) : notFound();
+        const r = await mssql(
+          `SELECT t.*, CONCAT(s.firstname, ' ', s.lastname) AS assigned_name
+           FROM tp_tasks t LEFT JOIN tp_staff s ON s.id = t.assigned_id WHERE t.id = @id`, { id: parseInt(id, 10) });
+        return r.recordset[0] ? ok(r.recordset[0]) : notFound();
       }
-      const r = await db(
+      const r = await mssql(
         `SELECT t.id,t.name,t.status,t.priority,t.start_date,t.due_date,t.tags,t.color,t.related_type,t.related_id,t.created_at,
-         COALESCE(s.firstname,'')||' '||COALESCE(s.lastname,'') AS assigned_name
+         CONCAT(s.firstname, ' ', s.lastname) AS assigned_name
          FROM tp_tasks t LEFT JOIN tp_staff s ON s.id = t.assigned_id
-         WHERE ($1::text IS NULL OR t.status = $1)
-         AND ($2::text IS NULL OR t.name ILIKE $2)
-         ORDER BY t.due_date ASC NULLS LAST, t.created_at DESC`,
-        [status || null, search ? `%${search}%` : null]);
-      return ok(r.rows);
+         WHERE (@status IS NULL OR t.status = @status)
+         AND (@search IS NULL OR t.name LIKE @search)
+         ORDER BY CASE WHEN t.due_date IS NULL THEN 1 ELSE 0 END, t.due_date ASC, t.created_at DESC`,
+        { status: status || null, search: search ? `%${search}%` : null });
+      return ok(r.recordset);
     }
 
     if (event.httpMethod === 'POST') {
       const b = JSON.parse(event.body || '{}');
-      const r = await db(
+      const r = await mssql(
         `INSERT INTO tp_tasks (name,status,priority,start_date,due_date,assigned_id,tags,color,related_type,related_id,description)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING id`,
-        [b.name||'', b.status||'Not Started', b.priority||'Medium', b.start_date||null,
-         b.due_date||null, b.assigned_id||null, b.tags||null, b.color||null,
-         b.related_type||null, b.related_id||null, b.description||null]);
-      return created({ id: r.rows[0].id });
+         VALUES (@name,@status,@priority,@start_date,@due_date,@assigned_id,@tags,@color,@related_type,@related_id,@description);
+         SELECT CAST(SCOPE_IDENTITY() AS INT) AS id;`,
+        { name: b.name || '', status: b.status || 'Not Started', priority: b.priority || 'Medium',
+          start_date: b.start_date || null, due_date: b.due_date || null, assigned_id: b.assigned_id || null,
+          tags: b.tags || null, color: b.color || null, related_type: b.related_type || null,
+          related_id: b.related_id || null, description: b.description || null });
+      return created({ id: r.recordset[0].id });
     }
 
     if (event.httpMethod === 'PATCH') {
       if (!id) return badRequest('id required');
       const b = JSON.parse(event.body || '{}');
-      await db(
-        `UPDATE tp_tasks SET name=$1,status=$2,priority=$3,start_date=$4,due_date=$5,
-         assigned_id=$6,tags=$7,color=$8,description=$9 WHERE id=$10`,
-        [b.name, b.status, b.priority, b.start_date||null, b.due_date||null,
-         b.assigned_id||null, b.tags||null, b.color||null, b.description||null, id]);
+      await mssql(
+        `UPDATE tp_tasks SET name=@name,status=@status,priority=@priority,start_date=@start_date,due_date=@due_date,
+         assigned_id=@assigned_id,tags=@tags,color=@color,description=@description WHERE id=@id`,
+        { name: b.name, status: b.status, priority: b.priority, start_date: b.start_date || null,
+          due_date: b.due_date || null, assigned_id: b.assigned_id || null, tags: b.tags || null,
+          color: b.color || null, description: b.description || null, id: parseInt(id, 10) });
       return ok({ id });
     }
 
     if (event.httpMethod === 'DELETE') {
       if (!id) return badRequest('id required');
-      await db('DELETE FROM tp_tasks WHERE id = $1', [id]);
+      await mssql('DELETE FROM tp_tasks WHERE id = @id', { id: parseInt(id, 10) });
       return ok({ deleted: true });
     }
 
