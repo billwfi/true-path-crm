@@ -12,9 +12,22 @@ exports.handler = async function (event) {
   if (!user) return unauthorized();
   if (event.httpMethod !== 'GET') return { statusCode: 405, body: 'Method Not Allowed' };
 
-  const { detail, client_id, from, to } = event.queryStringParameters || {};
+  const { detail, client_id, from, to, rates } = event.queryStringParameters || {};
 
   try {
+    // Per-client contracted GLP1 rates (for the dashboard reconciliation table).
+    if (rates) {
+      const r = await mssql(
+        `SELECT cl.id AS client_id, cl.name,
+                MAX(b.tirzepatide_amount) AS tirz_rate,
+                MAX(b.semaglutide_amount) AS sema_rate
+         FROM tp_clients cl
+         LEFT JOIN dbo.Client_Contracts ct ON ct.client_id = cl.id
+         LEFT JOIN dbo.Client_Contract_Benefits b ON b.contract_id = ct.id AND b.type = 'GLP1'
+         GROUP BY cl.id, cl.name`);
+      return ok(r.recordset);
+    }
+
     // Per-client invoice: completed WellSync transactions in a date range, priced by the
     // client's GLP1 benefit amounts (Tirzepatide / Semaglutide). Linked by GroupName = client name.
     if (client_id) {

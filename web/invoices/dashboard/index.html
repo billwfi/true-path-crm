@@ -59,6 +59,24 @@
         </div>
       </div>
 
+      <!-- Medication totals vs contracted GLP1 rates -->
+      <div class="card mb-4">
+        <div class="card-header"><h3 class="font-semibold">Medication Totals vs. Contracted GLP1 Rates</h3>
+          <span class="text-xs text-slate-500">Completed transactions priced by each client's GLP1 benefit (Contracts tab).</span></div>
+        <div class="card-body">
+          <table class="data-table">
+            <thead><tr>
+              <th>Client / Group</th>
+              <th class="text-right">Tirz Qty</th><th class="text-right">Tirz Rate</th><th class="text-right">Tirz Amount</th>
+              <th class="text-right">Sema Qty</th><th class="text-right">Sema Rate</th><th class="text-right">Sema Amount</th>
+              <th class="text-right">Invoice Total</th>
+            </tr></thead>
+            <tbody id="recon-body"></tbody>
+            <tfoot id="recon-foot"></tfoot>
+          </table>
+        </div>
+      </div>
+
       <!-- Invoice data: completed by group x month -->
       <div class="card mb-4">
         <div class="card-header"><h3 class="font-semibold">Invoice Data — Completed by Group &amp; Month</h3></div>
@@ -105,8 +123,13 @@
   function groupTotal(g) { return periods.reduce((s, p) => s + cellVal(p, g), 0); }
   function grandTotal() { return periods.reduce((s, p) => s + periodTotal(p), 0); }
 
+  let RATEMAP = {};  // lowercased client name -> { client_id, name, tirz_rate, sema_rate }
+
   async function load() {
-    ROWS = await apiGet('/invoices?detail=1') || [];
+    const [rows, rates] = await Promise.all([apiGet('/invoices?detail=1'), apiGet('/invoices?rates=1')]);
+    ROWS = rows || [];
+    RATEMAP = {};
+    (rates || []).forEach(r => { RATEMAP[(r.name || '').trim().toLowerCase()] = r; });
     fillSelect('f-group', uniq(ROWS.map(r => r.group_name)));
     fillSelect('f-status', uniq(ROWS.map(r => r.status)));
     renderAll();
@@ -132,6 +155,43 @@
     buildMatrix(rows);
     renderMonthChart();
     renderInvoiceTable();
+    renderReconcile();
+  }
+
+  // Completed transactions by group x medication, priced by each client's contracted GLP1 rates.
+  function renderReconcile() {
+    const g = document.getElementById('f-group').value;
+    const completed = ROWS.filter(r => r.status === 'completed' && (!g || r.group_name === g));
+    const map = {};
+    completed.forEach(r => {
+      const k = r.group_name || '(no group)';
+      const o = map[k] || (map[k] = { group_name: k, tirz: 0, sema: 0 });
+      if (r.medication === 'Tirzepatide') o.tirz++;
+      else if (r.medication === 'Semaglutide') o.sema++;
+    });
+    const rows = Object.values(map).map(o => {
+      const rate = RATEMAP[o.group_name.trim().toLowerCase()] || {};
+      const tr = rate.tirz_rate, sr = rate.sema_rate;
+      const tAmt = o.tirz * (tr || 0), sAmt = o.sema * (sr || 0);
+      return { ...o, client_id: rate.client_id, tr, sr, tAmt, sAmt, total: tAmt + sAmt, hasRate: tr != null || sr != null };
+    }).sort((a, b) => b.total - a.total || a.group_name.localeCompare(b.group_name));
+
+    const rate = (v) => v == null ? '<span class="text-slate-300">—</span>' : fmtCurrency(v);
+    document.getElementById('recon-body').innerHTML = rows.length
+      ? rows.map(r => `<tr>
+          <td class="font-medium">${r.client_id ? `<a class="text-blue-600 hover:underline" href="/clients/record/?id=${r.client_id}">${esc(r.group_name)}</a>` : esc(r.group_name)}
+            ${r.hasRate ? '' : '<span class="badge badge-yellow ml-1">no rate</span>'}</td>
+          <td class="text-right">${r.tirz || '—'}</td><td class="text-right">${rate(r.tr)}</td><td class="text-right">${fmtCurrency(r.tAmt)}</td>
+          <td class="text-right">${r.sema || '—'}</td><td class="text-right">${rate(r.sr)}</td><td class="text-right">${fmtCurrency(r.sAmt)}</td>
+          <td class="text-right font-semibold">${fmtCurrency(r.total)}</td></tr>`).join('')
+      : '<tr><td colspan="8" class="text-center py-8 text-slate-400">No completed transactions</td></tr>';
+    const sum = (k) => rows.reduce((s, r) => s + (r[k] || 0), 0);
+    document.getElementById('recon-foot').innerHTML = rows.length
+      ? `<tr class="font-semibold bg-slate-50"><td>Total</td>
+          <td class="text-right">${num(sum('tirz'))}</td><td></td><td class="text-right">${fmtCurrency(sum('tAmt'))}</td>
+          <td class="text-right">${num(sum('sema'))}</td><td></td><td class="text-right">${fmtCurrency(sum('sAmt'))}</td>
+          <td class="text-right">${fmtCurrency(sum('total'))}</td></tr>`
+      : '';
   }
 
   function renderStats(rows) {
