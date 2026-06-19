@@ -96,6 +96,7 @@ const NAV_ITEMS = [
   { section: 'Call Center' },
   { href: '/call-center/in-progress/', icon: 'fa-hourglass-half', label: 'In Progress',    key: 'cc-in-progress' },
   { href: '/call-center/other/',       icon: 'fa-list-check',     label: 'Other Statuses', key: 'cc-other' },
+  { section: 'Invoices & Statements' },
   { section: 'Admin' },
   { href: '/companies/', icon: 'fa-building',          label: 'Companies',   key: 'companies' },
   { href: '/brokers/',   icon: 'fa-handshake',         label: 'Brokers',     key: 'brokers' },
