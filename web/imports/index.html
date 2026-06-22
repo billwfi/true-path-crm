@@ -61,7 +61,7 @@
         </div>
         <div class="form-group">
           <label class="form-label">Feed Type</label>
-          <select id="f-feedtype" class="form-control"><option>Eligibility</option><option>Claims</option></select>
+          <select id="f-feedtype" class="form-control" onchange="onFeedTypeChange()"><option>Eligibility</option><option>Claims</option></select>
         </div>
       </div>
       <div class="form-group">
@@ -186,6 +186,13 @@
       </div>
       <div id="map-rows"></div>
       <button class="btn btn-outline btn-sm mt-1" onclick="addMapRow()"><i class="fa-solid fa-plus"></i> Add column</button>
+      <p id="elig-note" class="text-xs text-sky-800 bg-sky-50 rounded p-2 mt-3" style="display:none;">
+        <i class="fa-solid fa-circle-info mr-1"></i>
+        <b>Eligibility feed:</b> after each file loads, records are reconciled against the target table by
+        <b>CARRIER + MEMBER_ID</b> (CARRIER = this client's irx_client_id). New members are added, matched
+        members updated, and members missing from the file are inactivated (MEMBER_THRU_DATE = run date).
+        Map a column to <b>MEMBER_ID</b> and set the target to your eligibility table (e.g. dbo.eligibility).
+      </p>
 
       <div class="section-title">Schedule</div>
       <div class="form-grid">
@@ -230,8 +237,28 @@
     </div>
     <div class="modal-body">
       <table class="data-table">
-        <thead><tr><th>Started</th><th>Finished</th><th>Status</th><th>File</th><th>Rows</th><th>Message</th></tr></thead>
+        <thead><tr><th>Started</th><th>Status</th><th>Rows</th><th>Added</th><th>Updated</th><th>Inactivated</th><th></th></tr></thead>
         <tbody id="runs-body"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- ── Reconciliation report modal ── -->
+<div id="reconcileModal" class="modal-backdrop hidden">
+  <div class="modal modal-lg">
+    <div class="modal-header">
+      <span class="modal-title" id="rec-title">Reconciliation Report</span>
+      <button class="modal-close" onclick="closeModal('reconcileModal')">&times;</button>
+    </div>
+    <div class="modal-body">
+      <div class="flex justify-between items-center mb-3">
+        <div id="rec-summary" class="text-sm text-slate-500"></div>
+        <button class="btn btn-outline btn-sm" onclick="downloadReconcileCsv()"><i class="fa-solid fa-download"></i> Download CSV</button>
+      </div>
+      <table class="data-table">
+        <thead><tr><th>Action</th><th>Member ID</th><th>Last Name</th><th>First Name</th><th>DOB</th></tr></thead>
+        <tbody id="rec-body"></tbody>
       </table>
     </div>
   </div>
@@ -336,6 +363,10 @@
     document.getElementById('grp-delim').style.display = xlsx ? 'none' : '';
     document.getElementById('grp-sheet').style.display = xlsx ? '' : 'none';
   }
+  function onFeedTypeChange() {
+    document.getElementById('elig-note').style.display =
+      document.getElementById('f-feedtype').value === 'Eligibility' ? '' : 'none';
+  }
   function onFreqChange() {
     const f = document.getElementById('f-freq').value;
     document.getElementById('grp-time').style.display = f === 'Hourly' ? 'none' : '';
@@ -388,7 +419,7 @@
     if (c && c.columns && c.columns.length) c.columns.forEach(m => addMapRow(m.source_column, m.target_column, m.data_type));
     else addMapRow();
 
-    onFormatChange(); onFreqChange();
+    onFormatChange(); onFreqChange(); onFeedTypeChange();
     document.getElementById('grp-archive').style.display = (c && c.after_import === 'archive') ? '' : 'none';
     if (c && c.target_table) loadTargetCols(c.target_table);
     openModal('editModal');
@@ -455,16 +486,52 @@
     document.getElementById('runs-title').textContent = `Run History — ${c ? c.name : ''}`;
     const runs = await apiGet(`/imports?resource=runs&config_id=${id}`);
     document.getElementById('runs-body').innerHTML = (runs && runs.length)
-      ? runs.map(r => `<tr>
-          <td class="text-xs">${fmtDT(r.started_at)}</td>
-          <td class="text-xs">${fmtDT(r.finished_at)}</td>
+      ? runs.map(r => {
+          const hasRec = r.added_count != null || r.inactivated_count != null;
+          return `<tr>
+          <td class="text-xs">${fmtDT(r.started_at)}<div class="text-slate-400">${esc(r.message) || ''}</div></td>
           <td><span class="badge badge-${STATUS_COLORS[r.status]||'gray'}">${esc(r.status)}</span></td>
-          <td class="text-xs">${esc(r.file_name) || '—'}</td>
           <td class="text-center">${r.rows_imported ?? '—'}</td>
-          <td class="text-xs text-slate-500">${esc(r.message) || ''}</td>
-        </tr>`).join('')
-      : '<tr><td colspan="6" class="text-center py-8 text-slate-400">No runs yet</td></tr>';
+          <td class="text-center ${r.added_count ? 'text-green-600 font-medium' : ''}">${r.added_count ?? '—'}</td>
+          <td class="text-center">${r.updated_count ?? '—'}</td>
+          <td class="text-center ${r.inactivated_count ? 'text-red-600 font-medium' : ''}">${r.inactivated_count ?? '—'}</td>
+          <td class="text-right">${hasRec ? `<button class="btn btn-outline btn-sm" onclick="viewReconcile(${r.id})"><i class="fa-regular fa-file-lines"></i> Report</button>` : ''}</td>
+        </tr>`; }).join('')
+      : '<tr><td colspan="7" class="text-center py-8 text-slate-400">No runs yet</td></tr>';
     openModal('runsModal');
+  }
+
+  let reconcileItems = [];
+  async function viewReconcile(runId) {
+    reconcileItems = await apiGet(`/imports?resource=reconcile&run_id=${runId}`) || [];
+    const adds = reconcileItems.filter(i => i.action === 'Add').length;
+    const inact = reconcileItems.filter(i => i.action === 'Inactivate').length;
+    document.getElementById('rec-summary').innerHTML =
+      `<span class="badge badge-green">${adds} added</span> <span class="badge badge-red">${inact} inactivated</span>`;
+    document.getElementById('rec-body').innerHTML = reconcileItems.length
+      ? reconcileItems.map(i => `<tr>
+          <td><span class="badge badge-${i.action === 'Add' ? 'green' : 'red'}">${esc(i.action)}</span></td>
+          <td class="font-mono text-xs">${esc(i.member_id) || '—'}</td>
+          <td>${esc(i.last_name) || '—'}</td>
+          <td>${esc(i.first_name) || '—'}</td>
+          <td class="text-xs">${esc(i.date_of_birth) || '—'}</td>
+        </tr>`).join('')
+      : '<tr><td colspan="5" class="text-center py-8 text-slate-400">No adds or inactivations this run</td></tr>';
+    openModal('reconcileModal');
+  }
+
+  function downloadReconcileCsv() {
+    if (!reconcileItems.length) return;
+    const head = ['Action','MemberID','LastName','FirstName','DOB'];
+    const esc2 = v => `"${String(v == null ? '' : v).replace(/"/g, '""')}"`;
+    const lines = [head.join(',')].concat(reconcileItems.map(i =>
+      [i.action, i.member_id, i.last_name, i.first_name, i.date_of_birth].map(esc2).join(',')));
+    const blob = new Blob([lines.join('\r\n')], { type: 'text/csv' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'reconciliation.csv';
+    a.click();
+    URL.revokeObjectURL(a.href);
   }
 
   load();

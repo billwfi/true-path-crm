@@ -209,6 +209,120 @@ def import_rows(cur, target_table, maps, header, data_rows, truncate):
     return len(out)
 
 
+# ── Eligibility reconciliation ──────────────────────────────────────────────
+def map_to_dicts(maps, header, body):
+    """Map file rows to {target_column: value} dicts. Eligibility columns are all
+    varchar, so values are kept as trimmed strings (no date/number coercion)."""
+    idx = {name: i for i, name in enumerate(header)}
+    resolved = []
+    for m in maps:
+        src = m["source_column"]
+        pos = idx.get(src)
+        if pos is None and str(src).isdigit():
+            pos = int(src) - 1
+        if pos is None:
+            raise ValueError(f"source column '{src}' not found in file header")
+        resolved.append((pos, m["target_column"]))
+    target_cols = [t for _, t in resolved]
+    out = []
+    for r in body:
+        d = {}
+        for pos, tgt in resolved:
+            raw = r[pos] if pos < len(r) else None
+            s = "" if raw is None else str(raw).strip()
+            d[tgt] = s or None
+        out.append(d)
+    return out, target_cols
+
+
+def parse_date_any(s):
+    s = str(s).strip()
+    if not s:
+        return None
+    for fmt in ("%m/%d/%Y", "%m/%d/%y", "%Y-%m-%d", "%Y%m%d", "%m-%d-%Y"):
+        try:
+            return datetime.strptime(s, fmt).date()
+        except ValueError:
+            continue
+    return None
+
+
+def reconcile_eligibility(cur, cfg, run_id, rows, target_cols):
+    """Compare the imported roster to dbo.eligibility for this client (CARRIER =
+    irx_client_id), keyed on CARRIER + MEMBER_ID. New members are inserted,
+    matched members updated, and active members missing from the file have their
+    MEMBER_THRU_DATE set to the run date. Returns (added, updated, inactivated)."""
+    table = cfg["target_table"] or "dbo.eligibility"
+    cur.execute("SELECT irx_client_id FROM dbo.tp_clients WHERE id=?", cfg["client_id"])
+    row = cur.fetchone()
+    carrier = (str(row[0]).strip() if row and row[0] else None)
+    if not carrier:
+        raise ValueError("client has no irx_client_id; cannot scope eligibility by CARRIER")
+    if "MEMBER_ID" not in target_cols:
+        raise ValueError("Eligibility feeds must map a column to MEMBER_ID")
+
+    today = datetime.now().date()
+    run_date = f"{today.month}/{today.day}/{today.year}"
+
+    # Dedupe file rows by MEMBER_ID (last occurrence wins).
+    file_map = {}
+    for d in rows:
+        mid = (str(d.get("MEMBER_ID")).strip() if d.get("MEMBER_ID") else "")
+        if mid:
+            file_map[mid] = d
+
+    cur.execute(
+        f"SELECT MEMBER_ID, MEMBER_THRU_DATE, LAST_NAME, FIRST_NAME, DATE_OF_BIRTH FROM {table} WHERE CARRIER=?",
+        carrier)
+    existing = {}
+    for r in cur.fetchall():
+        existing[(str(r[0]).strip() if r[0] else "")] = {
+            "thru": r[1], "last": r[2], "first": r[3], "dob": r[4]}
+
+    insert_cols = ["CARRIER"] + target_cols + ["LoadUpdateDate"]
+    update_cols = [c for c in target_cols if c != "MEMBER_ID"]  # never rewrite the key
+
+    inserts, updates, add_items = [], [], []
+    for mid, d in file_map.items():
+        if mid in existing:
+            if update_cols:
+                updates.append(tuple([d.get(c) for c in update_cols] + [today, carrier, mid]))
+        else:
+            inserts.append(tuple([carrier] + [d.get(c) for c in target_cols] + [today]))
+            add_items.append((mid, d.get("LAST_NAME"), d.get("FIRST_NAME"), d.get("DATE_OF_BIRTH")))
+
+    inactivations, inact_items = [], []
+    for mid, info in existing.items():
+        if mid and mid not in file_map:
+            thru = parse_date_any(info["thru"])
+            if thru is None or thru >= today:  # blank/future = currently active
+                inactivations.append((run_date, today, carrier, mid))
+                inact_items.append((mid, info["last"], info["first"], info["dob"]))
+
+    cur.fast_executemany = True
+    if inserts:
+        cols = ", ".join(f"[{c}]" for c in insert_cols)
+        ph = ", ".join("?" for _ in insert_cols)
+        cur.executemany(f"INSERT INTO {table} ({cols}) VALUES ({ph})", inserts)
+    if updates:
+        sets = ", ".join(f"[{c}]=?" for c in update_cols) + ", [LoadUpdateDate]=?"
+        cur.executemany(f"UPDATE {table} SET {sets} WHERE CARRIER=? AND MEMBER_ID=?", updates)
+    if inactivations:
+        cur.executemany(
+            f"UPDATE {table} SET [MEMBER_THRU_DATE]=?, [LoadUpdateDate]=? WHERE CARRIER=? AND MEMBER_ID=?",
+            inactivations)
+
+    item_sql = ("INSERT INTO dbo.Import_Reconcile_Items "
+                "(run_id, config_id, action, carrier, member_id, last_name, first_name, date_of_birth) "
+                "VALUES (?,?,?,?,?,?,?,?)")
+    if add_items:
+        cur.executemany(item_sql, [(run_id, cfg["id"], "Add", carrier, *it) for it in add_items])
+    if inact_items:
+        cur.executemany(item_sql, [(run_id, cfg["id"], "Inactivate", carrier, *it) for it in inact_items])
+
+    return len(inserts), len(updates), len(inactivations)
+
+
 # ── SFTP ────────────────────────────────────────────────────────────────────
 def sftp_connect(cfg):
     transport = paramiko.Transport((cfg["sftp_host"], int(cfg["sftp_port"] or 22)))
@@ -259,6 +373,38 @@ def run_config(cn, cfg):
         if not todo:
             sftp.close(); transport.close()
             finish("NoFile", message=f"No new files matching {cfg['file_pattern']}")
+            return
+
+        # Eligibility feeds reconcile against dbo.eligibility instead of a plain insert.
+        if cfg["feed_type"] == "Eligibility":
+            all_rows, target_cols = [], None
+            for name in todo:  # combine all new files into one roster
+                remote_path = posixpath.join(cfg["remote_dir"] or "/", name)
+                with sftp.open(remote_path, "rb") as fh:
+                    data = fh.read()
+                header, body = parse_file(data, cfg)
+                mapped, target_cols = map_to_dicts(maps, header, body)
+                all_rows.extend(mapped)
+            added, updated, inactivated = reconcile_eligibility(cur, cfg, run_id, all_rows, target_cols or [])
+            for i, name in enumerate(todo):
+                cur.execute(
+                    "INSERT INTO dbo.Import_Processed_Files (config_id, file_name, rows_imported) VALUES (?,?,?)",
+                    cfg["id"], name, len(all_rows) if i == len(todo) - 1 else 0)
+                remote_path = posixpath.join(cfg["remote_dir"] or "/", name)
+                if cfg["after_import"] == "delete":
+                    sftp.remove(remote_path)
+                elif cfg["after_import"] == "archive" and cfg.get("archive_dir"):
+                    try:
+                        sftp.rename(remote_path, posixpath.join(cfg["archive_dir"], name))
+                    except IOError:
+                        pass
+            sftp.close(); transport.close()
+            cur.execute(
+                "UPDATE dbo.Import_Runs SET added_count=?, updated_count=?, inactivated_count=? WHERE id=?",
+                added, updated, inactivated, run_id)
+            finish("Success", file_name=(todo[0] if len(todo) == 1 else f"{len(todo)} files"),
+                   rows=len(all_rows),
+                   message=f"Reconciled {len(all_rows)} rows: {added} added, {updated} updated, {inactivated} inactivated")
             return
 
         total = 0

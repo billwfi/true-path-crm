@@ -110,8 +110,18 @@ exports.handler = async function (event) {
         const cid = parseInt(config_id, 10);
         if (!cid) return badRequest('config_id is required');
         const r = await mssql(
-          `SELECT TOP 50 id, config_id, started_at, finished_at, status, file_name, rows_imported, message
+          `SELECT TOP 50 id, config_id, started_at, finished_at, status, file_name, rows_imported,
+                  added_count, updated_count, inactivated_count, message
            FROM dbo.Import_Runs WHERE config_id = @cid ORDER BY started_at DESC`, { cid });
+        return ok(r.recordset);
+      }
+      if (resource === 'reconcile') {
+        const rid = parseInt(event.queryStringParameters.run_id, 10);
+        if (!rid) return badRequest('run_id is required');
+        const r = await mssql(
+          `SELECT TOP 5000 action, carrier, member_id, last_name, first_name, date_of_birth
+           FROM dbo.Import_Reconcile_Items WHERE run_id = @rid
+           ORDER BY action, last_name, first_name`, { rid });
         return ok(r.recordset);
       }
       if (id) {
@@ -124,7 +134,8 @@ exports.handler = async function (event) {
            FROM dbo.Import_Configs ic WHERE id = @cid`, { cid });
         if (!r.recordset[0]) return notFound();
         const runs = await mssql(
-          `SELECT TOP 10 id, started_at, finished_at, status, file_name, rows_imported, message
+          `SELECT TOP 10 id, started_at, finished_at, status, file_name, rows_imported,
+                  added_count, updated_count, inactivated_count, message
            FROM dbo.Import_Runs WHERE config_id = @cid ORDER BY started_at DESC`, { cid });
         return ok({ ...mask(r.recordset[0]), columns: await loadColumns(cid), runs: runs.recordset });
       }

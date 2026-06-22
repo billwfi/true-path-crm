@@ -60,6 +60,21 @@ Already-imported files are tracked in `dbo.Import_Processed_Files` (by name per
 config) and are never re-imported. `after_import` can leave, delete, or archive
 the remote file.
 
+## Eligibility reconciliation
+For `feed_type = 'Eligibility'`, the worker does **not** plain-insert. After loading
+the file it reconciles against the target table (e.g. `dbo.eligibility`) scoped to
+the client by `CARRIER = tp_clients.irx_client_id`, keyed on **CARRIER + MEMBER_ID**:
+
+- file member **not** in eligibility → **INSERT** (CARRIER set, `LoadUpdateDate` = today)
+- file member already present → **UPDATE** mapped fields (`LoadUpdateDate` = today)
+- eligibility member missing from the file and still active (MEMBER_THRU_DATE blank
+  or a future date) → **INACTIVATE**: `MEMBER_THRU_DATE` = run date (`M/D/YYYY`)
+
+Per-run counts land on `dbo.Import_Runs` and the Add/Inactivate detail in
+`dbo.Import_Reconcile_Items`, shown via the app's **Report** button (with CSV export).
+The mapping **must** include a column mapped to `MEMBER_ID`. If multiple new files
+are present, they're combined into one roster before reconciling.
+
 ## Header & footer handling
 - **header_row** — 1-based file row of the column header; rows above it (report
   titles, blank lines) are ignored. Data starts on the next row.
