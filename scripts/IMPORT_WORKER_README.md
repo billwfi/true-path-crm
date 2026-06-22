@@ -60,20 +60,28 @@ Already-imported files are tracked in `dbo.Import_Processed_Files` (by name per
 config) and are never re-imported. `after_import` can leave, delete, or archive
 the remote file.
 
-## Eligibility reconciliation
-For `feed_type = 'Eligibility'`, the worker does **not** plain-insert. After loading
-the file it reconciles against the target table (e.g. `dbo.eligibility`) scoped to
-the client by `CARRIER = tp_clients.irx_client_id`, keyed on **CARRIER + MEMBER_ID**:
+## Eligibility reconciliation (two-stage)
+For `feed_type = 'Eligibility'` the worker runs two stages:
 
-- file member **not** in eligibility → **INSERT** (CARRIER set, `LoadUpdateDate` = today)
-- file member already present → **UPDATE** mapped fields (`LoadUpdateDate` = today)
-- eligibility member missing from the file and still active (MEMBER_THRU_DATE blank
-  or a future date) → **INACTIVATE**: `MEMBER_THRU_DATE` = run date (`M/D/YYYY`)
+**Stage 1 — raw load.** The file is loaded into the feed's `target_table` (the
+per-client staging table) using the file→staging column map (`Import_Column_Maps`).
+The staging table is truncated first, so it holds only the current roster.
 
-Per-run counts land on `dbo.Import_Runs` and the Add/Inactivate detail in
-`dbo.Import_Reconcile_Items`, shown via the app's **Report** button (with CSV export).
-The mapping **must** include a column mapped to `MEMBER_ID`. If multiple new files
-are present, they're combined into one roster before reconciling.
+**Stage 2 — reconcile.** The staging table is projected onto canonical eligibility
+columns via `Import_Reconcile_Maps` (staging column → eligibility column) and
+compared to `reconcile_table` (default `dbo.eligibility`), scoped to the client by
+`CARRIER = tp_clients.irx_client_id`, keyed on **CARRIER + MEMBER_ID**:
+
+- staged member **not** in eligibility → **INSERT** (CARRIER set, `LoadUpdateDate` = today)
+- staged member already present → **UPDATE** mapped fields (`LoadUpdateDate` = today)
+- eligibility member missing from the staged roster and still active
+  (MEMBER_THRU_DATE blank or a future date) → **INACTIVATE**: `MEMBER_THRU_DATE`
+  = run date (`M/D/YYYY`)
+
+The reconcile map **must** include a row whose eligibility column is `MEMBER_ID`.
+Per-run counts land on `dbo.Import_Runs`; the Add/Inactivate detail in
+`dbo.Import_Reconcile_Items` (app **Report** button, with CSV export). Multiple new
+files are combined into one staged roster before reconciling.
 
 ## Header & footer handling
 - **header_row** — 1-based file row of the column header; rows above it (report

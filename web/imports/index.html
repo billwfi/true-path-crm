@@ -8,6 +8,7 @@
   <link rel="stylesheet" href="/assets/css/app.css">
   <style>
     .map-row { display:grid; grid-template-columns: 1fr 1fr 130px 32px; gap:8px; align-items:center; margin-bottom:8px; }
+    .recon-row { grid-template-columns: 1fr 1fr 32px; }
     .map-head { font-size:11px; font-weight:700; color:#94a3b8; text-transform:uppercase; letter-spacing:.4px; }
     .section-title { font-size:12px; font-weight:700; color:#0f172a; text-transform:uppercase; letter-spacing:.4px;
       margin:20px 0 12px; padding-bottom:6px; border-bottom:1px solid #f1f5f9; }
@@ -42,6 +43,7 @@
 </div>
 
 <datalist id="target-cols"></datalist>
+<datalist id="recon-cols"></datalist>
 
 <!-- ── Editor modal ── -->
 <div id="editModal" class="modal-backdrop hidden">
@@ -188,11 +190,25 @@
       <button class="btn btn-outline btn-sm mt-1" onclick="addMapRow()"><i class="fa-solid fa-plus"></i> Add column</button>
       <p id="elig-note" class="text-xs text-sky-800 bg-sky-50 rounded p-2 mt-3" style="display:none;">
         <i class="fa-solid fa-circle-info mr-1"></i>
-        <b>Eligibility feed:</b> after each file loads, records are reconciled against the target table by
-        <b>CARRIER + MEMBER_ID</b> (CARRIER = this client's irx_client_id). New members are added, matched
-        members updated, and members missing from the file are inactivated (MEMBER_THRU_DATE = run date).
-        Map a column to <b>MEMBER_ID</b> and set the target to your eligibility table (e.g. dbo.eligibility).
+        <b>Eligibility feed — two stages.</b> Stage 1: the file is loaded into the <b>target table above</b>
+        (the per-client staging table, refreshed each run). Stage 2: that staging table is reconciled into
+        the canonical table below by <b>CARRIER + MEMBER_ID</b> (CARRIER = this client's irx_client_id) —
+        new members added, matched members updated, members missing from the file inactivated
+        (MEMBER_THRU_DATE = run date).
       </p>
+
+      <div id="recon-section" style="display:none;">
+        <div class="section-title">Reconcile → Canonical Eligibility</div>
+        <div class="form-group">
+          <label class="form-label">Reconcile Against (canonical table)</label>
+          <input type="text" id="f-recontable" class="form-control" list="target-tables"
+                 value="dbo.eligibility" onchange="loadReconCols(this.value)">
+        </div>
+        <div class="map-row recon-row map-head"><div>Staging Column</div><div>Eligibility Column</div><div></div></div>
+        <div id="recon-rows"></div>
+        <button class="btn btn-outline btn-sm mt-1" onclick="addReconRow()"><i class="fa-solid fa-plus"></i> Add column</button>
+        <p class="text-xs text-slate-400 mt-1">Map one staging column to <b>MEMBER_ID</b> (required). Add LAST_NAME / FIRST_NAME / DATE_OF_BIRTH / MEMBER_THRU_DATE and any other canonical columns to populate on insert.</p>
+      </div>
 
       <div class="section-title">Schedule</div>
       <div class="form-grid">
@@ -356,6 +372,30 @@
     const cols = await apiGet(`/imports?resource=columns&table=${encodeURIComponent(table)}`);
     if (cols) dl.innerHTML = cols.map(c => `<option value="${esc(c.name)}">${esc(c.type)}</option>`).join('');
   }
+  async function loadReconCols(table) {
+    const dl = document.getElementById('recon-cols');
+    dl.innerHTML = '';
+    if (!table) return;
+    const cols = await apiGet(`/imports?resource=columns&table=${encodeURIComponent(table)}`);
+    if (cols) dl.innerHTML = cols.map(c => `<option value="${esc(c.name)}">${esc(c.type)}</option>`).join('');
+  }
+
+  /* ── Reconcile (staging → canonical) rows ── */
+  function addReconRow(stage = '', elig = '') {
+    const div = document.createElement('div');
+    div.className = 'map-row recon-row';
+    div.innerHTML = `
+      <input type="text" class="form-control rec-stage" list="target-cols" placeholder="staging column" value="${esc(stage)}">
+      <input type="text" class="form-control rec-elig" list="recon-cols" placeholder="eligibility column" value="${esc(elig)}">
+      <button class="btn btn-outline btn-sm" onclick="this.closest('.recon-row').remove()"><i class="fa-solid fa-xmark text-red-500"></i></button>`;
+    document.getElementById('recon-rows').appendChild(div);
+  }
+  function collectReconMaps() {
+    return [...document.querySelectorAll('#recon-rows .recon-row')].map(r => ({
+      stage_column: r.querySelector('.rec-stage').value.trim(),
+      eligibility_column: r.querySelector('.rec-elig').value.trim(),
+    })).filter(m => m.stage_column && m.eligibility_column);
+  }
 
   /* ── Conditional field groups ── */
   function onFormatChange() {
@@ -364,8 +404,9 @@
     document.getElementById('grp-sheet').style.display = xlsx ? '' : 'none';
   }
   function onFeedTypeChange() {
-    document.getElementById('elig-note').style.display =
-      document.getElementById('f-feedtype').value === 'Eligibility' ? '' : 'none';
+    const isElig = document.getElementById('f-feedtype').value === 'Eligibility';
+    document.getElementById('elig-note').style.display = isElig ? '' : 'none';
+    document.getElementById('recon-section').style.display = isElig ? '' : 'none';
   }
   function onFreqChange() {
     const f = document.getElementById('f-freq').value;
@@ -419,9 +460,17 @@
     if (c && c.columns && c.columns.length) c.columns.forEach(m => addMapRow(m.source_column, m.target_column, m.data_type));
     else addMapRow();
 
+    // Reconcile (eligibility two-stage) section.
+    set('f-recontable', c ? (c.reconcile_table || 'dbo.eligibility') : 'dbo.eligibility');
+    document.getElementById('recon-rows').innerHTML = '';
+    if (c && c.reconcile_columns && c.reconcile_columns.length)
+      c.reconcile_columns.forEach(m => addReconRow(m.stage_column, m.eligibility_column));
+    else addReconRow();
+
     onFormatChange(); onFreqChange(); onFeedTypeChange();
     document.getElementById('grp-archive').style.display = (c && c.after_import === 'archive') ? '' : 'none';
     if (c && c.target_table) loadTargetCols(c.target_table);
+    loadReconCols(c && c.reconcile_table ? c.reconcile_table : 'dbo.eligibility');
     openModal('editModal');
   }
 
@@ -447,6 +496,8 @@
       stop_on_blank: document.getElementById('f-stopblank').checked,
       sheet_name: val('f-sheet') || null,
       target_table: val('f-target'),
+      reconcile_table: val('f-recontable') || 'dbo.eligibility',
+      reconcile_columns: collectReconMaps(),
       truncate_before: document.getElementById('f-truncate').checked,
       after_import: val('f-after'),
       archive_dir: val('f-archivedir') || null,
@@ -461,6 +512,11 @@
     if (!body.sftp_host || !body.sftp_username) return showToast('SFTP host and username are required', 'error');
     if (!body.target_table) return showToast('Target table is required', 'error');
     if (!body.columns.length) return showToast('Add at least one column mapping', 'error');
+    if (body.feed_type === 'Eligibility') {
+      if (!body.reconcile_columns.length) return showToast('Add the reconcile mapping (staging → eligibility)', 'error');
+      if (!body.reconcile_columns.some(m => m.eligibility_column.toUpperCase() === 'MEMBER_ID'))
+        return showToast('Map a staging column to MEMBER_ID in the reconcile mapping', 'error');
+    }
 
     const id = document.getElementById('f-id').value;
     const res = id ? await apiPatch(`/imports?id=${id}`, body) : await apiPost('/imports', body);

@@ -23,7 +23,7 @@ const AFTER = ['leave', 'delete', 'archive'];
 const CONFIG_COLS = `id, client_id, name, feed_type, sftp_host, sftp_port, sftp_username,
   remote_dir, file_pattern, file_format, delimiter, has_header, header_row,
   stop_on_blank, stop_marker, footer_skip, sheet_name,
-  target_table, truncate_before, after_import, archive_dir,
+  target_table, reconcile_table, truncate_before, after_import, archive_dir,
   schedule_frequency, schedule_time, schedule_dow, active, run_requested, last_run_at, created_at, updated_at`;
 
 function isAdmin(u) { return !!u && (u.user_type === 'Admin' || u.is_admin === true); }
@@ -55,6 +55,27 @@ async function saveColumns(configId, columns) {
   }
 }
 
+// Stage→canonical reconcile mapping (eligibility two-stage).
+async function loadReconcileMaps(configId) {
+  const r = await mssql(
+    `SELECT id, stage_column, eligibility_column, ordinal
+     FROM dbo.Import_Reconcile_Maps WHERE config_id = @cid ORDER BY ordinal, id`, { cid: configId });
+  return r.recordset;
+}
+
+async function saveReconcileMaps(configId, columns) {
+  await mssql('DELETE FROM dbo.Import_Reconcile_Maps WHERE config_id = @cid', { cid: configId });
+  if (!Array.isArray(columns)) return;
+  let i = 0;
+  for (const c of columns) {
+    if (!c || !c.stage_column || !c.eligibility_column) continue;
+    await mssql(
+      `INSERT INTO dbo.Import_Reconcile_Maps (config_id, stage_column, eligibility_column, ordinal)
+       VALUES (@cid, @src, @tgt, @ord)`,
+      { cid: configId, src: String(c.stage_column), tgt: String(c.eligibility_column), ord: i++ });
+  }
+}
+
 function configParams(b) {
   const freq = FREQ.includes(b.schedule_frequency) ? b.schedule_frequency : 'Daily';
   return {
@@ -69,7 +90,8 @@ function configParams(b) {
     stop_marker: b.stop_marker || null,
     footer_skip: Math.max(0, parseInt(b.footer_skip, 10) || 0),
     sheet_name: b.sheet_name || null,
-    target_table: b.target_table, truncate: b.truncate_before ? 1 : 0,
+    target_table: b.target_table, reconcile_table: b.reconcile_table || 'dbo.eligibility',
+    truncate: b.truncate_before ? 1 : 0,
     after_import: AFTER.includes(b.after_import) ? b.after_import : 'leave',
     archive_dir: b.archive_dir || null,
     freq, sched_time: b.schedule_time || '06:00',
@@ -137,7 +159,8 @@ exports.handler = async function (event) {
           `SELECT TOP 10 id, started_at, finished_at, status, file_name, rows_imported,
                   added_count, updated_count, inactivated_count, message
            FROM dbo.Import_Runs WHERE config_id = @cid ORDER BY started_at DESC`, { cid });
-        return ok({ ...mask(r.recordset[0]), columns: await loadColumns(cid), runs: runs.recordset });
+        return ok({ ...mask(r.recordset[0]), columns: await loadColumns(cid),
+          reconcile_columns: await loadReconcileMaps(cid), runs: runs.recordset });
       }
       // list
       const r = await mssql(
@@ -173,17 +196,18 @@ exports.handler = async function (event) {
            (client_id, name, feed_type, sftp_host, sftp_port, sftp_username, sftp_password_enc, sftp_key_enc,
             remote_dir, file_pattern, file_format, delimiter, has_header, header_row,
             stop_on_blank, stop_marker, footer_skip, sheet_name,
-            target_table, truncate_before, after_import, archive_dir,
+            target_table, reconcile_table, truncate_before, after_import, archive_dir,
             schedule_frequency, schedule_time, schedule_dow, active, created_by)
          OUTPUT INSERTED.id
          VALUES (@client_id, @name, @feed_type, @host, @port, @username, @pwd, @key,
             @remote_dir, @pattern, @format, @delimiter, @has_header, @header_row,
             @stop_on_blank, @stop_marker, @footer_skip, @sheet_name,
-            @target_table, @truncate, @after_import, @archive_dir,
+            @target_table, @reconcile_table, @truncate, @after_import, @archive_dir,
             @freq, @sched_time, @dow, @active, @by)`,
         { ...p, pwd: encrypt(b.sftp_password || null), key: encrypt(b.sftp_key || null), by: user.id || null });
       const newId = r.recordset[0].id;
       await saveColumns(newId, b.columns);
+      await saveReconcileMaps(newId, b.reconcile_columns);
       return created({ id: newId });
     }
 
@@ -204,13 +228,14 @@ exports.handler = async function (event) {
            sftp_username=@username, remote_dir=@remote_dir, file_pattern=@pattern, file_format=@format,
            delimiter=@delimiter, has_header=@has_header, header_row=@header_row,
            stop_on_blank=@stop_on_blank, stop_marker=@stop_marker, footer_skip=@footer_skip,
-           sheet_name=@sheet_name, target_table=@target_table,
+           sheet_name=@sheet_name, target_table=@target_table, reconcile_table=@reconcile_table,
            truncate_before=@truncate, after_import=@after_import, archive_dir=@archive_dir,
            schedule_frequency=@freq, schedule_time=@sched_time, schedule_dow=@dow, active=@active,
            updated_at=GETDATE()${setPwd}${setKey}
          WHERE id=@cid`, params);
       if (!r.rowsAffected[0]) return notFound();
       if (Array.isArray(b.columns)) await saveColumns(cid, b.columns);
+      if (Array.isArray(b.reconcile_columns)) await saveReconcileMaps(cid, b.reconcile_columns);
       return ok({ id: cid });
     }
 
@@ -218,6 +243,7 @@ exports.handler = async function (event) {
       const cid = parseInt(id, 10);
       if (!cid) return badRequest('id is required');
       await mssql('DELETE FROM dbo.Import_Column_Maps WHERE config_id=@cid', { cid });
+      await mssql('DELETE FROM dbo.Import_Reconcile_Maps WHERE config_id=@cid', { cid });
       await mssql('DELETE FROM dbo.Import_Reconcile_Items WHERE config_id=@cid', { cid });
       await mssql('DELETE FROM dbo.Import_Runs WHERE config_id=@cid', { cid });
       await mssql('DELETE FROM dbo.Import_Processed_Files WHERE config_id=@cid', { cid });

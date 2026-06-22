@@ -210,29 +210,23 @@ def import_rows(cur, target_table, maps, header, data_rows, truncate):
 
 
 # ── Eligibility reconciliation ──────────────────────────────────────────────
-def map_to_dicts(maps, header, body):
-    """Map file rows to {target_column: value} dicts. Eligibility columns are all
-    varchar, so values are kept as trimmed strings (no date/number coercion)."""
-    idx = {name: i for i, name in enumerate(header)}
-    resolved = []
-    for m in maps:
-        src = m["source_column"]
-        pos = idx.get(src)
-        if pos is None and str(src).isdigit():
-            pos = int(src) - 1
-        if pos is None:
-            raise ValueError(f"source column '{src}' not found in file header")
-        resolved.append((pos, m["target_column"]))
-    target_cols = [t for _, t in resolved]
-    out = []
-    for r in body:
+def read_stage(cur, stage_table, recon_maps):
+    """Read the freshly-loaded staging table and project it onto canonical
+    eligibility columns using the stage->canonical reconcile map."""
+    if not recon_maps:
+        raise ValueError("no reconcile mapping defined (staging column -> eligibility column)")
+    canon_cols = [m["eligibility_column"] for m in recon_maps]
+    select_list = ", ".join(f"[{m['stage_column']}] AS col{i}" for i, m in enumerate(recon_maps))
+    cur.execute(f"SELECT {select_list} FROM {stage_table}")
+    rows = []
+    for r in cur.fetchall():
         d = {}
-        for pos, tgt in resolved:
-            raw = r[pos] if pos < len(r) else None
-            s = "" if raw is None else str(raw).strip()
-            d[tgt] = s or None
-        out.append(d)
-    return out, target_cols
+        for i, m in enumerate(recon_maps):
+            v = r[i]
+            s = "" if v is None else str(v).strip()
+            d[m["eligibility_column"]] = s or None
+        rows.append(d)
+    return rows, canon_cols
 
 
 def parse_date_any(s):
@@ -252,7 +246,7 @@ def reconcile_eligibility(cur, cfg, run_id, rows, target_cols):
     irx_client_id), keyed on CARRIER + MEMBER_ID. New members are inserted,
     matched members updated, and active members missing from the file have their
     MEMBER_THRU_DATE set to the run date. Returns (added, updated, inactivated)."""
-    table = cfg["target_table"] or "dbo.eligibility"
+    table = cfg.get("reconcile_table") or "dbo.eligibility"
     cur.execute("SELECT irx_client_id FROM dbo.tp_clients WHERE id=?", cfg["client_id"])
     row = cur.fetchone()
     carrier = (str(row[0]).strip() if row and row[0] else None)
@@ -375,22 +369,29 @@ def run_config(cn, cfg):
             finish("NoFile", message=f"No new files matching {cfg['file_pattern']}")
             return
 
-        # Eligibility feeds reconcile against dbo.eligibility instead of a plain insert.
+        # Eligibility = two-stage: raw-load into the staging (target) table, then
+        # reconcile that table into the canonical reconcile_table.
         if cfg["feed_type"] == "Eligibility":
-            all_rows, target_cols = [], None
-            for name in todo:  # combine all new files into one roster
+            cur.execute(
+                "SELECT stage_column, eligibility_column FROM dbo.Import_Reconcile_Maps WHERE config_id=? ORDER BY ordinal, id",
+                cfg["id"])
+            recon_maps = rows_as_dicts(cur)
+            if not recon_maps:
+                sftp.close(); transport.close()
+                finish("Error", message="No reconcile mapping (staging column -> eligibility column) defined")
+                return
+
+            # Stage 1: raw-load every new file into the staging table (full refresh).
+            staged = 0
+            for i, name in enumerate(todo):
                 remote_path = posixpath.join(cfg["remote_dir"] or "/", name)
                 with sftp.open(remote_path, "rb") as fh:
                     data = fh.read()
                 header, body = parse_file(data, cfg)
-                mapped, target_cols = map_to_dicts(maps, header, body)
-                all_rows.extend(mapped)
-            added, updated, inactivated = reconcile_eligibility(cur, cfg, run_id, all_rows, target_cols or [])
-            for i, name in enumerate(todo):
+                staged += import_rows(cur, cfg["target_table"], maps, header, body, truncate=(i == 0))
                 cur.execute(
                     "INSERT INTO dbo.Import_Processed_Files (config_id, file_name, rows_imported) VALUES (?,?,?)",
-                    cfg["id"], name, len(all_rows) if i == len(todo) - 1 else 0)
-                remote_path = posixpath.join(cfg["remote_dir"] or "/", name)
+                    cfg["id"], name, staged if i == len(todo) - 1 else 0)
                 if cfg["after_import"] == "delete":
                     sftp.remove(remote_path)
                 elif cfg["after_import"] == "archive" and cfg.get("archive_dir"):
@@ -399,12 +400,17 @@ def run_config(cn, cfg):
                     except IOError:
                         pass
             sftp.close(); transport.close()
+
+            # Stage 2: reconcile staging -> canonical eligibility.
+            rows, target_cols = read_stage(cur, cfg["target_table"], recon_maps)
+            added, updated, inactivated = reconcile_eligibility(cur, cfg, run_id, rows, target_cols)
             cur.execute(
                 "UPDATE dbo.Import_Runs SET added_count=?, updated_count=?, inactivated_count=? WHERE id=?",
                 added, updated, inactivated, run_id)
             finish("Success", file_name=(todo[0] if len(todo) == 1 else f"{len(todo)} files"),
-                   rows=len(all_rows),
-                   message=f"Reconciled {len(all_rows)} rows: {added} added, {updated} updated, {inactivated} inactivated")
+                   rows=staged,
+                   message=f"Staged {staged} rows -> {cfg.get('reconcile_table') or 'dbo.eligibility'}: "
+                           f"{added} added, {updated} updated, {inactivated} inactivated")
             return
 
         total = 0
@@ -454,7 +460,7 @@ def main():
         "SELECT id, client_id, name, feed_type, sftp_host, sftp_port, sftp_username, "
         "sftp_password_enc, sftp_key_enc, remote_dir, file_pattern, file_format, delimiter, "
         "has_header, header_row, stop_on_blank, stop_marker, footer_skip, sheet_name, "
-        "target_table, truncate_before, after_import, archive_dir, "
+        "target_table, reconcile_table, truncate_before, after_import, archive_dir, "
         "schedule_frequency, schedule_time, schedule_dow, active, run_requested, last_run_at "
         f"FROM dbo.Import_Configs {where}", *params)
     cfgs = rows_as_dicts(cur)
