@@ -1,0 +1,431 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Imports — True Path CRM</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+  <link rel="stylesheet" href="/assets/css/app.css">
+  <style>
+    .map-row { display:grid; grid-template-columns: 1fr 1fr 130px 32px; gap:8px; align-items:center; margin-bottom:8px; }
+    .map-head { font-size:11px; font-weight:700; color:#94a3b8; text-transform:uppercase; letter-spacing:.4px; }
+    .section-title { font-size:12px; font-weight:700; color:#0f172a; text-transform:uppercase; letter-spacing:.4px;
+      margin:20px 0 12px; padding-bottom:6px; border-bottom:1px solid #f1f5f9; }
+    .section-title:first-child { margin-top:0; }
+  </style>
+</head>
+<body class="bg-slate-100 text-slate-700">
+<div id="app" class="flex h-screen overflow-hidden">
+  <div id="nav-placeholder"></div>
+  <div class="flex-1 flex flex-col overflow-hidden">
+    <div id="topbar"></div>
+    <main class="flex-1 overflow-y-auto p-6">
+
+      <div class="search-bar">
+        <input type="text" id="search" class="form-control" placeholder="Search by client or feed name…" oninput="render()">
+        <button class="btn btn-primary" onclick="openEdit()"><i class="fa-solid fa-plus"></i> New Import</button>
+      </div>
+
+      <div class="card">
+        <div class="card-body">
+          <table class="data-table">
+            <thead><tr>
+              <th>Client</th><th>Feed</th><th>Type</th><th>Target Table</th><th>Schedule</th>
+              <th>Mapping</th><th>Last Run</th><th>Status</th><th></th>
+            </tr></thead>
+            <tbody id="tbl-body"><tr><td colspan="9" class="text-center py-10 text-slate-400">Loading…</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+    </main>
+  </div>
+</div>
+
+<datalist id="target-cols"></datalist>
+
+<!-- ── Editor modal ── -->
+<div id="editModal" class="modal-backdrop hidden">
+  <div class="modal modal-lg">
+    <div class="modal-header">
+      <span class="modal-title" id="editTitle">New Import</span>
+      <button class="modal-close" onclick="closeModal('editModal')">&times;</button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="f-id">
+
+      <div class="section-title">Feed</div>
+      <div class="form-grid">
+        <div class="form-group">
+          <label class="form-label">Client *</label>
+          <select id="f-client" class="form-control"><option value="">— Select client —</option></select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Feed Type</label>
+          <select id="f-feedtype" class="form-control"><option>Eligibility</option><option>Claims</option></select>
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Feed Name *</label>
+        <input type="text" id="f-name" class="form-control" placeholder="e.g. Acme Weekly Eligibility">
+      </div>
+
+      <div class="section-title">SFTP Connection</div>
+      <div class="form-grid">
+        <div class="form-group" style="grid-column:1 / -1;">
+          <label class="form-label">Host *</label>
+          <input type="text" id="f-host" class="form-control" placeholder="sftp.example.com">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Port</label>
+          <input type="number" id="f-port" class="form-control" value="22">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Username *</label>
+          <input type="text" id="f-username" class="form-control" autocomplete="off">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Password <span id="pw-hint" class="text-slate-400 font-normal"></span></label>
+          <input type="password" id="f-password" class="form-control" autocomplete="new-password" placeholder="">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Private Key (PEM, optional) <span id="key-hint" class="text-slate-400 font-normal"></span></label>
+          <textarea id="f-key" class="form-control" rows="1" placeholder="paste to set / replace"></textarea>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Remote Directory</label>
+          <input type="text" id="f-remotedir" class="form-control" value="/" placeholder="/outbound">
+        </div>
+        <div class="form-group">
+          <label class="form-label">File Pattern</label>
+          <input type="text" id="f-pattern" class="form-control" value="*.csv" placeholder="*.csv">
+        </div>
+      </div>
+
+      <div class="section-title">File Format</div>
+      <div class="form-grid">
+        <div class="form-group">
+          <label class="form-label">Format</label>
+          <select id="f-format" class="form-control" onchange="onFormatChange()">
+            <option value="csv">CSV / delimited</option>
+            <option value="xlsx">Excel (.xlsx)</option>
+          </select>
+        </div>
+        <div class="form-group" id="grp-delim">
+          <label class="form-label">Delimiter</label>
+          <select id="f-delimiter" class="form-control">
+            <option value=",">Comma ,</option>
+            <option value="&#9;">Tab</option>
+            <option value="|">Pipe |</option>
+            <option value=";">Semicolon ;</option>
+          </select>
+        </div>
+        <div class="form-group" id="grp-sheet" style="display:none;">
+          <label class="form-label">Sheet Name (optional)</label>
+          <input type="text" id="f-sheet" class="form-control" placeholder="first sheet">
+        </div>
+        <div class="form-group">
+          <label class="form-label inline-flex items-center gap-2">
+            <input type="checkbox" id="f-header" checked> File has a header row
+          </label>
+        </div>
+      </div>
+
+      <div class="section-title">Target &amp; Mapping</div>
+      <div class="form-grid">
+        <div class="form-group">
+          <label class="form-label">Target Table *</label>
+          <input type="text" id="f-target" class="form-control" list="target-tables" placeholder="dbo.eligibility"
+                 onchange="loadTargetCols(this.value)">
+          <datalist id="target-tables"></datalist>
+        </div>
+        <div class="form-group">
+          <label class="form-label">On Import</label>
+          <select id="f-after" class="form-control">
+            <option value="leave">Leave file on server</option>
+            <option value="delete">Delete file after import</option>
+            <option value="archive">Move to archive folder</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label inline-flex items-center gap-2">
+            <input type="checkbox" id="f-truncate"> Truncate table before import (full refresh)
+          </label>
+        </div>
+        <div class="form-group" id="grp-archive" style="display:none;">
+          <label class="form-label">Archive Directory</label>
+          <input type="text" id="f-archivedir" class="form-control" placeholder="/archive">
+        </div>
+      </div>
+
+      <div class="map-row map-head">
+        <div>Source Column (file)</div><div>Target Column (table)</div><div>Type</div><div></div>
+      </div>
+      <div id="map-rows"></div>
+      <button class="btn btn-outline btn-sm mt-1" onclick="addMapRow()"><i class="fa-solid fa-plus"></i> Add column</button>
+
+      <div class="section-title">Schedule</div>
+      <div class="form-grid">
+        <div class="form-group">
+          <label class="form-label">Frequency</label>
+          <select id="f-freq" class="form-control" onchange="onFreqChange()">
+            <option>Hourly</option><option selected>Daily</option><option>Weekly</option>
+          </select>
+        </div>
+        <div class="form-group" id="grp-time">
+          <label class="form-label">Time of Day</label>
+          <input type="time" id="f-time" class="form-control" value="06:00">
+        </div>
+        <div class="form-group" id="grp-dow" style="display:none;">
+          <label class="form-label">Day of Week</label>
+          <select id="f-dow" class="form-control">
+            <option value="0">Sunday</option><option value="1">Monday</option><option value="2">Tuesday</option>
+            <option value="3">Wednesday</option><option value="4">Thursday</option><option value="5">Friday</option>
+            <option value="6">Saturday</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label inline-flex items-center gap-2">
+            <input type="checkbox" id="f-active" checked> Active
+          </label>
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeModal('editModal')">Cancel</button>
+      <button class="btn btn-primary" onclick="save()"><i class="fa-solid fa-floppy-disk"></i> Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Run history modal ── -->
+<div id="runsModal" class="modal-backdrop hidden">
+  <div class="modal modal-lg">
+    <div class="modal-header">
+      <span class="modal-title" id="runs-title">Run History</span>
+      <button class="modal-close" onclick="closeModal('runsModal')">&times;</button>
+    </div>
+    <div class="modal-body">
+      <table class="data-table">
+        <thead><tr><th>Started</th><th>Finished</th><th>Status</th><th>File</th><th>Rows</th><th>Message</th></tr></thead>
+        <tbody id="runs-body"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<script src="/assets/js/app.js"></script>
+<script>
+  initNav('imports');
+  let configs = [], clients = [];
+  const STATUS_COLORS = { Success:'green', Error:'red', Running:'blue', NoFile:'gray' };
+
+  function clientLabel(c) { return c.name || `Client #${c.id}`; }
+
+  function fmtDT(d) {
+    if (!d) return '—';
+    const m = String(d).match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/);
+    if (!m) return d;
+    const [,Y,Mo,D,hh,mi] = m, h = +hh, ap = h>=12?'PM':'AM', h12 = ((h+11)%12)+1;
+    return `${+Mo}/${+D}/${Y} ${h12}:${mi} ${ap}`;
+  }
+  function scheduleLabel(c) {
+    if (c.schedule_frequency === 'Hourly') return 'Hourly';
+    const t = c.schedule_time || '';
+    if (c.schedule_frequency === 'Weekly') {
+      const days = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+      return `Weekly ${days[c.schedule_dow] || ''} ${t}`;
+    }
+    return `Daily ${t}`;
+  }
+
+  async function load() {
+    [configs, clients] = await Promise.all([apiGet('/imports'), apiGet('/clients')]);
+    configs = configs || []; clients = clients || [];
+    document.getElementById('f-client').innerHTML =
+      '<option value="">— Select client —</option>' +
+      clients.map(c => `<option value="${c.id}">${esc(clientLabel(c))}</option>`).join('');
+    render();
+  }
+
+  function render() {
+    const q = document.getElementById('search').value.toLowerCase();
+    const rows = configs.filter(c => !q ||
+      (c.client_name||'').toLowerCase().includes(q) || (c.name||'').toLowerCase().includes(q));
+    document.getElementById('tbl-body').innerHTML = rows.length
+      ? rows.map(c => `<tr>
+          <td class="font-medium">${esc(c.client_name) || '—'}</td>
+          <td>${esc(c.name)}</td>
+          <td><span class="badge badge-${c.feed_type==='Claims'?'purple':'blue'}">${esc(c.feed_type)}</span></td>
+          <td class="text-xs font-mono">${esc(c.target_table)}</td>
+          <td class="text-xs">${esc(scheduleLabel(c))}</td>
+          <td class="text-center">${c.mapping_count}</td>
+          <td class="text-xs text-slate-400">${fmtDT(c.last_run_at)}</td>
+          <td>${c.active
+                ? (c.last_status ? `<span class="badge badge-${STATUS_COLORS[c.last_status]||'gray'}">${esc(c.last_status)}</span>` : '<span class="badge badge-gray">—</span>')
+                : '<span class="badge badge-gray">Inactive</span>'}</td>
+          <td class="text-right whitespace-nowrap">
+            <button class="btn btn-outline btn-sm" onclick="viewRuns(${c.id})" title="Run history"><i class="fa-regular fa-rectangle-list"></i></button>
+            <button class="btn btn-outline btn-sm" onclick="openEdit(${c.id})"><i class="fa-solid fa-pen"></i></button>
+            <button class="btn btn-outline btn-sm" onclick="del(${c.id})"><i class="fa-solid fa-trash text-red-500"></i></button>
+          </td>
+        </tr>`).join('')
+      : '<tr><td colspan="9" class="text-center py-10 text-slate-400">No imports configured. Click “New Import”.</td></tr>';
+  }
+
+  /* ── Mapping rows ── */
+  function addMapRow(src = '', tgt = '', dt = '') {
+    const div = document.createElement('div');
+    div.className = 'map-row';
+    div.innerHTML = `
+      <input type="text" class="form-control map-src" placeholder="header name" value="${esc(src)}">
+      <input type="text" class="form-control map-tgt" list="target-cols" placeholder="column" value="${esc(tgt)}">
+      <select class="form-control map-dt">
+        <option value="">text</option><option value="int">int</option><option value="decimal">decimal</option>
+        <option value="date">date</option><option value="datetime">datetime</option>
+      </select>
+      <button class="btn btn-outline btn-sm" onclick="this.closest('.map-row').remove()"><i class="fa-solid fa-xmark text-red-500"></i></button>`;
+    div.querySelector('.map-dt').value = dt || '';
+    document.getElementById('map-rows').appendChild(div);
+  }
+  function collectMaps() {
+    return [...document.querySelectorAll('#map-rows .map-row')].map(r => ({
+      source_column: r.querySelector('.map-src').value.trim(),
+      target_column: r.querySelector('.map-tgt').value.trim(),
+      data_type: r.querySelector('.map-dt').value || null,
+    })).filter(m => m.source_column && m.target_column);
+  }
+
+  async function loadTargetCols(table) {
+    const dl = document.getElementById('target-cols');
+    dl.innerHTML = '';
+    if (!table) return;
+    const cols = await apiGet(`/imports?resource=columns&table=${encodeURIComponent(table)}`);
+    if (cols) dl.innerHTML = cols.map(c => `<option value="${esc(c.name)}">${esc(c.type)}</option>`).join('');
+  }
+
+  /* ── Conditional field groups ── */
+  function onFormatChange() {
+    const xlsx = document.getElementById('f-format').value === 'xlsx';
+    document.getElementById('grp-delim').style.display = xlsx ? 'none' : '';
+    document.getElementById('grp-sheet').style.display = xlsx ? '' : 'none';
+  }
+  function onFreqChange() {
+    const f = document.getElementById('f-freq').value;
+    document.getElementById('grp-time').style.display = f === 'Hourly' ? 'none' : '';
+    document.getElementById('grp-dow').style.display = f === 'Weekly' ? '' : 'none';
+  }
+  document.getElementById('f-after').addEventListener('change', e => {
+    document.getElementById('grp-archive').style.display = e.target.value === 'archive' ? '' : 'none';
+  });
+
+  /* ── Open / edit ── */
+  async function openEdit(id) {
+    // populate table dropdown lazily
+    apiGet('/imports?resource=tables').then(t => {
+      document.getElementById('target-tables').innerHTML = (t||[]).map(n => `<option value="${esc(n)}">`).join('');
+    });
+    const c = id ? await apiGet(`/imports?id=${id}`) : null;
+    document.getElementById('editTitle').textContent = c ? 'Edit Import' : 'New Import';
+    const set = (k, v) => document.getElementById(k).value = v;
+    document.getElementById('f-id').value = c ? c.id : '';
+    document.getElementById('f-client').value = c ? String(c.client_id) : '';
+    set('f-feedtype', c ? c.feed_type : 'Eligibility');
+    set('f-name', c ? c.name : '');
+    set('f-host', c ? c.sftp_host : '');
+    set('f-port', c ? c.sftp_port : 22);
+    set('f-username', c ? c.sftp_username : '');
+    set('f-password', '');
+    set('f-key', '');
+    document.getElementById('pw-hint').textContent = c && c.has_password ? '(set — leave blank to keep)' : '';
+    document.getElementById('key-hint').textContent = c && c.has_key ? '(set — leave blank to keep)' : '';
+    set('f-remotedir', c ? c.remote_dir : '/');
+    set('f-pattern', c ? c.file_pattern : '*.csv');
+    set('f-format', c ? c.file_format : 'csv');
+    set('f-delimiter', c ? (c.delimiter || ',') : ',');
+    set('f-sheet', c ? (c.sheet_name || '') : '');
+    document.getElementById('f-header').checked = c ? !!c.has_header : true;
+    set('f-target', c ? c.target_table : '');
+    set('f-after', c ? c.after_import : 'leave');
+    document.getElementById('f-truncate').checked = c ? !!c.truncate_before : false;
+    set('f-archivedir', c ? (c.archive_dir || '') : '');
+    set('f-freq', c ? c.schedule_frequency : 'Daily');
+    set('f-time', c ? (c.schedule_time || '06:00') : '06:00');
+    set('f-dow', c && c.schedule_dow != null ? String(c.schedule_dow) : '1');
+    document.getElementById('f-active').checked = c ? !!c.active : true;
+
+    document.getElementById('map-rows').innerHTML = '';
+    if (c && c.columns && c.columns.length) c.columns.forEach(m => addMapRow(m.source_column, m.target_column, m.data_type));
+    else addMapRow();
+
+    onFormatChange(); onFreqChange();
+    document.getElementById('grp-archive').style.display = (c && c.after_import === 'archive') ? '' : 'none';
+    if (c && c.target_table) loadTargetCols(c.target_table);
+    openModal('editModal');
+  }
+
+  async function save() {
+    const val = id => document.getElementById(id).value.trim();
+    const body = {
+      client_id: val('f-client') ? parseInt(val('f-client'), 10) : null,
+      feed_type: val('f-feedtype'),
+      name: val('f-name'),
+      sftp_host: val('f-host'),
+      sftp_port: parseInt(val('f-port'), 10) || 22,
+      sftp_username: val('f-username'),
+      sftp_password: document.getElementById('f-password').value,   // blank = keep
+      sftp_key: document.getElementById('f-key').value,
+      remote_dir: val('f-remotedir') || '/',
+      file_pattern: val('f-pattern') || '*.csv',
+      file_format: val('f-format'),
+      delimiter: document.getElementById('f-delimiter').value,
+      has_header: document.getElementById('f-header').checked,
+      sheet_name: val('f-sheet') || null,
+      target_table: val('f-target'),
+      truncate_before: document.getElementById('f-truncate').checked,
+      after_import: val('f-after'),
+      archive_dir: val('f-archivedir') || null,
+      schedule_frequency: val('f-freq'),
+      schedule_time: val('f-time'),
+      schedule_dow: parseInt(document.getElementById('f-dow').value, 10),
+      active: document.getElementById('f-active').checked,
+      columns: collectMaps(),
+    };
+    if (!body.client_id) return showToast('Select a client', 'error');
+    if (!body.name) return showToast('Feed name is required', 'error');
+    if (!body.sftp_host || !body.sftp_username) return showToast('SFTP host and username are required', 'error');
+    if (!body.target_table) return showToast('Target table is required', 'error');
+    if (!body.columns.length) return showToast('Add at least one column mapping', 'error');
+
+    const id = document.getElementById('f-id').value;
+    const res = id ? await apiPatch(`/imports?id=${id}`, body) : await apiPost('/imports', body);
+    if (res && res.ok) { closeModal('editModal'); showToast('Saved', 'success'); load(); }
+    else { const e = res ? await res.json().catch(()=>({})) : {}; showToast(e.error || 'Save failed', 'error'); }
+  }
+
+  async function del(id) {
+    if (!confirm2('Delete this import configuration and its history?')) return;
+    const res = await apiDelete(`/imports?id=${id}`);
+    if (res && res.ok) { showToast('Deleted', 'success'); load(); } else showToast('Delete failed', 'error');
+  }
+
+  async function viewRuns(id) {
+    const c = configs.find(x => x.id === id);
+    document.getElementById('runs-title').textContent = `Run History — ${c ? c.name : ''}`;
+    const runs = await apiGet(`/imports?resource=runs&config_id=${id}`);
+    document.getElementById('runs-body').innerHTML = (runs && runs.length)
+      ? runs.map(r => `<tr>
+          <td class="text-xs">${fmtDT(r.started_at)}</td>
+          <td class="text-xs">${fmtDT(r.finished_at)}</td>
+          <td><span class="badge badge-${STATUS_COLORS[r.status]||'gray'}">${esc(r.status)}</span></td>
+          <td class="text-xs">${esc(r.file_name) || '—'}</td>
+          <td class="text-center">${r.rows_imported ?? '—'}</td>
+          <td class="text-xs text-slate-500">${esc(r.message) || ''}</td>
+        </tr>`).join('')
+      : '<tr><td colspan="6" class="text-center py-8 text-slate-400">No runs yet</td></tr>';
+    openModal('runsModal');
+  }
+
+  load();
+</script>
+</body>
+</html>

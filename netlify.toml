@@ -112,6 +112,11 @@
   to = "/invoices/data/"
   status = 301
 
+[[redirects]]
+  from = "/imports"
+  to = "/imports/"
+  status = 301
+
 [[headers]]
   for = "/*"
   [headers.values]

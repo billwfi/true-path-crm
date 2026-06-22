@@ -1,0 +1,4 @@
+pyodbc>=5.0
+paramiko>=3.4
+openpyxl>=3.1
+cryptography>=42.0

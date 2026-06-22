@@ -100,6 +100,8 @@ const NAV_ITEMS = [
   { href: '/invoices/list/',      icon: 'fa-file-invoice-dollar', label: 'Invoices', key: 'invoices-list' },
   { href: '/invoices/dashboard/', icon: 'fa-chart-pie', label: 'Dashboard', key: 'invoices-dashboard' },
   { href: '/invoices/data/',      icon: 'fa-table',     label: 'Invoice Data', key: 'invoices-data' },
+  { section: 'Eligibility & Claims Imports' },
+  { href: '/imports/', icon: 'fa-file-import', label: 'Imports', key: 'imports' },
   { section: 'Admin' },
   { href: '/brokers/',   icon: 'fa-handshake',         label: 'Brokers',     key: 'brokers' },
   { section: 'Settings', adminOnly: true },
@@ -162,6 +164,7 @@ function initNav(activeKey) {
     'invoices-list': 'Invoices',
     'invoices-dashboard': 'Invoices & Statements — Dashboard',
     'invoices-data': 'Invoices & Statements — Invoice Data',
+    imports: 'Eligibility & Claims Imports',
     companies: 'Companies', brokers: 'Brokers', 'user-management': 'User Management',
   };
   document.getElementById('topbar').innerHTML = `
