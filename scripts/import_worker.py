@@ -84,10 +84,22 @@ def is_due(cfg, now):
 
 
 # ── File parsing ────────────────────────────────────────────────────────────
-def split_rows(rows, has_header, header_row):
+def _first_cell(r):
+    for c in r:
+        s = str(c).strip()
+        if s:
+            return s
+    return ""
+
+
+def split_rows(rows, has_header, header_row, stop_on_blank=False, stop_marker=None, footer_skip=0):
     """Pick the header at the 1-based file row `header_row` (preamble/title rows
-    above it are ignored). Rows are passed in literal file order with no prior
-    blank-row filtering so the row number matches what you see in Excel."""
+    above it are ignored), then bound the data region. Rows are passed in literal
+    file order with no prior blank-row filtering so the row number matches Excel.
+
+    End-of-data is the earliest of: first blank row (if stop_on_blank), first row
+    whose first value starts with stop_marker, or end of file. footer_skip then
+    drops that many trailing rows (totals/notes)."""
     hidx = max(0, (int(header_row) if header_row else 1) - 1)
     if hidx >= len(rows):
         return [], []
@@ -98,22 +110,42 @@ def split_rows(rows, has_header, header_row):
         body = rows[hidx:]
         width = max((len(r) for r in body), default=0)
         header = [str(i + 1) for i in range(width)]
-    body = [r for r in body if any(str(c).strip() for c in r)]  # drop empty data rows
+
+    marker = (stop_marker or "").strip().lower()
+    end = len(body)
+    for i, r in enumerate(body):
+        blank = not any(str(c).strip() for c in r)
+        if stop_on_blank and blank:
+            end = i
+            break
+        if marker and _first_cell(r).lower().startswith(marker):
+            end = i
+            break
+    body = body[:end]
+
+    while body and not any(str(c).strip() for c in body[-1]):  # trailing blanks
+        body.pop()
+    skip = int(footer_skip or 0)
+    if skip > 0:
+        body = body[:-skip] if skip < len(body) else []
+    body = [r for r in body if any(str(c).strip() for c in r)]  # interior blanks
     return header, body
 
 
-def parse_csv(data, delimiter, has_header, header_row):
-    text = data.decode("utf-8-sig", errors="replace")
-    rows = list(csv.reader(io.StringIO(text), delimiter=(delimiter or ",")))
-    return split_rows(rows, has_header, header_row)
-
-
-def parse_xlsx(data, sheet_name, has_header, header_row):
-    import openpyxl
-    wb = openpyxl.load_workbook(io.BytesIO(data), read_only=True, data_only=True)
-    ws = wb[sheet_name] if sheet_name and sheet_name in wb.sheetnames else wb[wb.sheetnames[0]]
-    rows = [["" if c is None else c for c in row] for row in ws.iter_rows(values_only=True)]
-    return split_rows(rows, has_header, header_row)
+def parse_file(data, cfg):
+    opts = dict(stop_on_blank=bool(cfg.get("stop_on_blank")),
+                stop_marker=cfg.get("stop_marker"),
+                footer_skip=cfg.get("footer_skip") or 0)
+    if cfg["file_format"] == "xlsx":
+        import openpyxl
+        wb = openpyxl.load_workbook(io.BytesIO(data), read_only=True, data_only=True)
+        sheet = cfg.get("sheet_name")
+        ws = wb[sheet] if sheet and sheet in wb.sheetnames else wb[wb.sheetnames[0]]
+        rows = [["" if c is None else c for c in row] for row in ws.iter_rows(values_only=True)]
+    else:
+        text = data.decode("utf-8-sig", errors="replace")
+        rows = list(csv.reader(io.StringIO(text), delimiter=(cfg.get("delimiter") or ",")))
+    return split_rows(rows, cfg["has_header"], cfg.get("header_row") or 1, **opts)
 
 
 # ── Value coercion ──────────────────────────────────────────────────────────
@@ -235,10 +267,7 @@ def run_config(cn, cfg):
             remote_path = posixpath.join(cfg["remote_dir"] or "/", name)
             with sftp.open(remote_path, "rb") as fh:
                 data = fh.read()
-            if cfg["file_format"] == "xlsx":
-                header, body = parse_xlsx(data, cfg.get("sheet_name"), cfg["has_header"], cfg.get("header_row") or 1)
-            else:
-                header, body = parse_csv(data, cfg.get("delimiter"), cfg["has_header"], cfg.get("header_row") or 1)
+            header, body = parse_file(data, cfg)
             n = import_rows(cur, cfg["target_table"], maps, header, body,
                             cfg["truncate_before"] and name == todo[0])
             cur.execute(
@@ -272,23 +301,30 @@ def main():
 
     cn = db_connect()
     cur = cn.cursor()
-    where = "WHERE active=1" + (" AND id=?" if args.config else "")
+    # Active configs (for scheduled runs) plus any flagged for a manual run.
+    where = "WHERE (active=1 OR run_requested=1)" + (" AND id=?" if args.config else "")
     params = (args.config,) if args.config else ()
     cur.execute(
         "SELECT id, client_id, name, feed_type, sftp_host, sftp_port, sftp_username, "
         "sftp_password_enc, sftp_key_enc, remote_dir, file_pattern, file_format, delimiter, "
-        "has_header, header_row, sheet_name, target_table, truncate_before, after_import, archive_dir, "
-        "schedule_frequency, schedule_time, schedule_dow, last_run_at "
+        "has_header, header_row, stop_on_blank, stop_marker, footer_skip, sheet_name, "
+        "target_table, truncate_before, after_import, archive_dir, "
+        "schedule_frequency, schedule_time, schedule_dow, active, run_requested, last_run_at "
         f"FROM dbo.Import_Configs {where}", *params)
     cfgs = rows_as_dicts(cur)
 
     now = datetime.now()
     ran = 0
     for cfg in cfgs:
-        if args.force or is_due(cfg, now):
-            print(f"Running config {cfg['id']} ({cfg['name']})…")
+        requested = bool(cfg.get("run_requested"))
+        due_scheduled = bool(cfg.get("active")) and is_due(cfg, now)
+        if args.force or requested or due_scheduled:
+            reason = "manual" if requested else ("forced" if args.force else "scheduled")
+            print(f"Running config {cfg['id']} ({cfg['name']}) [{reason}]…")
             run_config(cn, cfg)
             ran += 1
+        if requested:  # clear the manual-run flag whether or not it just ran
+            cur.execute("UPDATE dbo.Import_Configs SET run_requested=0 WHERE id=?", cfg["id"])
     print(f"Done. {ran} of {len(cfgs)} config(s) run.")
     cn.close()
 

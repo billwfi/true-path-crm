@@ -21,9 +21,10 @@ const AFTER = ['leave', 'delete', 'archive'];
 
 // Columns safe to return (everything except the encrypted secrets).
 const CONFIG_COLS = `id, client_id, name, feed_type, sftp_host, sftp_port, sftp_username,
-  remote_dir, file_pattern, file_format, delimiter, has_header, header_row, sheet_name,
+  remote_dir, file_pattern, file_format, delimiter, has_header, header_row,
+  stop_on_blank, stop_marker, footer_skip, sheet_name,
   target_table, truncate_before, after_import, archive_dir,
-  schedule_frequency, schedule_time, schedule_dow, active, last_run_at, created_at, updated_at`;
+  schedule_frequency, schedule_time, schedule_dow, active, run_requested, last_run_at, created_at, updated_at`;
 
 function isAdmin(u) { return !!u && (u.user_type === 'Admin' || u.is_admin === true); }
 
@@ -64,6 +65,9 @@ function configParams(b) {
     format: FORMATS.includes(b.file_format) ? b.file_format : 'csv',
     delimiter: b.delimiter || ',', has_header: b.has_header === false ? 0 : 1,
     header_row: Math.max(1, parseInt(b.header_row, 10) || 1),
+    stop_on_blank: b.stop_on_blank ? 1 : 0,
+    stop_marker: b.stop_marker || null,
+    footer_skip: Math.max(0, parseInt(b.footer_skip, 10) || 0),
     sheet_name: b.sheet_name || null,
     target_table: b.target_table, truncate: b.truncate_before ? 1 : 0,
     after_import: AFTER.includes(b.after_import) ? b.after_import : 'leave',
@@ -140,6 +144,13 @@ exports.handler = async function (event) {
     }
 
     if (event.httpMethod === 'POST') {
+      // Manual "Run now": flag the config; the worker runs it on its next pass.
+      if (resource === 'run') {
+        const cid = parseInt(id, 10);
+        if (!cid) return badRequest('id is required');
+        const r = await mssql('UPDATE dbo.Import_Configs SET run_requested = 1 WHERE id = @cid', { cid });
+        return r.rowsAffected[0] ? ok({ queued: true }) : notFound();
+      }
       const b = JSON.parse(event.body || '{}');
       if (!b.client_id) return badRequest('client_id is required');
       if (!b.name) return badRequest('name is required');
@@ -149,12 +160,14 @@ exports.handler = async function (event) {
       const r = await mssql(
         `INSERT INTO dbo.Import_Configs
            (client_id, name, feed_type, sftp_host, sftp_port, sftp_username, sftp_password_enc, sftp_key_enc,
-            remote_dir, file_pattern, file_format, delimiter, has_header, header_row, sheet_name,
+            remote_dir, file_pattern, file_format, delimiter, has_header, header_row,
+            stop_on_blank, stop_marker, footer_skip, sheet_name,
             target_table, truncate_before, after_import, archive_dir,
             schedule_frequency, schedule_time, schedule_dow, active, created_by)
          OUTPUT INSERTED.id
          VALUES (@client_id, @name, @feed_type, @host, @port, @username, @pwd, @key,
-            @remote_dir, @pattern, @format, @delimiter, @has_header, @header_row, @sheet_name,
+            @remote_dir, @pattern, @format, @delimiter, @has_header, @header_row,
+            @stop_on_blank, @stop_marker, @footer_skip, @sheet_name,
             @target_table, @truncate, @after_import, @archive_dir,
             @freq, @sched_time, @dow, @active, @by)`,
         { ...p, pwd: encrypt(b.sftp_password || null), key: encrypt(b.sftp_key || null), by: user.id || null });
@@ -178,7 +191,9 @@ exports.handler = async function (event) {
         `UPDATE dbo.Import_Configs SET
            client_id=@client_id, name=@name, feed_type=@feed_type, sftp_host=@host, sftp_port=@port,
            sftp_username=@username, remote_dir=@remote_dir, file_pattern=@pattern, file_format=@format,
-           delimiter=@delimiter, has_header=@has_header, header_row=@header_row, sheet_name=@sheet_name, target_table=@target_table,
+           delimiter=@delimiter, has_header=@has_header, header_row=@header_row,
+           stop_on_blank=@stop_on_blank, stop_marker=@stop_marker, footer_skip=@footer_skip,
+           sheet_name=@sheet_name, target_table=@target_table,
            truncate_before=@truncate, after_import=@after_import, archive_dir=@archive_dir,
            schedule_frequency=@freq, schedule_time=@sched_time, schedule_dow=@dow, active=@active,
            updated_at=GETDATE()${setPwd}${setKey}

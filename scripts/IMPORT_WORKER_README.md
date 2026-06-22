@@ -52,6 +52,18 @@ schtasks /Create /SC MINUTE /MO 15 /TN "CRM Import Worker" ^
 - **Daily** — runs once per day at/after the configured time.
 - **Weekly** — runs once on the configured weekday at/after the configured time.
 
+A config can also be run on demand: the **Run now** button in the app sets
+`run_requested = 1`, and the worker runs that config on its next pass (even if
+inactive or not yet due) and clears the flag.
+
 Already-imported files are tracked in `dbo.Import_Processed_Files` (by name per
 config) and are never re-imported. `after_import` can leave, delete, or archive
 the remote file.
+
+## Header & footer handling
+- **header_row** — 1-based file row of the column header; rows above it (report
+  titles, blank lines) are ignored. Data starts on the next row.
+- **stop_on_blank** — end the data at the first fully-blank row after the header.
+- **stop_marker** — end the data at the first row whose first value starts with
+  this text (case-insensitive), e.g. `Total`.
+- **footer_skip** — drop this many trailing rows (totals/notes) from the end.
