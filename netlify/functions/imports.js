@@ -218,6 +218,7 @@ exports.handler = async function (event) {
       const cid = parseInt(id, 10);
       if (!cid) return badRequest('id is required');
       await mssql('DELETE FROM dbo.Import_Column_Maps WHERE config_id=@cid', { cid });
+      await mssql('DELETE FROM dbo.Import_Reconcile_Items WHERE config_id=@cid', { cid });
       await mssql('DELETE FROM dbo.Import_Runs WHERE config_id=@cid', { cid });
       await mssql('DELETE FROM dbo.Import_Processed_Files WHERE config_id=@cid', { cid });
       const r = await mssql('DELETE FROM dbo.Import_Configs WHERE id=@cid', { cid });
