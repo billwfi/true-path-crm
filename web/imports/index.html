@@ -124,9 +124,15 @@
           <input type="text" id="f-sheet" class="form-control" placeholder="first sheet">
         </div>
         <div class="form-group">
+          <label class="form-label">Header Row #</label>
+          <input type="number" id="f-headerrow" class="form-control" min="1" value="1">
+          <p class="text-xs text-slate-400 mt-1">Row the column names are on (skips titles above). RHA = 7.</p>
+        </div>
+        <div class="form-group">
           <label class="form-label inline-flex items-center gap-2">
             <input type="checkbox" id="f-header" checked> File has a header row
           </label>
+          <p class="text-xs text-slate-400 mt-1">Unchecked: row # above is the first data row.</p>
         </div>
       </div>
 
@@ -343,6 +349,7 @@
     set('f-format', c ? c.file_format : 'csv');
     set('f-delimiter', c ? (c.delimiter || ',') : ',');
     set('f-sheet', c ? (c.sheet_name || '') : '');
+    set('f-headerrow', c ? (c.header_row || 1) : 1);
     document.getElementById('f-header').checked = c ? !!c.has_header : true;
     set('f-target', c ? c.target_table : '');
     set('f-after', c ? c.after_import : 'leave');
@@ -379,6 +386,7 @@
       file_format: val('f-format'),
       delimiter: document.getElementById('f-delimiter').value,
       has_header: document.getElementById('f-header').checked,
+      header_row: parseInt(val('f-headerrow'), 10) || 1,
       sheet_name: val('f-sheet') || null,
       target_table: val('f-target'),
       truncate_before: document.getElementById('f-truncate').checked,

@@ -84,30 +84,36 @@ def is_due(cfg, now):
 
 
 # ── File parsing ────────────────────────────────────────────────────────────
-def parse_csv(data, delimiter, has_header):
-    text = data.decode("utf-8-sig", errors="replace")
-    reader = csv.reader(io.StringIO(text), delimiter=(delimiter or ","))
-    rows = [r for r in reader if any(c.strip() for c in r)]
-    if not rows:
+def split_rows(rows, has_header, header_row):
+    """Pick the header at the 1-based file row `header_row` (preamble/title rows
+    above it are ignored). Rows are passed in literal file order with no prior
+    blank-row filtering so the row number matches what you see in Excel."""
+    hidx = max(0, (int(header_row) if header_row else 1) - 1)
+    if hidx >= len(rows):
         return [], []
     if has_header:
-        return rows[0], rows[1:]
-    width = max(len(r) for r in rows)
-    return [str(i + 1) for i in range(width)], rows
+        header = [str(c).strip() for c in rows[hidx]]
+        body = rows[hidx + 1:]
+    else:
+        body = rows[hidx:]
+        width = max((len(r) for r in body), default=0)
+        header = [str(i + 1) for i in range(width)]
+    body = [r for r in body if any(str(c).strip() for c in r)]  # drop empty data rows
+    return header, body
 
 
-def parse_xlsx(data, sheet_name, has_header):
+def parse_csv(data, delimiter, has_header, header_row):
+    text = data.decode("utf-8-sig", errors="replace")
+    rows = list(csv.reader(io.StringIO(text), delimiter=(delimiter or ",")))
+    return split_rows(rows, has_header, header_row)
+
+
+def parse_xlsx(data, sheet_name, has_header, header_row):
     import openpyxl
     wb = openpyxl.load_workbook(io.BytesIO(data), read_only=True, data_only=True)
     ws = wb[sheet_name] if sheet_name and sheet_name in wb.sheetnames else wb[wb.sheetnames[0]]
     rows = [["" if c is None else c for c in row] for row in ws.iter_rows(values_only=True)]
-    rows = [r for r in rows if any(str(c).strip() for c in r)]
-    if not rows:
-        return [], []
-    if has_header:
-        return [str(c) for c in rows[0]], rows[1:]
-    width = max(len(r) for r in rows)
-    return [str(i + 1) for i in range(width)], rows
+    return split_rows(rows, has_header, header_row)
 
 
 # ── Value coercion ──────────────────────────────────────────────────────────
@@ -230,9 +236,9 @@ def run_config(cn, cfg):
             with sftp.open(remote_path, "rb") as fh:
                 data = fh.read()
             if cfg["file_format"] == "xlsx":
-                header, body = parse_xlsx(data, cfg.get("sheet_name"), cfg["has_header"])
+                header, body = parse_xlsx(data, cfg.get("sheet_name"), cfg["has_header"], cfg.get("header_row") or 1)
             else:
-                header, body = parse_csv(data, cfg.get("delimiter"), cfg["has_header"])
+                header, body = parse_csv(data, cfg.get("delimiter"), cfg["has_header"], cfg.get("header_row") or 1)
             n = import_rows(cur, cfg["target_table"], maps, header, body,
                             cfg["truncate_before"] and name == todo[0])
             cur.execute(
@@ -271,7 +277,7 @@ def main():
     cur.execute(
         "SELECT id, client_id, name, feed_type, sftp_host, sftp_port, sftp_username, "
         "sftp_password_enc, sftp_key_enc, remote_dir, file_pattern, file_format, delimiter, "
-        "has_header, sheet_name, target_table, truncate_before, after_import, archive_dir, "
+        "has_header, header_row, sheet_name, target_table, truncate_before, after_import, archive_dir, "
         "schedule_frequency, schedule_time, schedule_dow, last_run_at "
         f"FROM dbo.Import_Configs {where}", *params)
     cfgs = rows_as_dicts(cur)
