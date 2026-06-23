@@ -215,7 +215,7 @@
           <td><button class="btn btn-outline btn-sm" onclick="viewBookings(${s.id})"><i class="fa-regular fa-calendar"></i> ${s.booking_count}</button></td>
           <td>${s.active ? '<span class="badge badge-green">Active</span>' : '<span class="badge badge-gray">Inactive</span>'}</td>
           <td class="text-right whitespace-nowrap">
-            <button class="btn btn-outline btn-sm" onclick="share('${s.public_id}','${esc(s.name).replace(/'/g,"&#39;")}')"><i class="fa-solid fa-share-nodes"></i> Share</button>
+            <button class="btn btn-outline btn-sm" onclick="share('${s.public_id}')"><i class="fa-solid fa-share-nodes"></i> Share</button>
             <button class="btn btn-outline btn-sm" onclick="openEdit(${s.id})"><i class="fa-solid fa-pen"></i></button>
             <button class="btn btn-outline btn-sm" onclick="del(${s.id})"><i class="fa-solid fa-trash text-red-500"></i></button>
           </td>
@@ -337,9 +337,10 @@
 
   function bookingUrl(publicId) { return `${location.origin}/book/?s=${publicId}`; }
 
-  function share(publicId, name) {
+  function share(publicId) {
+    const sched = all.find(s => s.public_id === publicId);
     const url = bookingUrl(publicId);
-    document.getElementById('share-name').textContent = name;
+    document.getElementById('share-name').textContent = sched ? sched.name : '';
     document.getElementById('share-url').value = url;
     document.getElementById('share-open').href = url;
     const box = document.getElementById('qrcode');
