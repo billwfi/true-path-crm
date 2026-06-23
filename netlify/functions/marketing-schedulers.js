@@ -64,7 +64,7 @@ function generateSlots(s) {
 
 exports.handler = async function (event) {
   if (event.httpMethod === 'OPTIONS') return options();
-  const { id, s: slug } = event.queryStringParameters || {};
+  const { id, s: slug, booking, concierges } = event.queryStringParameters || {};
 
   try {
     // ── Public flow (shared link) ──────────────────────────────────────────
@@ -132,14 +132,27 @@ exports.handler = async function (event) {
     if (!user) return unauthorized();
 
     if (event.httpMethod === 'GET') {
+      // Active Client Concierge users — used to populate the booking "Assigned To" picker.
+      if (concierges) {
+        const r = await mssql(
+          `SELECT id, LTRIM(RTRIM(CONCAT(firstname, ' ', lastname))) AS name
+           FROM dbo.Users
+           WHERE active = 1 AND role = 'Client Concierge'
+           ORDER BY firstname, lastname`);
+        return ok(r.recordset);
+      }
       if (id) {
         const sid = parseInt(id, 10);
         const sr = await mssql(`SELECT ${SAFE_FIELDS}, logo_data, created_at, updated_at
           FROM dbo.Booking_Schedulers WHERE id = @sid`, { sid });
         if (!sr.recordset[0]) return notFound();
         const bk = await mssql(
-          `SELECT id, slot_start, name, company_name, first_name, last_name, dob, email, phone, notes, created_at
-           FROM dbo.Bookings WHERE scheduler_id = @sid ORDER BY slot_start, created_at`, { sid });
+          `SELECT bk.id, bk.slot_start, bk.name, bk.company_name, bk.first_name, bk.last_name,
+                  bk.dob, bk.email, bk.phone, bk.notes, bk.created_at, bk.assigned_to,
+                  LTRIM(RTRIM(CONCAT(u.firstname, ' ', u.lastname))) AS assigned_name
+           FROM dbo.Bookings bk
+           LEFT JOIN dbo.Users u ON u.id = bk.assigned_to
+           WHERE bk.scheduler_id = @sid ORDER BY bk.slot_start, bk.created_at`, { sid });
         return ok({ ...sr.recordset[0], bookings: bk.recordset });
       }
       const rows = await mssql(
@@ -172,6 +185,21 @@ exports.handler = async function (event) {
           dows: b.days_of_week || '1,2,3,4,5',
           active: b.active === false ? 0 : 1, by: user.id || null });
       return created(r.recordset[0]);
+    }
+
+    // Assign (or clear) a booking's Client Concierge.
+    if (event.httpMethod === 'PATCH' && booking) {
+      const bid = parseInt(booking, 10);
+      if (!bid) return badRequest('booking id is required');
+      const b = JSON.parse(event.body || '{}');
+      const assignedTo = parseInt(b.assigned_to, 10) || null;
+      const r = await mssql(
+        `UPDATE dbo.Bookings
+         SET assigned_to = @assignedTo,
+             assigned_at = CASE WHEN @assignedTo IS NULL THEN NULL ELSE GETDATE() END
+         OUTPUT INSERTED.id, INSERTED.assigned_to WHERE id = @bid`,
+        { assignedTo, bid });
+      return r.recordset[0] ? ok(r.recordset[0]) : notFound();
     }
 
     if (event.httpMethod === 'PATCH') {

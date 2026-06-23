@@ -155,7 +155,7 @@
     </div>
     <div class="modal-body">
       <table class="data-table">
-        <thead><tr><th>When</th><th>Company</th><th>Name</th><th>DOB</th><th>Phone</th><th>Email</th><th>Booked</th></tr></thead>
+        <thead><tr><th>When</th><th>Company</th><th>Name</th><th>DOB</th><th>Phone</th><th>Email</th><th>Booked</th><th>Assigned To</th></tr></thead>
         <tbody id="bk-body"></tbody>
       </table>
     </div>
@@ -166,7 +166,7 @@
 <script>
   initNav('marketing-schedulers');
   const DOW = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
-  let debounce, all = [], clients = [];
+  let debounce, all = [], clients = [], concierges = [];
   let logoData = null;     // current logo data URL (or '' once removed)
   let logoTouched = false; // only send logo_data when the user changed it
 
@@ -183,6 +183,26 @@
     document.getElementById('f-client').innerHTML =
       '<option value="">— None (general schedule) —</option>' +
       clients.map(c => `<option value="${c.id}">${esc(clientLabel(c))}</option>`).join('');
+  }
+
+  async function loadConcierges() {
+    concierges = await apiGet('/marketing-schedulers?concierges=1') || [];
+  }
+
+  // A per-booking dropdown of Client Concierge users (or "Unassigned").
+  function assigneeSelect(bookingId, assignedTo) {
+    const cur = assignedTo == null ? '' : String(assignedTo);
+    const opts = ['<option value="">— Unassigned —</option>']
+      .concat(concierges.map(c =>
+        `<option value="${c.id}" ${String(c.id) === cur ? 'selected' : ''}>${esc(c.name)}</option>`))
+      .join('');
+    return `<select class="form-control" style="min-width:160px" onchange="assignBooking(${bookingId}, this.value)">${opts}</select>`;
+  }
+
+  async function assignBooking(bookingId, userId) {
+    const res = await apiPatch(`/marketing-schedulers?booking=${bookingId}`, { assigned_to: userId || null });
+    if (res && res.ok) showToast('Assignment saved', 'success');
+    else showToast('Assignment failed', 'error');
   }
 
   // The SQL driver returns DATETIME/DATE values tagged as UTC (…Z), but they are
@@ -378,12 +398,14 @@
           <td>${esc(b.phone) || '—'}</td>
           <td>${esc(b.email) || '—'}</td>
           <td class="text-xs text-slate-400">${fmtDateSafe(b.created_at)}</td>
+          <td>${assigneeSelect(b.id, b.assigned_to)}</td>
         </tr>`).join('')
-      : '<tr><td colspan="7" class="text-center py-8 text-slate-400">No bookings yet</td></tr>';
+      : '<tr><td colspan="8" class="text-center py-8 text-slate-400">No bookings yet</td></tr>';
     openModal('bookingsModal');
   }
 
   loadClients();
+  loadConcierges();
   load();
 </script>
 </body>
