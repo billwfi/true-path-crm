@@ -31,17 +31,28 @@
     .times-label { font-size:13px; font-weight:700; color:#475569; margin-bottom:10px; }
     .times-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(92px,1fr)); gap:8px; }
     .times-hint { color:#94a3b8; font-size:13px; padding-top:8px; }
+
+    /* Language toggle */
+    .lang-btn { padding:5px 14px; font-size:13px; background:#fff; color:#475569; cursor:pointer; border:none; }
+    .lang-btn + .lang-btn { border-left:1px solid #e2e8f0; }
+    .lang-btn.active { background:#0ea5e9; color:#fff; }
   </style>
 </head>
 <body class="bg-slate-100 text-slate-700">
 <div class="max-w-3xl mx-auto p-4 md:p-8">
 
-  <div class="text-center mb-5">
+  <div class="text-center mb-2">
     <img src="/assets/img/truepath-logo.png" alt="True Path Sourcing"
          style="height:64px; width:auto; display:inline-block;">
   </div>
+  <div class="flex justify-center mb-5">
+    <div class="inline-flex rounded-lg overflow-hidden" style="border:1px solid #e2e8f0;">
+      <button id="lang-en" type="button" onclick="setLang('en')" class="lang-btn">English</button>
+      <button id="lang-es" type="button" onclick="setLang('es')" class="lang-btn">Español</button>
+    </div>
+  </div>
 
-  <div id="loading" class="card"><div class="card-body" style="padding:40px; text-align:center;" class="text-slate-400">Loading…</div></div>
+  <div id="loading" class="card"><div class="card-body text-slate-400" style="padding:40px; text-align:center;" data-i18n="loading">Loading…</div></div>
 
   <div id="content" class="hidden">
     <div class="card mb-4">
@@ -57,9 +68,10 @@
     </div>
 
     <div class="card mb-4">
-      <div class="card-header"><span class="card-title"><i class="fa-regular fa-calendar text-sky-500 mr-2"></i>Pick a date &amp; time</span></div>
+      <div class="card-header"><span class="card-title"><i class="fa-regular fa-calendar text-sky-500 mr-2"></i><span data-i18n="pickDateTime">Pick a date &amp; time</span></span></div>
       <div class="card-body" style="padding:18px 20px;">
-        <div id="no-slots" class="hidden text-slate-400 text-sm py-4 text-center">No times are currently available.</div>
+        <div id="no-slots" class="hidden text-slate-400 text-sm py-4 text-center" data-i18n="noTimes">No times are currently available.</div>
+        <div id="tz-note" class="hidden text-xs text-slate-500 mb-4 px-3 py-2 rounded-lg" style="background:#f0f9ff;border:1px solid #e0f2fe;"></div>
         <div id="picker" class="md:flex md:gap-8">
           <div id="calendar" class="cal"></div>
           <div id="times" class="flex-1 mt-5 md:mt-0"></div>
@@ -68,40 +80,40 @@
     </div>
 
     <div class="card" id="form-card">
-      <div class="card-header"><span class="card-title"><i class="fa-regular fa-user text-sky-500 mr-2"></i>Your details</span></div>
+      <div class="card-header"><span class="card-title"><i class="fa-regular fa-user text-sky-500 mr-2"></i><span data-i18n="yourDetails">Your details</span></span></div>
       <div class="card-body form-pad">
         <div class="field-grid">
           <div class="form-group full">
-            <label class="form-label">Selected time</label>
-            <input type="text" id="b-slot" class="form-control" readonly placeholder="Pick a time above" style="background:#f8fafc;">
+            <label class="form-label" data-i18n="selectedTime">Selected time</label>
+            <input type="text" id="b-slot" class="form-control" readonly placeholder="Pick a time above" data-i18n-ph="pickAbove" style="background:#f8fafc;">
           </div>
           <div class="form-group full">
-            <label class="form-label">Company Name *</label>
+            <label class="form-label" data-i18n="company">Company Name *</label>
             <input type="text" id="b-company" class="form-control">
           </div>
           <div class="form-group">
-            <label class="form-label">First Name *</label>
+            <label class="form-label" data-i18n="firstName">First Name *</label>
             <input type="text" id="b-first" class="form-control">
           </div>
           <div class="form-group">
-            <label class="form-label">Last Name *</label>
+            <label class="form-label" data-i18n="lastName">Last Name *</label>
             <input type="text" id="b-last" class="form-control">
           </div>
           <div class="form-group">
-            <label class="form-label">Date of Birth *</label>
+            <label class="form-label" data-i18n="dob">Date of Birth *</label>
             <input type="date" id="b-dob" class="form-control">
           </div>
           <div class="form-group">
-            <label class="form-label">Phone Number *</label>
+            <label class="form-label" data-i18n="phone">Phone Number *</label>
             <input type="tel" id="b-phone" class="form-control">
           </div>
           <div class="form-group full">
-            <label class="form-label">Email</label>
+            <label class="form-label" data-i18n="email">Email</label>
             <input type="email" id="b-email" class="form-control">
           </div>
         </div>
         <button class="btn btn-primary" onclick="submitBooking()" style="margin-top:6px;">
-          <i class="fa-solid fa-calendar-check"></i> Confirm Booking
+          <i class="fa-solid fa-calendar-check"></i> <span data-i18n="confirm">Confirm Booking</span>
         </button>
       </div>
     </div>
@@ -115,24 +127,113 @@
         <span id="confirmed-name" class="text-base font-semibold text-slate-700"></span>
       </div>
       <div style="font-size:48px; color:#22c55e;"><i class="fa-solid fa-circle-check"></i></div>
-      <h2 class="text-xl font-bold text-slate-800 mt-3">You're booked!</h2>
+      <h2 class="text-xl font-bold text-slate-800 mt-3" data-i18n="booked">You're booked!</h2>
       <p class="text-slate-500 mt-1" id="c-detail"></p>
     </div></div>
   </div>
 
   <div id="notfound" class="hidden card"><div class="card-body" style="padding:48px 24px; text-align:center;">
     <div style="font-size:40px; color:#94a3b8;"><i class="fa-regular fa-calendar-xmark"></i></div>
-    <p class="text-slate-500 mt-3">This booking page is not available.</p>
+    <p class="text-slate-500 mt-3" data-i18n="notAvailable">This booking page is not available.</p>
   </div></div>
 </div>
 
 <script>
   const API = '/.netlify/functions';
   const slug = new URLSearchParams(location.search).get('s');
-  let selected = null, schedName = '', clientLogo = '', clientName = '';
-  let slotsByDate = {};                 // 'YYYY-MM-DD' -> [{start, remaining}]
+  let selected = null, schedName = '', clientLogo = '', clientName = '', sched = null;
+  let slotsByDate = {};                 // 'YYYY-MM-DD' -> [{start, remaining, date}]
   let calYear, calMonth, selectedDate = null;
-  const DOW_LETTERS = ['S','M','T','W','T','F','S'];
+
+  // ── Internationalization (English / Spanish) ──────────────────────────────
+  const STRINGS = {
+    en: {
+      dow: ['S','M','T','W','T','F','S'],
+      loading: 'Loading…',
+      pickDateTime: 'Pick a date & time',
+      noTimes: 'No times are currently available.',
+      yourDetails: 'Your details',
+      selectedTime: 'Selected time',
+      pickAbove: 'Pick a time above',
+      company: 'Company Name *', firstName: 'First Name *', lastName: 'Last Name *',
+      dob: 'Date of Birth *', phone: 'Phone Number *', email: 'Email',
+      confirm: 'Confirm Booking',
+      booked: "You're booked!",
+      notAvailable: 'This booking page is not available.',
+      minAppts: ({ n }) => `${n} min appointments`,
+      left: 'left', at: 'at',
+      tzCentral: 'All times are shown in Central Time',
+      tzConverted: ({ local, central }) =>
+        `Times are shown in <strong>your time zone</strong> (${local}). Appointments are scheduled in Central Time (${central}), shown here converted for you.`,
+      alertPickTime: 'Please pick a time slot.',
+      alertCompany: 'Please enter your company name.',
+      alertFirst: 'Please enter your first name.',
+      alertLast: 'Please enter your last name.',
+      alertDob: 'Please enter your date of birth.',
+      alertPhone: 'Please enter your phone number.',
+      bookingFailed: 'Sorry, we could not complete that booking. Please try another time.',
+    },
+    es: {
+      dow: ['D','L','M','X','J','V','S'],
+      loading: 'Cargando…',
+      pickDateTime: 'Elija una fecha y hora',
+      noTimes: 'No hay horarios disponibles en este momento.',
+      yourDetails: 'Sus datos',
+      selectedTime: 'Hora seleccionada',
+      pickAbove: 'Elija una hora arriba',
+      company: 'Nombre de la empresa *', firstName: 'Nombre *', lastName: 'Apellido *',
+      dob: 'Fecha de nacimiento *', phone: 'Número de teléfono *', email: 'Correo electrónico',
+      confirm: 'Confirmar cita',
+      booked: '¡Su cita está confirmada!',
+      notAvailable: 'Esta página de reservas no está disponible.',
+      minAppts: ({ n }) => `Citas de ${n} min`,
+      left: 'disp.', at: 'a las',
+      tzCentral: 'Todas las horas se muestran en hora central',
+      tzConverted: ({ local, central }) =>
+        `Las horas se muestran en <strong>su zona horaria</strong> (${local}). Las citas están programadas en hora central (${central}), convertidas aquí para usted.`,
+      alertPickTime: 'Por favor seleccione un horario.',
+      alertCompany: 'Por favor ingrese el nombre de su empresa.',
+      alertFirst: 'Por favor ingrese su nombre.',
+      alertLast: 'Por favor ingrese su apellido.',
+      alertDob: 'Por favor ingrese su fecha de nacimiento.',
+      alertPhone: 'Por favor ingrese su número de teléfono.',
+      bookingFailed: 'Lo sentimos, no pudimos completar la reserva. Por favor intente otra hora.',
+    },
+  };
+  let lang = localStorage.getItem('bookingLang')
+    || ((navigator.language || 'en').toLowerCase().startsWith('es') ? 'es' : 'en');
+  if (!STRINGS[lang]) lang = 'en';
+
+  function locale() { return lang === 'es' ? 'es-US' : 'en-US'; }
+  function t(key, vars) {
+    const v = STRINGS[lang][key];
+    return typeof v === 'function' ? v(vars || {}) : (v == null ? key : v);
+  }
+  function applyI18n() {
+    document.documentElement.lang = lang;
+    document.querySelectorAll('[data-i18n]').forEach(el => { el.textContent = t(el.dataset.i18n); });
+    document.querySelectorAll('[data-i18n-ph]').forEach(el => { el.placeholder = t(el.dataset.i18nPh); });
+    document.getElementById('lang-en').classList.toggle('active', lang === 'en');
+    document.getElementById('lang-es').classList.toggle('active', lang === 'es');
+  }
+  function setLang(next) {
+    if (!STRINGS[next]) return;
+    lang = next;
+    localStorage.setItem('bookingLang', lang);
+    applyI18n();
+    rerenderDynamic();
+  }
+  // Re-render the JS-generated text (calendar, times, meta, selected slot) after a language switch.
+  function rerenderDynamic() {
+    renderMeta();
+    const dates = Object.keys(slotsByDate).sort();
+    if (dates.length) {
+      renderTzNote(slotsByDate[dates[0]][0].date);
+      renderCalendar();
+      if (selectedDate) renderTimes(selectedDate);
+    }
+    if (selected) document.getElementById('b-slot').value = describeSlot(selected);
+  }
 
   function esc(s) { return (s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
   function show(id) { document.getElementById(id).classList.remove('hidden'); }
@@ -140,9 +241,53 @@
   function pad(n) { return String(n).padStart(2, '0'); }
   function monthIdx(y, m) { return y * 12 + m; }
 
-  function fmtTime(d) { return new Date(d).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }); }
-  function fmtDay(d) { return new Date(d).toLocaleDateString('en-US', { weekday:'long', month:'long', day:'numeric' }); }
-  function fmtFull(d) { return `${fmtDay(d)} at ${fmtTime(d)}`; }
+  // Slots arrive as Central-time wall-clock strings ('YYYY-MM-DDTHH:mm:00'). We detect the
+  // visitor's time zone and show every time converted into it; the value submitted to the
+  // server stays the original Central string (capacity/validation key on it).
+  const SOURCE_TZ = 'America/Chicago';
+  const VIEWER_TZ = (Intl.DateTimeFormat().resolvedOptions().timeZone) || SOURCE_TZ;
+
+  // Offset (ms) of a time zone at a given UTC instant, where local = utc + offset.
+  function tzOffset(utcMs, timeZone) {
+    const dtf = new Intl.DateTimeFormat('en-US', { timeZone, hour12: false,
+      year:'numeric', month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit', second:'2-digit' });
+    const p = {}; dtf.formatToParts(new Date(utcMs)).forEach(x => p[x.type] = x.value);
+    const hour = p.hour === '24' ? '00' : p.hour;
+    return Date.UTC(+p.year, +p.month - 1, +p.day, +hour, +p.minute, +p.second) - utcMs;
+  }
+  // A Central wall-clock string -> the real instant (Date) it represents.
+  function centralToInstant(naive) {
+    const m = String(naive).match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/);
+    if (!m) return new Date(naive);
+    const guess = Date.UTC(+m[1], +m[2]-1, +m[3], +m[4], +m[5], 0);
+    return new Date(guess - tzOffset(guess, SOURCE_TZ));
+  }
+  // Short zone label for a given instant, e.g. 'CDT', 'EST'.
+  function tzLabel(date, timeZone) {
+    const p = new Intl.DateTimeFormat('en-US', { timeZone, timeZoneName: 'short' }).formatToParts(date);
+    const tz = p.find(x => x.type === 'timeZoneName');
+    return tz ? tz.value : timeZone;
+  }
+  function sameAsCentral(date) {
+    return tzOffset(date.getTime(), VIEWER_TZ) === tzOffset(date.getTime(), SOURCE_TZ);
+  }
+  // Viewer-local calendar date key 'YYYY-MM-DD' for grouping slots by the visitor's day.
+  function localKey(date) {
+    const p = {}; new Intl.DateTimeFormat('en-US', { timeZone: VIEWER_TZ,
+      year:'numeric', month:'2-digit', day:'2-digit' }).formatToParts(date).forEach(x => p[x.type] = x.value);
+    return `${p.year}-${p.month}-${p.day}`;
+  }
+
+  function fmtTime(date) { return date.toLocaleTimeString(locale(), { hour:'numeric', minute:'2-digit', timeZone: VIEWER_TZ }); }
+  function fmtDay(date) { return date.toLocaleDateString(locale(), { weekday:'long', month:'long', day:'numeric', timeZone: VIEWER_TZ }); }
+  // Full description of a slot for the selected-time field and confirmation.
+  function describeSlot(naive) {
+    const date = centralToInstant(naive);
+    const local = `${fmtDay(date)} ${t('at')} ${fmtTime(date)} ${tzLabel(date, VIEWER_TZ)}`;
+    if (sameAsCentral(date)) return local;
+    const ct = date.toLocaleTimeString(locale(), { hour:'numeric', minute:'2-digit', timeZone: SOURCE_TZ });
+    return `${local} (${ct} ${tzLabel(date, SOURCE_TZ)})`;
+  }
 
   async function load() {
     if (!slug) { hide('loading'); show('notfound'); return; }
@@ -153,7 +298,7 @@
       data = await res.json();
     } catch { hide('loading'); show('notfound'); return; }
 
-    const s = data.scheduler;
+    const s = sched = data.scheduler;
     schedName = s.name;
     document.getElementById('s-name').textContent = s.name;
     clientLogo = s.logo_data || '';
@@ -168,20 +313,27 @@
     if (s.client_company) document.getElementById('b-company').value = s.client_company;
     const desc = document.getElementById('s-desc');
     if (s.description) desc.textContent = s.description; else desc.classList.add('hidden');
-    const meta = [];
-    if (s.location) meta.push(`<span><i class="fa-solid fa-location-dot mr-1 text-slate-400"></i>${esc(s.location)}</span>`);
-    meta.push(`<span><i class="fa-regular fa-clock mr-1 text-slate-400"></i>${s.interval_minutes} min appointments</span>`);
-    document.getElementById('s-meta').innerHTML = meta.join('');
+    renderMeta();
 
     buildSlotData(data.slots);
     hide('loading'); show('content');
+  }
+
+  // Scheduler location + appointment-length line (rebuilt on language switch).
+  function renderMeta() {
+    if (!sched) return;
+    const meta = [];
+    if (sched.location) meta.push(`<span><i class="fa-solid fa-location-dot mr-1 text-slate-400"></i>${esc(sched.location)}</span>`);
+    meta.push(`<span><i class="fa-regular fa-clock mr-1 text-slate-400"></i>${t('minAppts', { n: sched.interval_minutes })}</span>`);
+    document.getElementById('s-meta').innerHTML = meta.join('');
   }
 
   // Group open slots by date and seed the calendar on the first available day.
   function buildSlotData(slots) {
     slotsByDate = {};
     slots.filter(s => s.remaining > 0).forEach(s => {
-      const day = s.start.slice(0, 10);
+      s.date = centralToInstant(s.start);      // real instant for this Central slot
+      const day = localKey(s.date);            // group by the visitor's local date
       (slotsByDate[day] = slotsByDate[day] || []).push(s);
     });
     const dates = Object.keys(slotsByDate).sort();
@@ -190,11 +342,22 @@
       document.getElementById('form-card').classList.add('hidden');
       return;
     }
+    dates.forEach(d => slotsByDate[d].sort((a, b) => a.date - b.date));
+    renderTzNote(slotsByDate[dates[0]][0].date);
     const first = dates[0];
     [calYear, calMonth] = [+first.slice(0, 4), +first.slice(5, 7) - 1];
     selectedDate = first;
     renderCalendar();
     renderTimes(first);
+  }
+
+  function renderTzNote(repr) {
+    const note = document.getElementById('tz-note');
+    if (!note) return;
+    note.innerHTML = sameAsCentral(repr)
+      ? `<i class="fa-regular fa-clock mr-1 text-slate-400"></i>${t('tzCentral')} (${tzLabel(repr, SOURCE_TZ)}).`
+      : `<i class="fa-regular fa-clock mr-1 text-slate-400"></i>${t('tzConverted', { local: tzLabel(repr, VIEWER_TZ), central: tzLabel(repr, SOURCE_TZ) })}`;
+    note.classList.remove('hidden');
   }
 
   function renderCalendar() {
@@ -206,7 +369,7 @@
 
     const startDow = new Date(calYear, calMonth, 1).getDay();
     const daysInMonth = new Date(calYear, calMonth + 1, 0).getDate();
-    const title = new Date(calYear, calMonth, 1).toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+    const title = new Date(calYear, calMonth, 1).toLocaleDateString(locale(), { month: 'long', year: 'numeric' });
 
     let cells = '';
     for (let i = 0; i < startDow; i++) cells += '<div class="cal-day empty"></div>';
@@ -226,7 +389,7 @@
         <button class="cal-nav" onclick="changeMonth(1)" ${curIdx >= maxIdx ? 'disabled' : ''}><i class="fa-solid fa-chevron-right"></i></button>
       </div>
       <div class="cal-grid">
-        ${DOW_LETTERS.map(d => `<div class="cal-dow">${d}</div>`).join('')}
+        ${t('dow').map(d => `<div class="cal-dow">${d}</div>`).join('')}
         ${cells}
       </div>`;
   }
@@ -247,10 +410,10 @@
   function renderTimes(iso) {
     const list = slotsByDate[iso] || [];
     document.getElementById('times').innerHTML = `
-      <div class="times-label">${fmtDay(iso + 'T00:00:00')}</div>
+      <div class="times-label">${fmtDay(new Date(iso + 'T12:00:00'))}</div>
       <div class="times-grid">
         ${list.map(s => `<button class="slot-btn" data-slot="${s.start}" onclick="pick(this)">
-          ${fmtTime(s.start)}<span class="block text-[10px] opacity-70">${s.remaining} left</span>
+          ${fmtTime(s.date)}<span class="block text-[10px] opacity-70">${s.remaining} ${t('left')}</span>
         </button>`).join('')}
       </div>`;
   }
@@ -259,20 +422,20 @@
     document.querySelectorAll('.slot-btn').forEach(b => b.classList.remove('active'));
     btn.classList.add('active');
     selected = btn.dataset.slot;
-    document.getElementById('b-slot').value = fmtFull(selected);
+    document.getElementById('b-slot').value = describeSlot(selected);
     document.getElementById('b-company').focus();
   }
 
   async function submitBooking() {
-    if (!selected) return alert('Please pick a time slot.');
+    if (!selected) return alert(t('alertPickTime'));
     const val = id => document.getElementById(id).value.trim();
     const company = val('b-company'), first = val('b-first'), last = val('b-last');
     const dob = val('b-dob'), phone = val('b-phone');
-    if (!company) return alert('Please enter your company name.');
-    if (!first) return alert('Please enter your first name.');
-    if (!last) return alert('Please enter your last name.');
-    if (!dob) return alert('Please enter your date of birth.');
-    if (!phone) return alert('Please enter your phone number.');
+    if (!company) return alert(t('alertCompany'));
+    if (!first) return alert(t('alertFirst'));
+    if (!last) return alert(t('alertLast'));
+    if (!dob) return alert(t('alertDob'));
+    if (!phone) return alert(t('alertPhone'));
     const body = {
       slot_start: selected,
       company_name: company, first_name: first, last_name: last, dob, phone,
@@ -282,7 +445,7 @@
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
     });
     if (res.ok) {
-      document.getElementById('c-detail').textContent = `${schedName} — ${fmtFull(selected)}`;
+      document.getElementById('c-detail').textContent = `${schedName} — ${describeSlot(selected)}`;
       if (clientLogo || clientName) {
         const logoEl = document.getElementById('confirmed-logo');
         if (clientLogo) { logoEl.src = clientLogo; logoEl.alt = clientName || 'Client logo'; }
@@ -293,11 +456,12 @@
       hide('content'); show('confirmed');
     } else {
       const e = await res.json().catch(() => ({}));
-      alert(e.error || 'Sorry, we could not complete that booking. Please try another time.');
+      alert(e.error || t('bookingFailed'));
       load();
     }
   }
 
+  applyI18n();
   load();
 </script>
 </body>
