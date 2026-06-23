@@ -172,9 +172,10 @@
 
   function debounceLoad() { clearTimeout(debounce); debounce = setTimeout(load, 300); }
 
+  // A "client" is an organization: tp_clients has a single `name` (plus city/state).
   function clientLabel(c) {
-    const name = `${c.firstname || ''} ${c.lastname || ''}`.trim();
-    return c.company ? `${name} — ${c.company}` : name;
+    const loc = [c.city, c.state].filter(Boolean).join(', ');
+    return loc ? `${c.name} — ${loc}` : (c.name || '');
   }
 
   async function loadClients() {
@@ -297,8 +298,8 @@
       description: document.getElementById('f-desc').value.trim(),
       location: document.getElementById('f-loc').value.trim(),
       client_id: client ? client.id : null,
-      client_name: client ? clientLabel(client) : null,
-      client_company: client ? (client.company || null) : null,
+      client_name: client ? client.name : null,
+      client_company: client ? client.name : null,
       start_date: document.getElementById('f-start').value,
       end_date: document.getElementById('f-end').value,
       day_start_time: document.getElementById('f-dstart').value,
