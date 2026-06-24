@@ -5,6 +5,7 @@
   <title>Client Record — True Path CRM</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
   <link rel="stylesheet" href="/assets/css/app.css">
 </head>
 <body class="bg-slate-100 text-slate-700">
@@ -27,6 +28,8 @@
         <button class="tab-btn" data-tab="contracts" onclick="showTab('contracts')">
           Contracts <span id="tab-contracts" class="badge badge-blue ml-1">0</span></button>
         <button class="tab-btn" data-tab="eligibility" onclick="showTab('eligibility')">Eligibility</button>
+        <button class="tab-btn" data-tab="claims" onclick="showTab('claims')">Claims</button>
+        <button class="tab-btn" data-tab="reporting" onclick="showTab('reporting')">Reporting</button>
         <button class="tab-btn" data-tab="invoices" onclick="showTab('invoices')">Invoices</button>
       </div>
 
@@ -103,6 +106,70 @@
                 <tbody id="elig-body"></tbody>
               </table>
             </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Claims panel (read-only from dbo.ClaimsData, matched on Client ID = CARRIER) -->
+      <div class="tab-panel" data-panel="claims" style="display:none">
+        <div class="search-bar flex-wrap gap-2">
+          <label class="text-sm text-slate-500">Service date</label>
+          <input type="date" id="cl-from" class="form-control" style="max-width:165px">
+          <label class="text-sm text-slate-500">to</label>
+          <input type="date" id="cl-to" class="form-control" style="max-width:165px">
+          <input type="text" id="cl-drug" class="form-control" style="max-width:220px" placeholder="Drug name contains…" oninput="debounceClaims()">
+          <button class="btn btn-primary" onclick="loadClaims()"><i class="fa-solid fa-filter"></i> Apply</button>
+          <span class="text-sm text-slate-500 ml-auto" id="cl-meta"></span>
+        </div>
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4" id="cl-cards"></div>
+        <div class="card">
+          <div class="card-body">
+            <div id="cl-empty" class="text-center py-10 text-slate-400" style="display:none"></div>
+            <div id="cl-table-wrap" style="overflow-x:auto">
+              <table class="data-table">
+                <thead><tr>
+                  <th>Service Date</th><th>Patient</th><th>Drug</th><th>Drug Group</th>
+                  <th class="text-right">Qty</th><th class="text-right">Days</th><th>Pharmacy</th>
+                  <th class="text-right">Plan Paid</th><th class="text-right">Copay</th>
+                </tr></thead>
+                <tbody id="cl-body"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Reporting panel (aggregates + charts over dbo.ClaimsData) -->
+      <div class="tab-panel" data-panel="reporting" style="display:none">
+        <div class="search-bar flex-wrap gap-2">
+          <label class="text-sm text-slate-500">Service date</label>
+          <input type="date" id="rp-from" class="form-control" style="max-width:165px">
+          <label class="text-sm text-slate-500">to</label>
+          <input type="date" id="rp-to" class="form-control" style="max-width:165px">
+          <button class="btn btn-primary" onclick="loadReporting()"><i class="fa-solid fa-rotate"></i> Refresh</button>
+        </div>
+        <div id="rp-empty" class="text-center py-10 text-slate-400" style="display:none"></div>
+        <div id="rp-result" style="display:none">
+          <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 mb-4" id="rp-cards"></div>
+          <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
+            <div class="card"><div class="card-header"><span class="card-title">Claims &amp; Plan Paid by Month</span></div>
+              <div class="card-body" style="height:300px"><canvas id="rp-month-chart"></canvas></div></div>
+            <div class="card"><div class="card-header"><span class="card-title">Top Drugs by Claim Count</span></div>
+              <div class="card-body" style="height:300px"><canvas id="rp-drug-chart"></canvas></div></div>
+            <div class="card"><div class="card-header"><span class="card-title">Claims by Drug Group</span></div>
+              <div class="card-body" style="height:300px"><canvas id="rp-group-chart"></canvas></div></div>
+            <div class="card"><div class="card-header"><span class="card-title">Brand vs Generic</span></div>
+              <div class="card-body" style="height:300px"><canvas id="rp-bg-chart"></canvas></div></div>
+          </div>
+          <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <div class="card"><div class="card-header"><span class="card-title">Top Drugs</span></div>
+              <div class="card-body"><table class="data-table">
+                <thead><tr><th>Drug</th><th class="text-right">Claims</th><th class="text-right">Plan Paid</th></tr></thead>
+                <tbody id="rp-drug-body"></tbody></table></div></div>
+            <div class="card"><div class="card-header"><span class="card-title">Top Pharmacies</span></div>
+              <div class="card-body"><table class="data-table">
+                <thead><tr><th>Pharmacy</th><th class="text-right">Claims</th><th class="text-right">Plan Paid</th></tr></thead>
+                <tbody id="rp-pharm-body"></tbody></table></div></div>
           </div>
         </div>
       </div>
@@ -231,6 +298,9 @@
   let clientId = parseInt(params.get('id'), 10) || null;
   let contacts = [], contracts = [];
   let clientIrxId = null, eligLoaded = false, eligDebounce;
+  let claimsLoaded = false, reportingLoaded = false, claimsDebounce;
+  const CL_PALETTE = ['#2563eb','#16a34a','#d97706','#dc2626','#7c3aed','#0891b2','#db2777','#65a30d','#9333ea','#0d9488','#ca8a04','#0ea5e9'];
+  const rpCharts = {};  // canvas id -> Chart instance
 
   const CONTRACT_COLORS = { Active: 'green', Pending: 'yellow', Expired: 'gray', Cancelled: 'red' };
 
@@ -239,12 +309,14 @@
     document.querySelectorAll('.tab-panel').forEach(p => p.style.display = p.dataset.panel === name ? '' : 'none');
     if (name === 'eligibility' && !eligLoaded) loadEligibility();
     if (name === 'invoices') invDefaults();
+    if (name === 'claims' && !claimsLoaded) { claimsDefaults(); loadClaims(); }
+    if (name === 'reporting' && !reportingLoaded) { reportDefaults(); loadReporting(); }
   }
 
   // Sub-resource tabs need a saved client. Disable them until one exists.
   function gateTabs() {
     const enabled = !!clientId;
-    document.querySelectorAll('.tab-btn[data-tab="contacts"], .tab-btn[data-tab="contracts"], .tab-btn[data-tab="eligibility"], .tab-btn[data-tab="invoices"]').forEach(b => {
+    document.querySelectorAll('.tab-btn[data-tab="contacts"], .tab-btn[data-tab="contracts"], .tab-btn[data-tab="eligibility"], .tab-btn[data-tab="claims"], .tab-btn[data-tab="reporting"], .tab-btn[data-tab="invoices"]').forEach(b => {
       b.style.opacity = enabled ? '' : '0.4';
       b.style.pointerEvents = enabled ? '' : 'none';
       b.title = enabled ? '' : 'Save the client first';
@@ -282,6 +354,7 @@
     document.getElementById('f-irx_client_id').value = c.irx_client_id || '';
     clientIrxId = c.irx_client_id || null;
     eligLoaded = false;  // re-evaluate eligibility after (re)load
+    claimsLoaded = false; reportingLoaded = false;
     document.getElementById('client-name').textContent = (c.name || '').trim() || `Client #${c.id}`;
     document.getElementById('delete-btn').style.display = '';
     gateTabs();
@@ -556,6 +629,149 @@
     if (!confirm2('Delete this benefit?')) return;
     const res = await apiDelete(`/client-detail?resource=benefit&id=${id}`);
     if (res && res.ok) { showToast('Deleted', 'success'); loadDetail(); } else showToast('Delete failed', 'error');
+  }
+
+  /* ── Claims & Reporting (read-only from dbo.ClaimsData, matched on CARRIER) ── */
+  function clNum(n) { return Number(n || 0).toLocaleString('en-US'); }
+  // Date Of Service is a naive date; format from the ISO parts to avoid a TZ day-shift.
+  function fmtDOS(s) { const m = String(s || '').match(/^(\d{4})-(\d{2})-(\d{2})/); return m ? `${+m[2]}/${+m[3]}/${m[1]}` : '—'; }
+  function claimCard(label, val, sub) {
+    return `<div class="card"><div class="card-body">
+      <div class="text-2xl font-semibold">${val}</div>
+      <div class="text-xs text-slate-500 uppercase tracking-wide">${label}</div>
+      ${sub ? `<div class="text-xs text-slate-400 mt-1">${sub}</div>` : ''}</div></div>`;
+  }
+  // Previous calendar month [first, last] as YYYY-MM-DD.
+  function prevMonthRange() {
+    const now = new Date();
+    const first = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    const last = new Date(now.getFullYear(), now.getMonth(), 0);
+    const f = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    return { from: f(first), to: f(last) };
+  }
+  function setRangeDefaults(fromId, toId) {
+    const f = document.getElementById(fromId), t = document.getElementById(toId);
+    if (f.value && t.value) return;
+    const r = prevMonthRange();
+    if (!f.value) f.value = r.from;
+    if (!t.value) t.value = r.to;
+  }
+  function claimsDefaults() { setRangeDefaults('cl-from', 'cl-to'); }
+  function reportDefaults() { setRangeDefaults('rp-from', 'rp-to'); }
+  function debounceClaims() { clearTimeout(claimsDebounce); claimsDebounce = setTimeout(loadClaims, 400); }
+
+  async function loadClaims() {
+    const empty = document.getElementById('cl-empty');
+    const wrap = document.getElementById('cl-table-wrap');
+    const meta = document.getElementById('cl-meta');
+    const cards = document.getElementById('cl-cards');
+    if (!clientIrxId) {
+      claimsLoaded = true; wrap.style.display = 'none'; cards.innerHTML = ''; meta.textContent = '';
+      empty.style.display = ''; empty.textContent = 'Set the iRx Client ID (CARRIER) on the Demographics tab to view claims.';
+      return;
+    }
+    const from = document.getElementById('cl-from').value, to = document.getElementById('cl-to').value;
+    const drug = document.getElementById('cl-drug').value.trim();
+    const qs = `carrier=${encodeURIComponent(clientIrxId)}&from=${from}&to=${to}${drug ? '&drug=' + encodeURIComponent(drug) : ''}`;
+    const data = await apiGet(`/claims?${qs}`);
+    claimsLoaded = true;
+    if (!data) { showToast('Failed to load claims', 'error'); return; }
+    const rows = data.rows || [], s = data.summary || {};
+    cards.innerHTML = claimCard('Claims', clNum(s.claim_count)) + claimCard('Members', clNum(s.members))
+      + claimCard('Plan Paid', fmtCurrency(s.plan_paid || 0)) + claimCard('Gross Cost', fmtCurrency(s.gross_cost || 0));
+    if (!rows.length) {
+      wrap.style.display = 'none'; empty.style.display = '';
+      empty.textContent = drug ? 'No claims match that drug in this period.' : 'No claims for this CARRIER in the selected period.';
+      meta.textContent = '';
+      return;
+    }
+    empty.style.display = 'none'; wrap.style.display = '';
+    meta.textContent = `${clNum(rows.length)}${data.truncated ? '+ (showing first 500)' : ''} claim${rows.length === 1 ? '' : 's'}`;
+    document.getElementById('cl-body').innerHTML = rows.map(r => `<tr>
+      <td class="text-xs whitespace-nowrap">${fmtDOS(r.dos)}</td>
+      <td class="font-medium">${esc(r.last_name || '')}, ${esc(r.first_name || '')}</td>
+      <td>${esc(r.drug) || '—'}</td>
+      <td class="text-xs">${esc(r.drug_group) || '—'}</td>
+      <td class="text-right">${r.qty == null ? '—' : clNum(r.qty)}</td>
+      <td class="text-right">${r.days_supply == null ? '—' : clNum(r.days_supply)}</td>
+      <td class="text-xs">${esc(r.pharmacy) || '—'}</td>
+      <td class="text-right">${r.plan_paid == null ? '—' : fmtCurrency(r.plan_paid)}</td>
+      <td class="text-right">${r.copay == null ? '—' : fmtCurrency(r.copay)}</td>
+    </tr>`).join('');
+  }
+
+  function upsertChart(id, cfg) {
+    if (rpCharts[id]) rpCharts[id].destroy();
+    rpCharts[id] = new Chart(document.getElementById(id), cfg);
+  }
+
+  function renderReportCharts(d) {
+    const m = d.byMonth || [];
+    upsertChart('rp-month-chart', {
+      type: 'bar',
+      data: { labels: m.map(x => x.ym), datasets: [
+        { type: 'bar', label: 'Claims', data: m.map(x => x.claim_count), backgroundColor: '#2563eb', yAxisID: 'y' },
+        { type: 'line', label: 'Plan Paid', data: m.map(x => Number(x.plan_paid || 0)), borderColor: '#16a34a', backgroundColor: '#16a34a', yAxisID: 'y1', tension: .3 },
+      ]},
+      options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom' } },
+        scales: { y: { beginAtZero: true, position: 'left', title: { display: true, text: 'Claims' } },
+          y1: { beginAtZero: true, position: 'right', grid: { drawOnChartArea: false }, title: { display: true, text: 'Plan Paid ($)' } } } },
+    });
+    const dr = d.topDrugs || [];
+    upsertChart('rp-drug-chart', {
+      type: 'bar',
+      data: { labels: dr.map(x => x.drug), datasets: [{ label: 'Claims', data: dr.map(x => x.claim_count), backgroundColor: '#0891b2' }] },
+      options: { indexAxis: 'y', responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { x: { beginAtZero: true } } },
+    });
+    const g = d.byGroup || [];
+    upsertChart('rp-group-chart', {
+      type: 'doughnut',
+      data: { labels: g.map(x => x.grp), datasets: [{ data: g.map(x => x.claim_count), backgroundColor: CL_PALETTE }] },
+      options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'right', labels: { boxWidth: 12, font: { size: 10 } } } } },
+    });
+    const bg = d.brandGeneric || [];
+    upsertChart('rp-bg-chart', {
+      type: 'doughnut',
+      data: { labels: bg.map(x => x.kind), datasets: [{ data: bg.map(x => x.claim_count), backgroundColor: ['#7c3aed', '#16a34a', '#94a3b8'] }] },
+      options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom' } } },
+    });
+  }
+
+  async function loadReporting() {
+    const empty = document.getElementById('rp-empty');
+    const result = document.getElementById('rp-result');
+    if (!clientIrxId) {
+      reportingLoaded = true; result.style.display = 'none';
+      empty.style.display = ''; empty.textContent = 'Set the iRx Client ID (CARRIER) on the Demographics tab to view reporting.';
+      return;
+    }
+    const from = document.getElementById('rp-from').value, to = document.getElementById('rp-to').value;
+    const data = await apiGet(`/claims?report=1&carrier=${encodeURIComponent(clientIrxId)}&from=${from}&to=${to}`);
+    reportingLoaded = true;
+    if (!data) { showToast('Failed to load reporting', 'error'); return; }
+    const s = data.summary || {};
+    if (!s.claim_count) {
+      result.style.display = 'none'; empty.style.display = '';
+      empty.textContent = 'No claims for this CARRIER in the selected period.';
+      return;
+    }
+    empty.style.display = 'none'; result.style.display = '';
+    document.getElementById('rp-cards').innerHTML =
+      claimCard('Claims', clNum(s.claim_count)) +
+      claimCard('Members', clNum(s.members)) +
+      claimCard('Plan Paid', fmtCurrency(s.plan_paid || 0)) +
+      claimCard('Gross Cost', fmtCurrency(s.gross_cost || 0)) +
+      claimCard('Copay', fmtCurrency(s.copay || 0)) +
+      claimCard('Avg Days Supply', s.avg_days_supply == null ? '—' : Number(s.avg_days_supply).toFixed(1));
+    renderReportCharts(data);
+    document.getElementById('rp-drug-body').innerHTML = (data.topDrugs || []).map(r => `<tr>
+      <td class="font-medium">${esc(r.drug) || '—'}</td><td class="text-right">${clNum(r.claim_count)}</td>
+      <td class="text-right">${r.plan_paid == null ? '—' : fmtCurrency(r.plan_paid)}</td></tr>`).join('')
+      || '<tr><td colspan="3" class="text-center py-6 text-slate-400">No data</td></tr>';
+    document.getElementById('rp-pharm-body').innerHTML = (data.topPharmacies || []).map(r => `<tr>
+      <td class="font-medium">${esc(r.pharmacy) || '—'}</td><td class="text-right">${clNum(r.claim_count)}</td>
+      <td class="text-right">${r.plan_paid == null ? '—' : fmtCurrency(r.plan_paid)}</td></tr>`).join('')
+      || '<tr><td colspan="3" class="text-center py-6 text-slate-400">No data</td></tr>';
   }
 
   /* ── Invoices ── */
