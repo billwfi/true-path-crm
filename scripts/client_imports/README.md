@@ -19,10 +19,14 @@ Add a new client by appending to `CLIENTS` — no other code changes.
 ## Clients
 
 ### MCR Hotels (`mcrhotels`)
-- SFTP: `us-east-1.sftpcloud.io`, user `manager`, dir `/internationalrx/mcrhotels`
-- `MCR_Member*.xlsx`   → `dbo.Eligibility_MCRHotels`
+- SFTP: `us-east-1.sftpcloud.io`, user `MANAGER`, dir `/InternationalRx/MCRHotels`
+  (username and path are **case-sensitive**).
+- `MCR_Member*.xlsx`   → `dbo.Eligibility_MCRHotels` (roster is on the `Detail`
+  sheet, not the first `Cover` sheet). Loaded ~1,747 members.
 - `MCRINVESTORS_*.xlsx` → `dbo.ClaimsData_MCRHotels`, plus a computed
-  `groupid = SUBSTRING([group id], 1, 8)` column.
+  `groupid = LEFT([Group ID], 8)` column. Loaded ~18,938 claims.
+
+Use the `sheet` key on a feed to pick a worksheet by name (e.g. `"Detail"`).
 
 Columns are created from the file's header row (sanitized names, sized to the
 data). Use `--recreate` if a file's columns change (DROP + CREATE instead of

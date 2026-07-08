@@ -41,14 +41,15 @@ CLIENTS = {
         "label": "MCR Hotels",
         "sftp_host": "us-east-1.sftpcloud.io",
         "sftp_port": 22,
-        "sftp_user": "manager",
+        "sftp_user": "MANAGER",           # case-sensitive
         "sftp_pwd_env": "MCR_SFTP_PWD",
-        "remote_dir": "/internationalrx/mcrhotels",
+        "remote_dir": "/InternationalRx/MCRHotels",  # case-sensitive path
         "feeds": [
             {
                 "name": "Eligibility",
                 "pattern": "MCR_Member*.xlsx",
                 "table": "Eligibility_MCRHotels",
+                "sheet": "Detail",     # roster is on the 'Detail' sheet, not the 'Cover' sheet
                 "computed": {},
             },
             {
@@ -97,9 +98,9 @@ def newest_match(sftp, remote_dir, pattern):
 
 
 # ── XLSX parsing ──────────────────────────────────────────────────────────────
-def parse_xlsx(data):
+def parse_xlsx(data, sheet=None):
     wb = openpyxl.load_workbook(io.BytesIO(data), read_only=True, data_only=True)
-    ws = wb[wb.sheetnames[0]]
+    ws = wb[sheet] if sheet and sheet in wb.sheetnames else wb[wb.sheetnames[0]]
     rows = [list(r) for r in ws.iter_rows(values_only=True)]
     while rows and not any(str(c).strip() for c in rows[-1] if c is not None):
         rows.pop()  # trailing blank rows
@@ -157,7 +158,7 @@ def col_type(values):
 
 # ── Load one feed ─────────────────────────────────────────────────────────────
 def load_feed(cur, cfg, feed, name, data, recreate):
-    header, body = parse_xlsx(data)
+    header, body = parse_xlsx(data, feed.get("sheet"))
     if not header:
         print(f"  [{feed['name']}] {name}: no rows, skipped")
         return 0
