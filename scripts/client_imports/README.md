@@ -56,3 +56,28 @@ DB defaults (override via env): `SQLSERVER_HOST=74.117.224.152`, `SQLSERVER_DB=i
 `SQLSERVER_USER=claudeservices`.
 
 Requires: `pip install pyodbc paramiko openpyxl` (+ ODBC Driver 17 for SQL Server).
+
+## Step 2 — reconcile + AMT email (`reconcile.py`)
+
+After the staging tables are loaded, `reconcile.py` reconciles them into the
+production tables and emails the AMT reconciliation report. **Dry run by default**
+(writes nothing); `--commit` writes to prod, `--send` emails.
+
+- Eligibility → `dbo.eligibility` (keyed `CARRIER` + `MEMBER_ID`): add new, keep
+  matched (AccountStatus='Active'), and term members missing from the file
+  (`MEMBER_THRU_DATE`=today, AccountStatus='Inactive'). Sets `GroupName` and
+  `LoadUpdateDate`. Per-client column mapping lives in the `RECON` registry.
+- Claims → `dbo.ClaimsData_Prod` (add-only): maps the raw NCPDP columns that line
+  up, leaves the rest NULL; dedupes on `clientid` + the claim key.
+- AMT report: the reconciliation query (Eligibility Adds/Terms + GLP1 Claims Adds
+  loaded today), emailed to the AMT recipients via Office 365 SMTP.
+
+```bash
+export IRX_DB_PWD=...
+export SMTP_HOST=smtp.office365.com SMTP_PORT=587 \
+       SMTP_USER=onbasesupport@internationalrx.com SMTP_PASS=... \
+       MAIL_FROM=onbasesupport@internationalrx.com
+
+python scripts/client_imports/reconcile.py mcrhotels                  # dry run + HTML preview
+python scripts/client_imports/reconcile.py mcrhotels --commit --send  # write to prod + email AMT
+```
