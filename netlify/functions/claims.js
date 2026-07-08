@@ -32,6 +32,9 @@ const SOURCES = {
   '909765':{ table: 'ClaimsData_FSG',           idCol: 'Client ID', profile: 'paren', dates: 'us' },
   '366696':{ table: 'ClaimsData_GreggCounty',   idCol: 'Client ID', profile: 'paren', dates: 'us' },
   IRX2026: { table: 'ClaimsData_iRx',           idCol: 'Client ID', profile: 'paren', dates: 'us' },
+  // MCR Hotels: claims live in the normalized dbo.ClaimsData_Prod (keyed on clientid,
+  // lowercase columns, NO cost columns). Uses the dedicated 'prod' layout below.
+  '76416172':{ table: 'ClaimsData_Prod', idCol: 'clientid', layout: 'prod', dates: 'us' },
 };
 const DEFAULT_SOURCE = { table: 'ClaimsData', idCol: 'Client ID', profile: 'std', dates: 'native' };
 const resolveSource = (carrier) => SOURCES[carrier] || DEFAULT_SOURCE;
@@ -73,13 +76,18 @@ exports.handler = async function (event) {
   if (!q.carrier) return badRequest('carrier is required');
 
   const src = resolveSource(q.carrier);
-  const T  = `dbo.[${src.table}]`;
-  const G  = `[${PROFILES[src.profile].group}]`;
-  const NT = `[${PROFILES[src.profile].nameType}]`;
-  const D  = dateExpr(src.dates);
-  const { where, params } = buildFilter(q, `[${src.idCol}]`, D);
 
   try {
+    // ClaimsData_Prod-backed clients (e.g. MCR Hotels): different schema, keyed on
+    // clientid, with no cost columns (Plan Paid / Gross Cost / Copay unavailable).
+    if (src.layout === 'prod') return await claimsProd(q);
+
+    const T  = `dbo.[${src.table}]`;
+    const G  = `[${PROFILES[src.profile].group}]`;
+    const NT = `[${PROFILES[src.profile].nameType}]`;
+    const D  = dateExpr(src.dates);
+    const { where, params } = buildFilter(q, `[${src.idCol}]`, D);
+
     if (q.report) {
       const [summary, byMonth, topDrugs, byGroup, brandGeneric, topPharmacies] = await Promise.all([
         mssql(`${SUMMARY_SELECT} FROM ${T} WHERE ${where}`, params),
@@ -167,3 +175,71 @@ exports.handler = async function (event) {
     return serverError(err);
   }
 };
+
+// ClaimsData_Prod layout: normalized utilization schema keyed on `clientid`, with
+// lowercase column names and NO cost columns — Plan Paid / Gross Cost / Copay come
+// back NULL, and there's no brand/generic (Name_Type) source. Drug group falls back
+// to the GPI-02 code. Date Of Service is a US m/d/yyyy (or ISO) varchar.
+async function claimsProd(q) {
+  const T = 'dbo.ClaimsData_Prod';
+  const D = `COALESCE(TRY_CONVERT(date, dateofservice, 101), TRY_CONVERT(date, dateofservice, 23))`;
+  const conds = [`REPLACE(LTRIM(RTRIM(clientid)), '''', '') = @carrier`];
+  const params = { carrier: q.carrier };
+  if (q.from) { conds.push(`${D} >= @from`); params.from = q.from; }
+  if (q.to)   { conds.push(`${D} <= @to`);   params.to = q.to; }
+  if (q.drug) { conds.push('drugname LIKE @drug'); params.drug = `%${q.drug}%`; }
+  const where = conds.join(' AND ');
+
+  const SUMMARY = `SELECT COUNT(*) AS claim_count,
+    COUNT(DISTINCT NULLIF(LTRIM(RTRIM(patientid)), '')) AS members,
+    NULL AS plan_paid, NULL AS gross_cost, NULL AS copay,
+    AVG(TRY_CONVERT(decimal(18,2), dayssupply)) AS avg_days_supply`;
+
+  if (q.report) {
+    const [summary, byMonth, topDrugs, byGroup, topPharmacies] = await Promise.all([
+      mssql(`${SUMMARY} FROM ${T} WHERE ${where}`, params),
+      mssql(`SELECT CONVERT(varchar(7), ${D}, 120) AS ym, COUNT(*) AS claim_count, NULL AS plan_paid
+             FROM ${T} WHERE ${where} AND ${D} IS NOT NULL
+             GROUP BY CONVERT(varchar(7), ${D}, 120) ORDER BY ym`, params),
+      mssql(`SELECT TOP 10 LTRIM(RTRIM(drugname)) AS drug, COUNT(*) AS claim_count,
+                    NULL AS plan_paid, NULL AS gross_cost
+             FROM ${T} WHERE ${where} AND NULLIF(LTRIM(RTRIM(drugname)), '') IS NOT NULL
+             GROUP BY LTRIM(RTRIM(drugname)) ORDER BY claim_count DESC`, params),
+      mssql(`SELECT TOP 12 LTRIM(RTRIM(gpi02)) AS grp, COUNT(*) AS claim_count, NULL AS plan_paid
+             FROM ${T} WHERE ${where} AND NULLIF(LTRIM(RTRIM(gpi02)), '') IS NOT NULL
+             GROUP BY LTRIM(RTRIM(gpi02)) ORDER BY claim_count DESC`, params),
+      mssql(`SELECT TOP 8 LTRIM(RTRIM(pharmacyname)) AS pharmacy, COUNT(*) AS claim_count, NULL AS plan_paid
+             FROM ${T} WHERE ${where} AND NULLIF(LTRIM(RTRIM(pharmacyname)), '') IS NOT NULL
+             GROUP BY LTRIM(RTRIM(pharmacyname)) ORDER BY claim_count DESC`, params),
+    ]);
+    return ok({
+      source: 'ClaimsData_Prod', hasCost: false,
+      summary: summary.recordset[0],
+      byMonth: byMonth.recordset,
+      topDrugs: topDrugs.recordset,
+      byGroup: byGroup.recordset,
+      brandGeneric: [],
+      topPharmacies: topPharmacies.recordset,
+    });
+  }
+
+  const [rows, summary] = await Promise.all([
+    mssql(
+      `SELECT TOP ${ROW_LIMIT} ${D} AS dos,
+              LTRIM(RTRIM(drugname)) AS drug,
+              LTRIM(RTRIM(patientlastname))  AS last_name,
+              LTRIM(RTRIM(patientfirstname)) AS first_name,
+              TRY_CONVERT(int, quantitydispensed) AS qty,
+              TRY_CONVERT(int, dayssupply) AS days_supply,
+              LTRIM(RTRIM(pharmacyname)) AS pharmacy,
+              LTRIM(RTRIM(gpi02)) AS drug_group,
+              NULL AS gross_cost, NULL AS plan_paid, NULL AS copay
+       FROM ${T} WHERE ${where} ORDER BY ${D} DESC`, params),
+    mssql(`${SUMMARY} FROM ${T} WHERE ${where}`, params),
+  ]);
+  return ok({
+    source: 'ClaimsData_Prod', hasCost: false,
+    rows: rows.recordset, summary: summary.recordset[0],
+    truncated: rows.recordset.length === ROW_LIMIT,
+  });
+}
