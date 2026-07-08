@@ -39,6 +39,7 @@ import openpyxl
 CLIENTS = {
     "mcrhotels": {
         "label": "MCR Hotels",
+        "client_id": 23,                  # tp_clients.id — links the run log to the client page
         "sftp_host": "us-east-1.sftpcloud.io",
         "sftp_port": 22,
         "sftp_user": "MANAGER",           # case-sensitive
@@ -65,7 +66,7 @@ CLIENTS = {
 
 
 # ── DB ────────────────────────────────────────────────────────────────────────
-def db_connect():
+def db_connect(autocommit=False):
     conn = (
         "DRIVER={ODBC Driver 17 for SQL Server};"
         f"SERVER={os.environ.get('SQLSERVER_HOST', '74.117.224.152')};"
@@ -74,7 +75,32 @@ def db_connect():
         "PWD=" + os.environ["IRX_DB_PWD"] + ";"
         "Encrypt=yes;TrustServerCertificate=yes;"
     )
-    return pyodbc.connect(conn, autocommit=False)
+    return pyodbc.connect(conn, autocommit=autocommit)
+
+
+def resolve_group(cur, client_id):
+    """(group_id, group_name) from tp_clients — GroupID is irx_client_id (CARRIER)."""
+    if not client_id:
+        return None, None
+    row = cur.execute(
+        "SELECT irx_client_id, name FROM dbo.tp_clients WHERE id = ?", client_id).fetchone()
+    return (row[0], row[1]) if row else (None, None)
+
+
+# ── Run log (dbo.Client_Import_Log) ──────────────────────────────────────────
+def log_start(logcur, client_key, cfg, group_id, group_name, feed, file_name):
+    return logcur.execute(
+        "INSERT INTO dbo.Client_Import_Log "
+        "(client_key, client_id, group_id, group_name, feed_name, target_table, file_name, status) "
+        "OUTPUT INSERTED.id VALUES (?,?,?,?,?,?,?, 'Running')",
+        client_key, cfg.get("client_id"), group_id, group_name,
+        feed["name"], feed["table"], file_name).fetchone()[0]
+
+
+def log_finish(logcur, log_id, status, rows=None, message=None):
+    logcur.execute(
+        "UPDATE dbo.Client_Import_Log SET status=?, rows_loaded=?, finished_at=GETDATE(), message=? WHERE id=?",
+        status, rows, (message[:3900] if message else None), log_id)
 
 
 # ── SFTP ──────────────────────────────────────────────────────────────────────
@@ -224,25 +250,34 @@ def run_client(client_key, only_feed=None, recreate=False):
 
     print(f"== {cfg['label']} ({client_key}) — {cfg['remote_dir']} ==")
     sftp, transport = sftp_connect(cfg)
-    cn = db_connect()
-    cur = cn.cursor()
+    cn = db_connect()                 # transactional: one commit per feed
+    logcn = db_connect(autocommit=True)  # run log persists even if a feed fails
+    cur, logcur = cn.cursor(), logcn.cursor()
+    group_id, group_name = resolve_group(cur, cfg.get("client_id"))
     try:
         total = 0
         for feed in cfg["feeds"]:
             if only_feed and feed["name"].lower() != only_feed.lower():
                 continue
             name, data = newest_match(sftp, cfg["remote_dir"], feed["pattern"])
+            log_id = log_start(logcur, client_key, cfg, group_id, group_name, feed, name)
             if not name:
                 print(f"  [{feed['name']}] no file matching {feed['pattern']}")
+                log_finish(logcur, log_id, "NoFile", message=f"no file matching {feed['pattern']}")
                 continue
-            total += load_feed(cur, cfg, feed, name, data, recreate)
-        cn.commit()
+            try:
+                n = load_feed(cur, cfg, feed, name, data, recreate)
+                cn.commit()
+                log_finish(logcur, log_id, "Success", rows=n,
+                           message=f"loaded {n} rows into dbo.{feed['table']}")
+                total += n
+            except Exception as e:  # record the failure, keep going with other feeds
+                cn.rollback()
+                log_finish(logcur, log_id, "Error", message=f"{type(e).__name__}: {e}")
+                print(f"  [{feed['name']}] ERROR: {e}", file=sys.stderr)
         print(f"Done. {total} rows loaded.")
-    except Exception:
-        cn.rollback()
-        raise
     finally:
-        cur.close(); cn.close()
+        cur.close(); cn.close(); logcur.close(); logcn.close()
         sftp.close(); transport.close()
 
 

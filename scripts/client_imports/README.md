@@ -32,6 +32,14 @@ Columns are created from the file's header row (sanitized names, sized to the
 data). Use `--recreate` if a file's columns change (DROP + CREATE instead of
 TRUNCATE).
 
+## Run log
+
+Every feed run writes a row to `dbo.Client_Import_Log` (migration
+`netlify/database/sqlserver/016_client_import_log.sql`): GroupID
+(`tp_clients.irx_client_id`), group name, feed, file processed, record count,
+status, and start/finish timestamps — linked to the client via `client_id`
+(set in the registry) so the CRM client page can surface import history.
+
 ## Running
 
 ```bash
