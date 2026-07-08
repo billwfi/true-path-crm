@@ -59,13 +59,15 @@
           <div class="card-header"><span class="card-title"><i class="fa-solid fa-file-arrow-up text-slate-400 mr-2"></i>Import WellSync CSV</span></div>
           <div class="card-body form-pad">
             <p class="text-sm text-slate-500 mb-4" style="max-width:640px">
-              Upload the monthly WellSync export (<code>utm_data_fromwellsync_*.csv</code>). New rows are appended to
-              <code>dbo.wellsync_data_June</code>. The file is first checked against existing data — any rows already
-              present are detected and skipped, so re-uploading the same file is safe.
+              Upload the monthly WellSync export (<code>.csv</code>, <code>.xlsx</code>, or <code>.xls</code>). New rows
+              are appended to <code>dbo.wellsync_data_June</code>. The file is first checked against existing data — any
+              rows already present are detected and skipped, so re-uploading the same file is safe.
             </p>
 
             <div class="flex flex-wrap items-center gap-3 mb-4">
-              <input type="file" id="csv-file" accept=".csv,text/csv" onchange="onFilePicked()"
+              <input type="file" id="csv-file"
+                     accept=".csv,.xlsx,.xls,text/csv,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                     onchange="onFilePicked()"
                      class="text-sm text-slate-600 file:mr-3 file:py-2 file:px-4 file:rounded-md file:border-0 file:bg-slate-200 file:text-slate-700 file:cursor-pointer hover:file:bg-slate-300">
               <button id="btn-analyze" class="btn" onclick="analyzeCsv()" disabled><i class="fa-solid fa-magnifying-glass"></i> Check for duplicates</button>
             </div>
