@@ -15,32 +15,68 @@
     <div id="topbar"></div>
     <main class="flex-1 overflow-y-auto p-6">
 
-      <div class="search-bar flex-wrap gap-2">
-        <input id="q" class="input" placeholder="Search name or group…" oninput="render()" style="max-width:240px">
-        <select id="f-group" class="input" onchange="render()" style="max-width:200px"><option value="">All groups</option></select>
-        <select id="f-med" class="input" onchange="render()" style="max-width:170px"><option value="">All medications</option></select>
-        <select id="f-status" class="input" onchange="render()" style="max-width:180px"><option value="">All statuses</option></select>
-        <span id="count" class="text-sm text-slate-500 ml-1"></span>
-        <div class="flex gap-2 ml-auto">
-          <button class="btn btn-primary" onclick="exportExcel()"><i class="fa-solid fa-file-excel"></i> Export to Excel</button>
+      <!-- Tabs -->
+      <div id="tabbar" class="flex gap-6 border-b border-slate-200 mb-4 px-1">
+        <button class="tab-btn" data-tab="data" onclick="showTab('data')">Invoice Data</button>
+        <button class="tab-btn" data-tab="import" onclick="showTab('import')"><i class="fa-solid fa-file-arrow-up mr-1"></i> Import New Data</button>
+      </div>
+
+      <!-- ── Invoice Data panel ── -->
+      <div class="tab-panel" data-panel="data">
+        <div class="search-bar flex-wrap gap-2">
+          <input id="q" class="input" placeholder="Search name or group…" oninput="render()" style="max-width:240px">
+          <select id="f-group" class="input" onchange="render()" style="max-width:200px"><option value="">All groups</option></select>
+          <select id="f-med" class="input" onchange="render()" style="max-width:170px"><option value="">All medications</option></select>
+          <select id="f-status" class="input" onchange="render()" style="max-width:180px"><option value="">All statuses</option></select>
+          <span id="count" class="text-sm text-slate-500 ml-1"></span>
+          <div class="flex gap-2 ml-auto">
+            <button class="btn btn-primary" onclick="exportExcel()"><i class="fa-solid fa-file-excel"></i> Export to Excel</button>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-body">
+            <table class="data-table">
+              <thead><tr>
+                <th>GroupName</th>
+                <th>LastName</th>
+                <th>FirstName</th>
+                <th>DateofBirth</th>
+                <th>Medication</th>
+                <th>Status</th>
+                <th class="text-center">IsCompleted</th>
+                <th>CompletedDate</th>
+              </tr></thead>
+              <tbody id="tbody"></tbody>
+            </table>
+          </div>
         </div>
       </div>
 
-      <div class="card">
-        <div class="card-body">
-          <table class="data-table">
-            <thead><tr>
-              <th>GroupName</th>
-              <th>LastName</th>
-              <th>FirstName</th>
-              <th>DateofBirth</th>
-              <th>Medication</th>
-              <th>Status</th>
-              <th class="text-center">IsCompleted</th>
-              <th>CompletedDate</th>
-            </tr></thead>
-            <tbody id="tbody"></tbody>
-          </table>
+      <!-- ── Import panel ── -->
+      <div class="tab-panel" data-panel="import" style="display:none">
+        <div class="card">
+          <div class="card-header"><span class="card-title"><i class="fa-solid fa-file-arrow-up text-slate-400 mr-2"></i>Import WellSync CSV</span></div>
+          <div class="card-body form-pad">
+            <p class="text-sm text-slate-500 mb-4" style="max-width:640px">
+              Upload the monthly WellSync export (<code>utm_data_fromwellsync_*.csv</code>). New rows are appended to
+              <code>dbo.wellsync_data_June</code>. The file is first checked against existing data — any rows already
+              present are detected and skipped, so re-uploading the same file is safe.
+            </p>
+
+            <div class="flex flex-wrap items-center gap-3 mb-4">
+              <input type="file" id="csv-file" accept=".csv,text/csv" onchange="onFilePicked()"
+                     class="text-sm text-slate-600 file:mr-3 file:py-2 file:px-4 file:rounded-md file:border-0 file:bg-slate-200 file:text-slate-700 file:cursor-pointer hover:file:bg-slate-300">
+              <button id="btn-analyze" class="btn" onclick="analyzeCsv()" disabled><i class="fa-solid fa-magnifying-glass"></i> Check for duplicates</button>
+            </div>
+
+            <div id="import-summary"></div>
+
+            <div id="import-actions" class="hidden mt-4 flex items-center gap-3">
+              <button id="btn-import" class="btn btn-primary" onclick="commitImport()"></button>
+              <button class="btn" onclick="resetImport()">Cancel</button>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -52,12 +88,23 @@
 <script>
   initNav('invoices-data');
 
-  let ROWS = [];
+  const COL_COUNT = 24;
+  let ROWS = [];        // invoice-data table rows
+  let dataLoaded = false;
+  let PARSED = null;    // parsed CSV: array of 24-cell arrays (header stripped)
+
+  function showTab(name) {
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === name));
+    document.querySelectorAll('.tab-panel').forEach(p => p.style.display = p.dataset.panel === name ? '' : 'none');
+    if (name === 'data' && !dataLoaded) load();
+  }
 
   function uniq(arr) { return [...new Set(arr.filter(Boolean))].sort(); }
 
+  /* ── Invoice Data tab ── */
   async function load() {
     ROWS = await apiGet('/invoices?detail=1') || [];
+    dataLoaded = true;
     fillSelect('f-group', uniq(ROWS.map(r => r.group_name)));
     fillSelect('f-med',   uniq(ROWS.map(r => r.medication)));
     fillSelect('f-status',uniq(ROWS.map(r => r.status)));
@@ -110,7 +157,123 @@
     XLSX.writeFile(wb, `invoice-data-detail-${new Date().toISOString().slice(0,10)}.xlsx`);
   }
 
-  load();
+  /* ── Import tab ── */
+  function onFilePicked() {
+    resetImport();
+    document.getElementById('btn-analyze').disabled = !document.getElementById('csv-file').files.length;
+  }
+
+  function resetImport() {
+    PARSED = null;
+    document.getElementById('import-summary').innerHTML = '';
+    document.getElementById('import-actions').classList.add('hidden');
+  }
+
+  async function parseFile(file) {
+    const buf = await file.arrayBuffer();
+    const wb = XLSX.read(buf, { type: 'array' });
+    const ws = wb.Sheets[wb.SheetNames[0]];
+    const aoa = XLSX.utils.sheet_to_json(ws, { header: 1, raw: false, defval: '' });
+    if (!aoa.length) throw new Error('The file appears to be empty.');
+    const maxLen = Math.max(...aoa.map(r => r.length));
+    if (maxLen > COL_COUNT)
+      throw new Error(`Found ${maxLen} columns, expected ${COL_COUNT}. Is this the WellSync export?`);
+    // Strip header row; normalise each row to exactly 24 string cells; drop blank rows.
+    return aoa.slice(1)
+      .map(r => {
+        const a = r.slice(0, COL_COUNT).map(c => (c == null ? '' : String(c)));
+        while (a.length < COL_COUNT) a.push('');
+        return a;
+      })
+      .filter(r => r.some(c => c !== ''));
+  }
+
+  async function analyzeCsv() {
+    const file = document.getElementById('csv-file').files[0];
+    if (!file) return;
+    const summary = document.getElementById('import-summary');
+    summary.innerHTML = `<div class="text-sm text-slate-500"><i class="fa-solid fa-spinner fa-spin"></i> Reading and checking ${esc(file.name)}…</div>`;
+    document.getElementById('import-actions').classList.add('hidden');
+
+    try {
+      PARSED = await parseFile(file);
+    } catch (err) {
+      PARSED = null;
+      summary.innerHTML = `<div class="text-sm text-red-600"><i class="fa-solid fa-triangle-exclamation"></i> ${esc(err.message)}</div>`;
+      return;
+    }
+    if (!PARSED.length) {
+      summary.innerHTML = `<div class="text-sm text-red-600">No data rows found in the file.</div>`;
+      return;
+    }
+
+    const res = await apiPost('/invoices?import=1', { mode: 'analyze', rows: PARSED });
+    if (!res || !res.ok) {
+      const msg = res ? (await res.json().catch(() => ({}))).error : 'Request failed';
+      summary.innerHTML = `<div class="text-sm text-red-600"><i class="fa-solid fa-triangle-exclamation"></i> ${esc(msg || 'Could not analyze file')}</div>`;
+      return;
+    }
+    const d = await res.json();
+    renderSummary(d);
+  }
+
+  function renderSummary(d) {
+    const summary = document.getElementById('import-summary');
+    const dupTable = d.dupSamples && d.dupSamples.length ? `
+      <div class="mt-3">
+        <div class="text-xs font-semibold text-slate-500 mb-1">Already-present rows (showing up to 25):</div>
+        <div class="card"><div class="card-body"><table class="data-table"><thead><tr>
+          <th>Group</th><th>Member</th><th>Medication</th><th>Status</th><th>Completed</th>
+        </tr></thead><tbody>${d.dupSamples.map(s => `<tr>
+          <td>${esc(s.client_name)}</td><td>${esc(s.patient_fullname)}</td>
+          <td>${esc(s.medication)}</td><td>${esc(s.status)}</td><td>${esc(s.completed_at)}</td>
+        </tr>`).join('')}</tbody></table></div></div>
+      </div>` : '';
+
+    summary.innerHTML = `
+      <div class="flex flex-wrap gap-4 mb-1">
+        <div class="stat-card"><div class="stat-number">${d.total}</div><div class="stat-label">Rows in file</div></div>
+        <div class="stat-card"><div class="stat-number text-green-600">${d.newCount}</div><div class="stat-label">New (will append)</div></div>
+        <div class="stat-card"><div class="stat-number text-amber-600">${d.duplicates}</div><div class="stat-label">Already present (skip)</div></div>
+      </div>
+      ${dupTable}`;
+
+    const actions = document.getElementById('import-actions');
+    const btn = document.getElementById('btn-import');
+    actions.classList.remove('hidden');
+    if (d.newCount > 0) {
+      btn.disabled = false;
+      btn.innerHTML = `<i class="fa-solid fa-database"></i> Append ${d.newCount} new row${d.newCount === 1 ? '' : 's'}`;
+    } else {
+      btn.disabled = true;
+      btn.innerHTML = 'No new rows to append';
+    }
+  }
+
+  async function commitImport() {
+    if (!PARSED || !PARSED.length) return;
+    const btn = document.getElementById('btn-import');
+    btn.disabled = true;
+    btn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> Appending…`;
+
+    const res = await apiPost('/invoices?import=1', { mode: 'commit', rows: PARSED });
+    if (!res || !res.ok) {
+      const msg = res ? (await res.json().catch(() => ({}))).error : 'Request failed';
+      showToast(msg || 'Import failed', 'error');
+      btn.disabled = false;
+      btn.innerHTML = `<i class="fa-solid fa-database"></i> Retry append`;
+      return;
+    }
+    const d = await res.json();
+    showToast(`Appended ${d.inserted} new row${d.inserted === 1 ? '' : 's'} (${d.duplicates} skipped)`, 'success');
+    resetImport();
+    document.getElementById('csv-file').value = '';
+    document.getElementById('btn-analyze').disabled = true;
+    dataLoaded = false;               // force refresh of the Invoice Data tab
+    showTab('data');
+  }
+
+  showTab('data');
 </script>
 </body>
 </html>
