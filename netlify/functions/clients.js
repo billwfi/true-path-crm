@@ -37,14 +37,15 @@ exports.handler = async function (event) {
       const b = JSON.parse(event.body || '{}');
       const r = await mssql(
         `INSERT INTO tp_clients (name, email, phone, address, city, state, zip_code,
-           broker_id, account_coordinator, groups, notes, irx_client_id, active)
+           broker_id, account_coordinator, groups, notes, irx_client_id, import_file_path, active)
          VALUES (@name,@email,@phone,@address,@city,@state,@zip_code,
-           @broker_id,@account_coordinator,@groups,@notes,@irx_client_id,@active);
+           @broker_id,@account_coordinator,@groups,@notes,@irx_client_id,@import_file_path,@active);
          SELECT CAST(SCOPE_IDENTITY() AS INT) AS id;`,
         { name: b.name || '', email: b.email || null, phone: b.phone || null,
           address: b.address || null, city: b.city || null, state: b.state || null, zip_code: b.zip_code || null,
           broker_id: parseInt(b.broker_id) || null, account_coordinator: parseInt(b.account_coordinator) || null,
           groups: b.groups || null, notes: b.notes || null, irx_client_id: b.irx_client_id || null,
+          import_file_path: b.import_file_path || null,
           active: (b.active === false || b.active === 0) ? 0 : 1 });
       return created({ id: r.recordset[0].id });
     }
@@ -55,13 +56,15 @@ exports.handler = async function (event) {
       await mssql(
         `UPDATE tp_clients SET name=@name, email=@email, phone=@phone, address=@address, city=@city,
            state=@state, zip_code=@zip_code, active=@active, broker_id=@broker_id,
-           account_coordinator=@account_coordinator, groups=@groups, notes=@notes, irx_client_id=@irx_client_id
+           account_coordinator=@account_coordinator, groups=@groups, notes=@notes, irx_client_id=@irx_client_id,
+           import_file_path=@import_file_path
          WHERE id=@id`,
         { name: b.name, email: b.email || null, phone: b.phone || null, address: b.address || null,
           city: b.city || null, state: b.state || null, zip_code: b.zip_code || null,
           active: (b.active !== false && b.active !== 0) ? 1 : 0,
           broker_id: parseInt(b.broker_id) || null, account_coordinator: parseInt(b.account_coordinator) || null,
           groups: b.groups || null, notes: b.notes || null, irx_client_id: b.irx_client_id || null,
+          import_file_path: b.import_file_path || null,
           id: parseInt(id, 10) });
       return ok({ id });
     }

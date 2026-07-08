@@ -6,6 +6,7 @@
   <script src="https://cdn.tailwindcss.com"></script>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
   <link rel="stylesheet" href="/assets/css/app.css">
 </head>
 <body class="bg-slate-100 text-slate-700">
@@ -31,6 +32,7 @@
         <button class="tab-btn" data-tab="claims" onclick="showTab('claims')">Claims</button>
         <button class="tab-btn" data-tab="reporting" onclick="showTab('reporting')">Reporting</button>
         <button class="tab-btn" data-tab="invoices" onclick="showTab('invoices')">Invoices</button>
+        <button class="tab-btn" data-tab="imports" onclick="showTab('imports')">Imports</button>
       </div>
 
       <!-- Demographics panel -->
@@ -51,6 +53,8 @@
               <div class="form-group mb-0"><label class="form-label">State</label><input class="form-control" id="f-state"></div>
               <div class="form-group mb-0"><label class="form-label">Zip</label><input class="form-control" id="f-zip_code"></div>
               <div class="form-group mb-0"><label class="form-label">Groups</label><input class="form-control" id="f-groups" placeholder="e.g. 340B, VIP"></div>
+              <div class="form-group mb-0 full"><label class="form-label">Import / SFTP File Path</label>
+                <input class="form-control" id="f-import_file_path" placeholder="e.g. /inbound/city-of-mcallen or \\server\share\McAllen"></div>
               <div class="form-group mb-0"><label class="form-label">Active</label>
                 <select class="form-control" id="f-active"><option value="1">Yes</option><option value="0">No</option></select></div>
               <div class="form-group mb-0 full"><label class="form-label">Notes</label><textarea class="form-control" id="f-notes" rows="3"></textarea></div>
@@ -197,6 +201,13 @@
         </div>
         <div id="inv-empty" class="text-center py-10 text-slate-400" style="display:none">No completed transactions in this period.</div>
       </div>
+
+      <!-- Imports panel -->
+      <div class="tab-panel" data-panel="imports" style="display:none">
+        <div id="imports-body">
+          <div class="text-center py-10 text-slate-400">Loading…</div>
+        </div>
+      </div>
     </main>
   </div>
 </div>
@@ -299,6 +310,7 @@
   let contacts = [], contracts = [];
   let clientIrxId = null, eligLoaded = false, eligDebounce;
   let claimsLoaded = false, reportingLoaded = false, claimsDebounce;
+  let importsLoaded = false;
   const CL_PALETTE = ['#2563eb','#16a34a','#d97706','#dc2626','#7c3aed','#0891b2','#db2777','#65a30d','#9333ea','#0d9488','#ca8a04','#0ea5e9'];
   const rpCharts = {};  // canvas id -> Chart instance
 
@@ -311,12 +323,13 @@
     if (name === 'invoices') invDefaults();
     if (name === 'claims' && !claimsLoaded) { claimsDefaults(); loadClaims(); }
     if (name === 'reporting' && !reportingLoaded) { reportDefaults(); loadReporting(); }
+    if (name === 'imports' && !importsLoaded) loadImports();
   }
 
   // Sub-resource tabs need a saved client. Disable them until one exists.
   function gateTabs() {
     const enabled = !!clientId;
-    document.querySelectorAll('.tab-btn[data-tab="contacts"], .tab-btn[data-tab="contracts"], .tab-btn[data-tab="eligibility"], .tab-btn[data-tab="claims"], .tab-btn[data-tab="reporting"], .tab-btn[data-tab="invoices"]').forEach(b => {
+    document.querySelectorAll('.tab-btn[data-tab="contacts"], .tab-btn[data-tab="contracts"], .tab-btn[data-tab="eligibility"], .tab-btn[data-tab="claims"], .tab-btn[data-tab="reporting"], .tab-btn[data-tab="invoices"], .tab-btn[data-tab="imports"]').forEach(b => {
       b.style.opacity = enabled ? '' : '0.4';
       b.style.pointerEvents = enabled ? '' : 'none';
       b.title = enabled ? '' : 'Save the client first';
@@ -349,12 +362,13 @@
     document.getElementById('f-zip_code').value = c.zip_code || '';
     document.getElementById('f-broker_id').value = c.broker_id || '';
     document.getElementById('f-groups').value = c.groups || '';
+    document.getElementById('f-import_file_path').value = c.import_file_path || '';
     document.getElementById('f-notes').value = c.notes || '';
     document.getElementById('f-active').value = c.active ? '1' : '0';
     document.getElementById('f-irx_client_id').value = c.irx_client_id || '';
     clientIrxId = c.irx_client_id || null;
     eligLoaded = false;  // re-evaluate eligibility after (re)load
-    claimsLoaded = false; reportingLoaded = false;
+    claimsLoaded = false; reportingLoaded = false; importsLoaded = false;
     document.getElementById('client-name').textContent = (c.name || '').trim() || `Client #${c.id}`;
     document.getElementById('delete-btn').style.display = '';
     gateTabs();
@@ -372,6 +386,7 @@
       zip_code: document.getElementById('f-zip_code').value.trim(),
       broker_id: parseInt(document.getElementById('f-broker_id').value) || null,
       groups: document.getElementById('f-groups').value.trim(),
+      import_file_path: document.getElementById('f-import_file_path').value.trim(),
       notes: document.getElementById('f-notes').value.trim(),
       active: document.getElementById('f-active').value === '1',
       irx_client_id: document.getElementById('f-irx_client_id').value.trim(),
@@ -866,6 +881,183 @@
     const w = window.open('', '_blank');
     if (!w) { showToast('Allow pop-ups to print', 'error'); return; }
     w.document.write(html); w.document.close();
+  }
+
+  /* ── Imports tab ── */
+  let IMPORT_FEEDS = [];
+
+  async function loadImports() {
+    importsLoaded = true;
+    const body = document.getElementById('imports-body');
+    if (!clientId) { body.innerHTML = `<div class="card"><div class="card-body text-sm text-slate-500">Save the client first.</div></div>`; return; }
+    body.innerHTML = `<div class="text-center py-10 text-slate-400">Loading…</div>`;
+    const [feeds, runs] = await Promise.all([
+      apiGet(`/imports?client_id=${clientId}`),
+      apiGet(`/imports?resource=runs&client_id=${clientId}`),
+    ]);
+    if (feeds === null) {
+      body.innerHTML = `<div class="card"><div class="card-body text-sm text-slate-500">
+        Imports are managed by administrators — you may not have access, or no feeds are configured for this client.</div></div>`;
+      return;
+    }
+    IMPORT_FEEDS = feeds || [];
+    body.innerHTML = feedsCard(IMPORT_FEEDS) + uploadCard(IMPORT_FEEDS) + historyCard(runs || []);
+  }
+
+  function feedsCard(feeds) {
+    const rows = feeds.length ? feeds.map(f => `<tr>
+        <td class="font-medium">${esc(f.name)}</td>
+        <td>${esc(f.feed_type)}</td>
+        <td>${esc(f.target_table)}</td>
+        <td>${esc(f.schedule_frequency)}${f.schedule_time ? ' ' + esc(f.schedule_time) : ''}</td>
+        <td>${f.last_run_at ? fmtDate(f.last_run_at) : '—'}</td>
+        <td>${statusPill(f.last_status)}</td>
+      </tr>`).join('')
+      : `<tr><td colspan="6" class="text-center py-8 text-slate-400">No import feeds configured for this client.</td></tr>`;
+    return `<div class="card">
+      <div class="card-header"><span class="card-title"><i class="fa-solid fa-rss text-slate-400 mr-2"></i>Feeds (SFTP)</span>
+        <a href="/imports/?client_id=${clientId}" class="btn btn-outline btn-sm"><i class="fa-solid fa-gear"></i> Manage feeds</a></div>
+      <div class="card-body">
+        <table class="data-table"><thead><tr>
+          <th>Feed</th><th>Type</th><th>Target Table</th><th>Schedule</th><th>Last Run</th><th>Status</th>
+        </tr></thead><tbody>${rows}</tbody></table>
+      </div></div>`;
+  }
+
+  function uploadCard(feeds) {
+    if (!feeds.length) return '';
+    const opts = feeds.map(f => `<option value="${f.id}">${esc(f.name)} (${esc(f.feed_type)})</option>`).join('');
+    return `<div class="card mt-4">
+      <div class="card-header"><span class="card-title"><i class="fa-solid fa-file-arrow-up text-slate-400 mr-2"></i>Manual upload</span></div>
+      <div class="card-body form-pad">
+        <p class="text-sm text-slate-500 mb-3" style="max-width:640px">
+          Upload a <code>.csv</code> or <code>.xlsx</code> for a configured feed to import it now instead of waiting for the SFTP schedule.
+          <strong>Check file</strong> previews what would change and writes nothing.</p>
+        <div class="flex flex-wrap items-center gap-3 mb-3">
+          <select id="imp-feed" class="form-control" style="max-width:280px">${opts}</select>
+          <input type="file" id="imp-file" accept=".csv,.xlsx,.xls,text/csv"
+            class="text-sm text-slate-600 file:mr-3 file:py-2 file:px-4 file:rounded-md file:border-0 file:bg-slate-200 file:text-slate-700 file:cursor-pointer hover:file:bg-slate-300">
+          <button class="btn" onclick="analyzeImport()"><i class="fa-solid fa-magnifying-glass"></i> Check file</button>
+        </div>
+        <div id="imp-result"></div>
+      </div></div>`;
+  }
+
+  function historyCard(runs) {
+    const rows = runs.length ? runs.map(r => `<tr>
+        <td class="whitespace-nowrap">${fmtDate(r.started_at)}</td>
+        <td>${esc(r.feed_name)}</td>
+        <td>${statusPill(r.status)}</td>
+        <td>${esc(r.file_name) || '—'}</td>
+        <td class="text-right">${r.rows_imported ?? '—'}</td>
+        <td class="text-right">${r.feed_type === 'Eligibility'
+            ? `<span class="text-green-600">+${r.added_count ?? 0}</span> / <span class="text-slate-500">~${r.updated_count ?? 0}</span> / <span class="text-amber-600">–${r.inactivated_count ?? 0}</span>`
+            : '—'}</td>
+        <td class="text-slate-500">${esc(r.message) || ''}</td>
+      </tr>`).join('')
+      : `<tr><td colspan="7" class="text-center py-8 text-slate-400">No import runs yet.</td></tr>`;
+    return `<div class="card mt-4">
+      <div class="card-header"><span class="card-title"><i class="fa-solid fa-clock-rotate-left text-slate-400 mr-2"></i>Import history</span></div>
+      <div class="card-body">
+        <table class="data-table"><thead><tr>
+          <th>Date</th><th>Feed</th><th>Status</th><th>File</th><th class="text-right">Rows</th>
+          <th class="text-right">Add/Upd/Inact</th><th>Message</th>
+        </tr></thead><tbody>${rows}</tbody></table>
+      </div></div>`;
+  }
+
+  function statusPill(s) {
+    if (!s) return '<span class="text-slate-400">—</span>';
+    const color = s === 'Success' ? 'green' : s === 'Error' ? 'red' : s === 'Running' ? 'blue' : 'gray';
+    return `<span class="badge badge-${color}">${esc(s)}</span>`;
+  }
+
+  // Mirror import_worker.split_rows: pick header at 1-based header_row, bound the data
+  // region (stop_on_blank / stop_marker / footer_skip), drop blank rows.
+  function firstCell(r) { for (const c of r) { const s = String(c == null ? '' : c).trim(); if (s) return s; } return ''; }
+  function splitRows(rows, hasHeader, headerRow, opts) {
+    const hidx = Math.max(0, (parseInt(headerRow, 10) || 1) - 1);
+    if (hidx >= rows.length) return { header: [], body: [] };
+    let header, body;
+    if (hasHeader) {
+      header = (rows[hidx] || []).map(c => String(c == null ? '' : c).trim());
+      body = rows.slice(hidx + 1);
+    } else {
+      body = rows.slice(hidx);
+      const width = body.reduce((m, r) => Math.max(m, r.length), 0);
+      header = Array.from({ length: width }, (_, i) => String(i + 1));
+    }
+    const marker = (opts.stop_marker || '').trim().toLowerCase();
+    let end = body.length;
+    for (let i = 0; i < body.length; i++) {
+      const r = body[i];
+      const blank = !r.some(c => String(c == null ? '' : c).trim() !== '');
+      if (opts.stop_on_blank && blank) { end = i; break; }
+      if (marker && firstCell(r).toLowerCase().startsWith(marker)) { end = i; break; }
+    }
+    body = body.slice(0, end);
+    while (body.length && !body[body.length - 1].some(c => String(c == null ? '' : c).trim() !== '')) body.pop();
+    const skip = parseInt(opts.footer_skip, 10) || 0;
+    if (skip > 0) body = skip < body.length ? body.slice(0, body.length - skip) : [];
+    return { header, body: body.filter(r => r.some(c => String(c == null ? '' : c).trim() !== '')) };
+  }
+
+  async function parseImportFile(file, cfg) {
+    const buf = await file.arrayBuffer();
+    const wb = XLSX.read(buf, { type: 'array' });
+    let wsName = wb.SheetNames[0];
+    if (cfg.sheet_name && wb.SheetNames.includes(cfg.sheet_name)) wsName = cfg.sheet_name;
+    const aoa = XLSX.utils.sheet_to_json(wb.Sheets[wsName], { header: 1, raw: false, defval: '' });
+    const hasHeader = !(cfg.has_header === false || cfg.has_header === 0);
+    return splitRows(aoa, hasHeader, cfg.header_row || 1,
+      { stop_on_blank: cfg.stop_on_blank, stop_marker: cfg.stop_marker, footer_skip: cfg.footer_skip });
+  }
+
+  async function analyzeImport() {
+    const cfg = IMPORT_FEEDS.find(f => String(f.id) === document.getElementById('imp-feed').value);
+    const fileEl = document.getElementById('imp-file');
+    const out = document.getElementById('imp-result');
+    if (!cfg) { showToast('Select a feed', 'error'); return; }
+    if (!fileEl.files.length) { showToast('Choose a file', 'error'); return; }
+    out.innerHTML = `<div class="text-sm text-slate-500"><i class="fa-solid fa-spinner fa-spin"></i> Reading &amp; checking ${esc(fileEl.files[0].name)}…</div>`;
+
+    let parsed;
+    try { parsed = await parseImportFile(fileEl.files[0], cfg); }
+    catch (e) { out.innerHTML = `<div class="text-sm text-red-600"><i class="fa-solid fa-triangle-exclamation"></i> ${esc(e.message)}</div>`; return; }
+    if (!parsed.body.length) { out.innerHTML = `<div class="text-sm text-red-600">No data rows found in the file.</div>`; return; }
+
+    const res = await apiPost(`/imports?resource=manual&config_id=${cfg.id}`,
+      { mode: 'analyze', header: parsed.header, rows: parsed.body });
+    if (!res || !res.ok) {
+      const msg = res ? (await res.json().catch(() => ({}))).error : 'Request failed';
+      out.innerHTML = `<div class="text-sm text-red-600"><i class="fa-solid fa-triangle-exclamation"></i> ${esc(msg || 'Analyze failed')}</div>`;
+      return;
+    }
+    out.innerHTML = renderImportPreview(await res.json());
+  }
+
+  function stat(num, label, cls) { return `<div class="stat-card"><div class="stat-number ${cls || ''}">${num}</div><div class="stat-label">${label}</div></div>`; }
+
+  function renderImportPreview(d) {
+    let cards, scope;
+    if (d.feed_type === 'Eligibility') {
+      cards = stat(d.file_members, 'Members in file') +
+        stat(d.adds, 'New (add)', 'text-green-600') +
+        stat(d.updates, 'Matched (update)', 'text-slate-500') +
+        stat(d.inactivations, 'Missing → inactivate', 'text-amber-600');
+      scope = `Scoped to CARRIER <strong>${esc(d.carrier)}</strong> in <code>${esc(d.reconcile_table)}</code>.`;
+    } else if (d.dedupe_skipped) {
+      cards = stat(d.file_rows, 'Rows in file') + stat(d.existing_rows.toLocaleString(), 'Existing rows');
+      scope = `Against <code>${esc(d.target_table)}</code>. Duplicate check skipped — the table is large; row-level dedupe runs at the commit step.`;
+    } else {
+      cards = stat(d.file_rows, 'Rows in file') +
+        stat(d.new_rows, 'New (append)', 'text-green-600') +
+        stat(d.duplicates, 'Already present (skip)', 'text-amber-600');
+      scope = `Against <code>${esc(d.target_table)}</code> (${d.existing_rows.toLocaleString()} existing rows).`;
+    }
+    return `<div class="flex flex-wrap gap-4 mb-2">${cards}</div>
+      <div class="text-xs text-slate-500">${scope}</div>
+      <div class="text-xs text-slate-400 mt-2"><i class="fa-solid fa-circle-info"></i> Preview only — nothing was written. The commit step is coming in the next update.</div>`;
   }
 
   ['contact-modal', 'contract-modal', 'benefit-modal'].forEach(m =>

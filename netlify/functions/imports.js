@@ -129,6 +129,19 @@ exports.handler = async function (event) {
         return ok(r.recordset);
       }
       if (resource === 'runs') {
+        // History for one feed (config_id) or for a whole client (client_id).
+        if (client_id) {
+          const clid = parseInt(client_id, 10);
+          if (!clid) return badRequest('client_id is required');
+          const r = await mssql(
+            `SELECT TOP 100 r.id, r.config_id, c.name AS feed_name, c.feed_type,
+                    r.started_at, r.finished_at, r.status, r.file_name, r.rows_imported,
+                    r.added_count, r.updated_count, r.inactivated_count, r.message
+             FROM dbo.Import_Runs r
+             JOIN dbo.Import_Configs c ON c.id = r.config_id
+             WHERE c.client_id = @clid ORDER BY r.started_at DESC`, { clid });
+          return ok(r.recordset);
+        }
         const cid = parseInt(config_id, 10);
         if (!cid) return badRequest('config_id is required');
         const r = await mssql(
@@ -184,6 +197,14 @@ exports.handler = async function (event) {
         if (!cid) return badRequest('id is required');
         const r = await mssql('UPDATE dbo.Import_Configs SET run_requested = 1 WHERE id = @cid', { cid });
         return r.rowsAffected[0] ? ok({ queued: true }) : notFound();
+      }
+
+      // Manual file upload: the browser parses the file to { header, rows } and posts it
+      // against an existing feed config. mode='analyze' previews what an import would do
+      // (add/update/inactivate for eligibility, new/duplicate for claims) and writes
+      // NOTHING. mode='commit' (Increment 2) will perform the writes.
+      if (resource === 'manual') {
+        return handleManual(event);
       }
       const b = JSON.parse(event.body || '{}');
       if (!b.client_id) return badRequest('client_id is required');
@@ -256,3 +277,168 @@ exports.handler = async function (event) {
     return serverError(err);
   }
 };
+
+// ── Manual upload (Node port of import_worker.py's map + reconcile) ───────────
+const norm = v => String(v == null ? '' : v).trim();
+
+// Bracket-qualify an admin-configured table name (schema.table). Never user input.
+function qualifyTable(t) {
+  if (!/^[A-Za-z0-9_]+(\.[A-Za-z0-9_]+)?$/.test(String(t || ''))) return null;
+  const parts = String(t).split('.');
+  const schema = parts.length > 1 ? parts[0] : 'dbo';
+  const name = parts.length > 1 ? parts[1] : parts[0];
+  return `[${schema}].[${name}]`;
+}
+
+// Mirror import_worker.coerce for the value types we compare on in a preview.
+function coerce(value, dtype) {
+  if (value == null) return null;
+  const s = String(value).trim();
+  if (s === '') return null;
+  if (dtype === 'int') { const n = parseInt(s.replace(/,/g, ''), 10); return Number.isNaN(n) ? null : n; }
+  if (dtype === 'decimal') { const n = Number(s.replace(/,/g, '')); return Number.isNaN(n) ? null : n; }
+  return s;
+}
+
+function parseDateAny(v) {
+  if (v == null || v === '') return null;
+  if (v instanceof Date) return isNaN(v) ? null : v;
+  const d = new Date(String(v).trim());
+  return isNaN(d) ? null : d;
+}
+
+// Resolve each column mapping to a file position (header name, or 1-based index),
+// then project every data row onto an object keyed by target column.
+function mapRows(header, rows, maps) {
+  const idx = {};
+  (header || []).forEach((h, i) => { idx[norm(h)] = i; });
+  const resolved = maps.map(m => {
+    let pos = idx[norm(m.source_column)];
+    if (pos === undefined && /^\d+$/.test(m.source_column)) pos = parseInt(m.source_column, 10) - 1;
+    return { pos, target: m.target_column, dt: m.data_type };
+  });
+  const missingNames = resolved.map((r, i) => (r.pos === undefined ? maps[i].source_column : null)).filter(Boolean);
+  if (missingNames.length) throw new Error(`Column(s) not found in file header: ${missingNames.join(', ')}`);
+  const targetCols = resolved.map(r => r.target);
+  const mapped = (rows || []).map(row => {
+    const o = {};
+    resolved.forEach(r => { o[r.target] = coerce(r.pos < row.length ? row[r.pos] : null, r.dt); });
+    return o;
+  });
+  return { targetCols, mapped };
+}
+
+async function handleManual(event) {
+  const { config_id } = event.queryStringParameters || {};
+  const cid = parseInt(config_id, 10);
+  if (!cid) return badRequest('config_id is required');
+
+  const b = JSON.parse(event.body || '{}');
+  const mode = b.mode === 'commit' ? 'commit' : 'analyze';
+  if (!Array.isArray(b.header) || !Array.isArray(b.rows)) return badRequest('header and rows are required');
+  if (!b.rows.length) return badRequest('The file has no data rows');
+
+  const cfgR = await mssql(
+    `SELECT id, client_id, feed_type, target_table, reconcile_table FROM dbo.Import_Configs WHERE id = @cid`, { cid });
+  const cfg = cfgR.recordset[0];
+  if (!cfg) return notFound();
+
+  const maps = await loadColumns(cid);
+  if (!maps.length) return badRequest('This feed has no column mapping defined yet (set it up under Imports).');
+
+  let mapped, targetCols;
+  try { ({ targetCols, mapped } = mapRows(b.header, b.rows, maps)); }
+  catch (err) { return badRequest(err.message); }
+
+  // Increment 1: preview only. The commit path lands in Increment 2.
+  if (mode === 'commit') return badRequest('Commit is not enabled yet (Increment 2).');
+
+  if (cfg.feed_type === 'Eligibility') {
+    return ok(await previewEligibility(cfg, cid, mapped));
+  }
+  return ok(await previewClaims(cfg, targetCols, mapped));
+}
+
+// Compare the file roster to dbo.eligibility for this client (CARRIER = irx_client_id),
+// keyed CARRIER + MEMBER_ID. Counts only — writes nothing.
+async function previewEligibility(cfg, cid, mapped) {
+  const recon = await loadReconcileMaps(cid);
+  if (!recon.length) throw new Error('This eligibility feed has no reconcile mapping (staging → eligibility) defined.');
+
+  const projected = mapped.map(o => {
+    const e = {};
+    recon.forEach(m => { e[m.eligibility_column] = o[m.stage_column] != null ? o[m.stage_column] : null; });
+    return e;
+  });
+  if (!recon.some(m => m.eligibility_column === 'MEMBER_ID'))
+    throw new Error('Eligibility feeds must map a column to MEMBER_ID.');
+
+  const cr = await mssql('SELECT irx_client_id FROM dbo.tp_clients WHERE id = @id', { id: cfg.client_id });
+  const carrier = norm(cr.recordset[0] && cr.recordset[0].irx_client_id);
+  if (!carrier) throw new Error('Client has no irx_client_id; cannot scope eligibility by CARRIER.');
+
+  const table = qualifyTable(cfg.reconcile_table || 'dbo.eligibility');
+  if (!table) throw new Error('Invalid reconcile table configured.');
+
+  const fileMembers = new Set();
+  for (const e of projected) { const mid = norm(e.MEMBER_ID); if (mid) fileMembers.add(mid); }
+
+  const ex = await mssql(
+    `SELECT MEMBER_ID, MEMBER_THRU_DATE FROM ${table} WHERE CARRIER = @c`, { c: carrier });
+  const existing = new Map();
+  ex.recordset.forEach(r => existing.set(norm(r.MEMBER_ID), r.MEMBER_THRU_DATE));
+
+  let adds = 0, updates = 0;
+  for (const mid of fileMembers) (existing.has(mid) ? updates++ : adds++);
+
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  let inactivations = 0;
+  for (const [mid, thru] of existing) {
+    if (!mid || fileMembers.has(mid)) continue;
+    const t = parseDateAny(thru);           // blank/future thru = currently active
+    if (t === null || t >= today) inactivations++;
+  }
+
+  return {
+    feed_type: 'Eligibility', carrier, reconcile_table: cfg.reconcile_table || 'dbo.eligibility',
+    file_rows: mapped.length, file_members: fileMembers.size,
+    adds, updates, inactivations,
+  };
+}
+
+// Count file rows already present in the claims target table (exact match on all
+// mapped columns) vs. genuinely new. Reads only — writes nothing.
+const CLAIMS_DEDUPE_MAX = 200000;   // above this, skip the in-memory full-row dedupe preview
+
+async function previewClaims(cfg, targetCols, mapped) {
+  const table = qualifyTable(cfg.target_table);
+  if (!table) throw new Error('Invalid target table configured.');
+
+  // Guard against hashing an enormous shared table (e.g. dbo.ClaimsData) in memory.
+  const cnt = await mssql(`SELECT COUNT(*) AS n FROM ${table}`);
+  const existingCount = cnt.recordset[0].n;
+  if (existingCount > CLAIMS_DEDUPE_MAX) {
+    return {
+      feed_type: 'Claims', target_table: cfg.target_table, file_rows: mapped.length,
+      new_rows: null, duplicates: null, existing_rows: existingCount, dedupe_skipped: true,
+    };
+  }
+
+  const collist = targetCols.map(c => `[${c}]`).join(',');
+  const ex = await mssql(`SELECT ${collist} FROM ${table}`);
+  const keyOf = obj => targetCols.map(c => norm(obj[c])).join('␟');
+  const seen = new Set(ex.recordset.map(keyOf));
+
+  let duplicates = 0;
+  const local = new Set();
+  for (const o of mapped) {
+    const k = keyOf(o);
+    if (seen.has(k) || local.has(k)) duplicates++;
+    else local.add(k);
+  }
+  return {
+    feed_type: 'Claims', target_table: cfg.target_table,
+    file_rows: mapped.length, new_rows: mapped.length - duplicates, duplicates,
+    existing_rows: ex.recordset.length,
+  };
+}
