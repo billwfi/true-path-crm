@@ -5,6 +5,7 @@
   <title>Appointments — True Path CRM</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+  <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
   <link rel="stylesheet" href="/assets/css/app.css">
 </head>
 <body class="bg-slate-100 text-slate-700">
@@ -16,10 +17,14 @@
 
       <div class="search-bar">
         <input type="text" id="search" class="form-control" placeholder="Search appointments…" oninput="debounceLoad()">
+        <select id="schedFilter" class="form-control" style="max-width:240px" onchange="render()">
+          <option value="">All schedulers</option>
+        </select>
         <select id="assignFilter" class="form-control" style="max-width:220px" onchange="render()">
           <option value="">All assignees</option>
           <option value="__unassigned">Unassigned only</option>
         </select>
+        <button class="btn btn-primary" onclick="exportExcel()"><i class="fa-solid fa-file-excel"></i> Export to Excel</button>
       </div>
 
       <div class="card">
@@ -79,7 +84,11 @@
     const res = await apiPatch(`/marketing-schedulers?booking=${bookingId}`, { assigned_to: userId || null });
     if (res && res.ok) {
       const row = all.find(b => b.id === bookingId);
-      if (row) { row.assigned_to = userId ? parseInt(userId, 10) : null; }
+      if (row) {
+        row.assigned_to = userId ? parseInt(userId, 10) : null;
+        const c = concierges.find(c => String(c.id) === String(userId));
+        row.assigned_name = c ? c.name : null;
+      }
       showToast('Assignment saved', 'success');
       // Re-render only if a filter would hide/show this row now.
       if (document.getElementById('assignFilter').value) render();
@@ -88,16 +97,33 @@
     }
   }
 
-  function render() {
+  // Rows matching the current search + scheduler + assignee filters.
+  function filtered() {
     const q = document.getElementById('search').value.toLowerCase();
+    const sf = document.getElementById('schedFilter').value;
     const af = document.getElementById('assignFilter').value;
-    const rows = all.filter(b => {
+    return all.filter(b => {
+      if (sf && String(b.scheduler_id) !== sf) return false;
       if (af === '__unassigned' && b.assigned_to != null) return false;
       if (af && af !== '__unassigned' && String(b.assigned_to) !== af) return false;
       if (!q) return true;
       return [b.name, b.company_name, b.scheduler_name, b.email, b.phone]
         .some(v => (v || '').toLowerCase().includes(q));
     });
+  }
+
+  // Populate the scheduler dropdown from the loaded appointments (distinct, name-sorted).
+  function fillSchedFilter() {
+    const seen = new Map();
+    all.forEach(b => { if (b.scheduler_id != null && !seen.has(b.scheduler_id)) seen.set(b.scheduler_id, b.scheduler_name || '(unnamed)'); });
+    const opts = [...seen.entries()].sort((a, b) => a[1].localeCompare(b[1]));
+    document.getElementById('schedFilter').innerHTML =
+      '<option value="">All schedulers</option>' +
+      opts.map(([id, name]) => `<option value="${id}">${esc(name)}</option>`).join('');
+  }
+
+  function render() {
+    const rows = filtered();
     document.getElementById('tbl-body').innerHTML = rows.length
       ? rows.map(b => `<tr>
           <td class="font-medium">${fmtSlot(b.slot_start)}</td>
@@ -112,9 +138,33 @@
       : '<tr><td colspan="8" class="text-center py-10 text-slate-400">No scheduled appointments for active schedulers.</td></tr>';
   }
 
+  // Export the currently-filtered list to an .xlsx workbook.
+  function exportExcel() {
+    const rows = filtered();
+    if (!rows.length) { showToast('Nothing to export', 'error'); return; }
+    const header = ['When', 'Scheduler', 'Client', 'Company', 'Name', 'DOB', 'Phone', 'Email', 'Notes', 'Assigned To'];
+    const body = rows.map(b => [
+      fmtSlot(b.slot_start),
+      b.scheduler_name || '',
+      b.client_name || '',
+      b.company_name || '',
+      b.name || `${b.first_name || ''} ${b.last_name || ''}`.trim(),
+      fmtDateSafe(b.dob),
+      b.phone || '',
+      b.email || '',
+      b.notes || '',
+      b.assigned_name || '',
+    ]);
+    const ws = XLSX.utils.aoa_to_sheet([header, ...body]);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Appointments');
+    XLSX.writeFile(wb, `appointments-${new Date().toISOString().slice(0, 10)}.xlsx`);
+  }
+
   async function load() {
     const data = await apiGet('/marketing-schedulers?appointments=1');
     all = data || [];
+    fillSchedFilter();
     render();
   }
 
