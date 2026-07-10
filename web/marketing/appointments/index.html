@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Appointments — True Path CRM</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+  <link rel="stylesheet" href="/assets/css/app.css">
+</head>
+<body class="bg-slate-100 text-slate-700">
+<div id="app" class="flex h-screen overflow-hidden">
+  <div id="nav-placeholder"></div>
+  <div class="flex-1 flex flex-col overflow-hidden">
+    <div id="topbar"></div>
+    <main class="flex-1 overflow-y-auto p-6">
+
+      <div class="search-bar">
+        <input type="text" id="search" class="form-control" placeholder="Search appointments…" oninput="debounceLoad()">
+        <select id="assignFilter" class="form-control" style="max-width:220px" onchange="render()">
+          <option value="">All assignees</option>
+          <option value="__unassigned">Unassigned only</option>
+        </select>
+      </div>
+
+      <div class="card">
+        <div class="card-body">
+          <table class="data-table">
+            <thead><tr>
+              <th>When</th><th>Scheduler</th><th>Company</th><th>Name</th>
+              <th>DOB</th><th>Phone</th><th>Email</th><th>Assigned To</th>
+            </tr></thead>
+            <tbody id="tbl-body"><tr><td colspan="8" class="text-center py-10 text-slate-400">Loading…</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+    </main>
+  </div>
+</div>
+
+<script src="/assets/js/app.js"></script>
+<script>
+  initNav('marketing-appointments');
+  let debounce, all = [], concierges = [];
+
+  function debounceLoad() { clearTimeout(debounce); debounce = setTimeout(render, 300); }
+
+  // Wall-clock datetime formatting — see the Schedulers page for the UTC-tag caveat.
+  function fmtSlot(s) {
+    const m = String(s || '').match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/);
+    if (!m) return s || '—';
+    const [, Y, Mo, D, hh, mi] = m, h = +hh;
+    const ap = h >= 12 ? 'PM' : 'AM', h12 = ((h + 11) % 12) + 1;
+    return `${+Mo}/${+D}/${Y} ${h12}:${mi} ${ap}`;
+  }
+  function fmtDateSafe(s) {
+    const m = String(s || '').match(/^(\d{4})-(\d{2})-(\d{2})/);
+    return m ? `${+m[2]}/${+m[3]}/${m[1]}` : '—';
+  }
+
+  async function loadConcierges() {
+    concierges = await apiGet('/marketing-schedulers?concierges=1') || [];
+    document.getElementById('assignFilter').innerHTML =
+      '<option value="">All assignees</option>' +
+      '<option value="__unassigned">Unassigned only</option>' +
+      concierges.map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('');
+  }
+
+  // Per-appointment dropdown of Client Concierge users (or "Unassigned").
+  function assigneeSelect(bookingId, assignedTo) {
+    const cur = assignedTo == null ? '' : String(assignedTo);
+    const opts = ['<option value="">— Unassigned —</option>']
+      .concat(concierges.map(c =>
+        `<option value="${c.id}" ${String(c.id) === cur ? 'selected' : ''}>${esc(c.name)}</option>`))
+      .join('');
+    return `<select class="form-control" style="min-width:170px" onchange="assignBooking(${bookingId}, this.value)">${opts}</select>`;
+  }
+
+  async function assignBooking(bookingId, userId) {
+    const res = await apiPatch(`/marketing-schedulers?booking=${bookingId}`, { assigned_to: userId || null });
+    if (res && res.ok) {
+      const row = all.find(b => b.id === bookingId);
+      if (row) { row.assigned_to = userId ? parseInt(userId, 10) : null; }
+      showToast('Assignment saved', 'success');
+      // Re-render only if a filter would hide/show this row now.
+      if (document.getElementById('assignFilter').value) render();
+    } else {
+      showToast('Assignment failed', 'error');
+    }
+  }
+
+  function render() {
+    const q = document.getElementById('search').value.toLowerCase();
+    const af = document.getElementById('assignFilter').value;
+    const rows = all.filter(b => {
+      if (af === '__unassigned' && b.assigned_to != null) return false;
+      if (af && af !== '__unassigned' && String(b.assigned_to) !== af) return false;
+      if (!q) return true;
+      return [b.name, b.company_name, b.scheduler_name, b.email, b.phone]
+        .some(v => (v || '').toLowerCase().includes(q));
+    });
+    document.getElementById('tbl-body').innerHTML = rows.length
+      ? rows.map(b => `<tr>
+          <td class="font-medium">${fmtSlot(b.slot_start)}</td>
+          <td>${esc(b.scheduler_name) || '—'}${b.client_name ? `<div class="text-xs text-slate-400 font-normal"><i class="fa-regular fa-building mr-1"></i>${esc(b.client_name)}</div>` : ''}</td>
+          <td>${esc(b.company_name) || '—'}</td>
+          <td>${esc(b.name || ((b.first_name || '') + ' ' + (b.last_name || '')).trim())}</td>
+          <td>${fmtDateSafe(b.dob)}</td>
+          <td>${esc(b.phone) || '—'}</td>
+          <td>${esc(b.email) || '—'}</td>
+          <td>${assigneeSelect(b.id, b.assigned_to)}</td>
+        </tr>`).join('')
+      : '<tr><td colspan="8" class="text-center py-10 text-slate-400">No scheduled appointments for active schedulers.</td></tr>';
+  }
+
+  async function load() {
+    const data = await apiGet('/marketing-schedulers?appointments=1');
+    all = data || [];
+    render();
+  }
+
+  loadConcierges();
+  load();
+</script>
+</body>
+</html>

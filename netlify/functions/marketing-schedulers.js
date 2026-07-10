@@ -5,6 +5,8 @@ const { verifyToken, unauthorized, ok, created, badRequest, notFound, serverErro
 //
 // Admin (auth required):
 //   GET                 -> list schedulers with booking counts
+//   GET    ?appointments=1 -> all bookings across active schedulers (Appointments list)
+//   GET    ?concierges=1   -> active Client Concierge users (assignee picker)
 //   GET    ?id=X        -> one scheduler + its bookings
 //   POST                -> create scheduler
 //   PATCH  ?id=X        -> update scheduler
@@ -64,7 +66,7 @@ function generateSlots(s) {
 
 exports.handler = async function (event) {
   if (event.httpMethod === 'OPTIONS') return options();
-  const { id, s: slug, booking, concierges } = event.queryStringParameters || {};
+  const { id, s: slug, booking, concierges, appointments } = event.queryStringParameters || {};
 
   try {
     // ── Public flow (shared link) ──────────────────────────────────────────
@@ -139,6 +141,19 @@ exports.handler = async function (event) {
            FROM dbo.Users
            WHERE active = 1 AND role = 'Client Concierge'
            ORDER BY firstname, lastname`);
+        return ok(r.recordset);
+      }
+      // All bookings across every ACTIVE scheduler — the Marketing › Appointments list.
+      if (appointments) {
+        const r = await mssql(
+          `SELECT bk.id, bk.slot_start, bk.name, bk.company_name, bk.first_name, bk.last_name,
+                  bk.dob, bk.email, bk.phone, bk.notes, bk.created_at, bk.assigned_to,
+                  LTRIM(RTRIM(CONCAT(u.firstname, ' ', u.lastname))) AS assigned_name,
+                  s.id AS scheduler_id, s.name AS scheduler_name, s.client_name
+           FROM dbo.Bookings bk
+           JOIN dbo.Booking_Schedulers s ON s.id = bk.scheduler_id AND s.active = 1
+           LEFT JOIN dbo.Users u ON u.id = bk.assigned_to
+           ORDER BY bk.slot_start, bk.created_at`);
         return ok(r.recordset);
       }
       if (id) {
