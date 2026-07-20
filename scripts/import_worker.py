@@ -26,12 +26,14 @@ import io
 import os
 import posixpath
 import sys
-from datetime import datetime, timedelta
+from datetime import date as _date, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 
 import pyodbc
 import paramiko
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+
+date_min = _date.min  # sort key for rows whose start date will not parse
 
 
 # ── DB ──────────────────────────────────────────────────────────────────────
@@ -210,14 +212,25 @@ def import_rows(cur, target_table, maps, header, data_rows, truncate):
 
 
 # ── Eligibility reconciliation ──────────────────────────────────────────────
-def read_stage(cur, stage_table, recon_maps):
+def read_stage(cur, stage_table, recon_maps, stage_filter=None):
     """Read the freshly-loaded staging table and project it onto canonical
-    eligibility columns using the stage->canonical reconcile map."""
+    eligibility columns using the stage->canonical reconcile map.
+
+    A mapping may carry a `stage_expression` (any SQL expression over the staging
+    table) instead of a plain column. Per-client transforms live there -- deriving
+    a member key, normalising dates, turning a vendor's placeholder text into NULL
+    -- which keeps those rules declarative instead of forking this worker per feed.
+
+    `stage_filter` is an optional WHERE clause used to drop rows that must never
+    reach eligibility (e.g. a test record the client ships in every file)."""
     if not recon_maps:
         raise ValueError("no reconcile mapping defined (staging column -> eligibility column)")
     canon_cols = [m["eligibility_column"] for m in recon_maps]
-    select_list = ", ".join(f"[{m['stage_column']}] AS col{i}" for i, m in enumerate(recon_maps))
-    cur.execute(f"SELECT {select_list} FROM {stage_table}")
+    select_list = ", ".join(
+        f"{m.get('stage_expression') or '[' + m['stage_column'] + ']'} AS col{i}"
+        for i, m in enumerate(recon_maps))
+    where = f" WHERE {stage_filter}" if stage_filter else ""
+    cur.execute(f"SELECT {select_list} FROM {stage_table}{where}")
     rows = []
     for r in cur.fetchall():
         d = {}
@@ -230,14 +243,31 @@ def read_stage(cur, stage_table, recon_maps):
 
 
 def parse_date_any(s):
+    """Parse the date shapes present in dbo.eligibility.
+
+    Historic loads wrote Excel's *display* text rather than a real date, so the
+    same column holds '12/31/2039', '39-12-31 0:00' and '00-0-1 12:00' (a null
+    date). An unparsed value is read by the caller as "no end date" = still
+    active, so failing to understand the yy-m-d shape silently keeps terminated
+    members active. Returns None only for genuinely empty/null values."""
     s = str(s).strip()
     if not s:
         return None
+    if s.startswith("00-0-") or s.startswith("0000-00-00"):  # Excel's null date
+        return None
+    s = s.split(" ")[0]  # drop any trailing time component
     for fmt in ("%m/%d/%Y", "%m/%d/%y", "%Y-%m-%d", "%Y%m%d", "%m-%d-%Y"):
         try:
             return datetime.strptime(s, fmt).date()
         except ValueError:
             continue
+    # yy-m-d with unpadded month/day, e.g. '39-12-31' -> 2039-12-31.
+    try:
+        y, m, d = s.split("-")
+        if len(y) == 2:
+            return datetime(2000 + int(y), int(m), int(d)).date()
+    except (ValueError, TypeError):
+        pass
     return None
 
 
@@ -258,7 +288,13 @@ def reconcile_eligibility(cur, cfg, run_id, rows, target_cols):
     today = datetime.now().date()
     run_date = f"{today.month}/{today.day}/{today.year}"
 
-    # Dedupe file rows by MEMBER_ID (last occurrence wins).
+    # Dedupe file rows by MEMBER_ID, keeping the most recent coverage span.
+    # Some feeds (e.g. UOP/WellDyne) carry one row per eligibility span, so a
+    # member appears several times -- UOP ships ~2,400 rows for ~1,300 members.
+    # Sorting by MEMBER_FROM_DATE first makes "last wins" mean "latest span"
+    # rather than "whatever order the file happened to be in". Rows with an
+    # unparseable start date sort earliest so a real date always beats them.
+    rows = sorted(rows, key=lambda d: parse_date_any(d.get("MEMBER_FROM_DATE") or "") or date_min)
     file_map = {}
     for d in rows:
         mid = (str(d.get("MEMBER_ID")).strip() if d.get("MEMBER_ID") else "")
@@ -373,7 +409,7 @@ def run_config(cn, cfg):
         # reconcile that table into the canonical reconcile_table.
         if cfg["feed_type"] == "Eligibility":
             cur.execute(
-                "SELECT stage_column, eligibility_column FROM dbo.Import_Reconcile_Maps WHERE config_id=? ORDER BY ordinal, id",
+                "SELECT stage_column, eligibility_column, stage_expression FROM dbo.Import_Reconcile_Maps WHERE config_id=? ORDER BY ordinal, id",
                 cfg["id"])
             recon_maps = rows_as_dicts(cur)
             if not recon_maps:
@@ -402,7 +438,8 @@ def run_config(cn, cfg):
             sftp.close(); transport.close()
 
             # Stage 2: reconcile staging -> canonical eligibility.
-            rows, target_cols = read_stage(cur, cfg["target_table"], recon_maps)
+            rows, target_cols = read_stage(cur, cfg["target_table"], recon_maps,
+                                           cfg.get("stage_filter"))
             added, updated, inactivated = reconcile_eligibility(cur, cfg, run_id, rows, target_cols)
             cur.execute(
                 "UPDATE dbo.Import_Runs SET added_count=?, updated_count=?, inactivated_count=? WHERE id=?",
@@ -460,7 +497,7 @@ def main():
         "SELECT id, client_id, name, feed_type, sftp_host, sftp_port, sftp_username, "
         "sftp_password_enc, sftp_key_enc, remote_dir, file_pattern, file_format, delimiter, "
         "has_header, header_row, stop_on_blank, stop_marker, footer_skip, sheet_name, "
-        "target_table, reconcile_table, truncate_before, after_import, archive_dir, "
+        "target_table, reconcile_table, stage_filter, truncate_before, after_import, archive_dir, "
         "schedule_frequency, schedule_time, schedule_dow, active, run_requested, last_run_at "
         f"FROM dbo.Import_Configs {where}", *params)
     cfgs = rows_as_dicts(cur)
