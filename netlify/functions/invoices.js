@@ -1,5 +1,6 @@
 const { mssql } = require('./_mssql');
 const { verifyToken, unauthorized, ok, badRequest, notFound, serverError, options } = require('./_auth');
+const { enrich } = require('./_wellsync_enrich');
 
 // WellSync transactions loaded for invoicing (see scripts/load_wellsync.py).
 const TABLE = 'dbo.wellsync_data_June';
@@ -166,7 +167,11 @@ async function handleImport(event) {
 
     if (mode === 'commit') {
       const inserted = await insertRows(newRows);
-      return ok({ total: rows.length, inserted, duplicates });
+      // The CSV carries only the 24 raw columns; last_name/first_name/medication/
+      // memberid/GroupName are derived. Without this the new rows show up blank in
+      // the Invoice Data grid (as the June 2026 batch did).
+      const enriched = inserted ? await enrich(mssql) : { namesUpdated: 0, eligUpdated: 0 };
+      return ok({ total: rows.length, inserted, duplicates, enriched });
     }
     return ok({ total: rows.length, newCount: newRows.length, duplicates, dupSamples });
   } catch (err) {
