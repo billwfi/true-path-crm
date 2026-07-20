@@ -422,6 +422,22 @@ def run_config(cn, cfg):
         # Eligibility = two-stage: raw-load into the staging (target) table, then
         # reconcile that table into the canonical reconcile_table.
         if cfg["feed_type"] == "Eligibility":
+            # An eligibility file is a full roster snapshot, not a delta. If two
+            # unprocessed files are present the union of them is NOT the current
+            # roster: everyone who termed between the two still appears, so
+            # nobody is inactivated and members dropped by the newer file are
+            # resurrected as active. Only the newest file is current -- older
+            # ones are recorded as superseded so they are not picked up again.
+            if len(todo) > 1:
+                mtimes = {a.filename: a.st_mtime for a in listing}
+                ordered = sorted(todo, key=lambda n: mtimes.get(n, 0))
+                superseded, todo = ordered[:-1], [ordered[-1]]
+                for name in superseded:
+                    cur.execute(
+                        "INSERT INTO dbo.Import_Processed_Files (config_id, file_name, rows_imported) "
+                        "VALUES (?,?,0)", cfg["id"], name)
+                print(f"  superseded by {todo[0]}: {', '.join(superseded)}")
+
             cur.execute(
                 "SELECT stage_column, eligibility_column, stage_expression FROM dbo.Import_Reconcile_Maps WHERE config_id=? ORDER BY ordinal, id",
                 cfg["id"])
