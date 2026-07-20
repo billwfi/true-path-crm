@@ -1,5 +1,7 @@
 node_modules
 .env
+__pycache__/
+*.pyc
 .netlify
 .vscode/
 scripts/client_imports/reconcile_*_preview.html

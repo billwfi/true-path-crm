@@ -37,9 +37,23 @@ date_min = _date.min  # sort key for rows whose start date will not parse
 
 
 # ── DB ──────────────────────────────────────────────────────────────────────
+def odbc_driver():
+    """Newest installed SQL Server ODBC driver, or SQLSERVER_ODBC_DRIVER if set.
+    Pinning to a single version breaks on any box that ships a different one."""
+    override = os.environ.get("SQLSERVER_ODBC_DRIVER")
+    if override:
+        return override
+    installed = set(pyodbc.drivers())
+    for name in ("ODBC Driver 18 for SQL Server", "ODBC Driver 17 for SQL Server",
+                 "ODBC Driver 13.1 for SQL Server", "SQL Server Native Client 11.0"):
+        if name in installed:
+            return name
+    raise RuntimeError(f"No SQL Server ODBC driver found. Installed: {sorted(installed)}")
+
+
 def db_connect():
     conn = (
-        "DRIVER={ODBC Driver 17 for SQL Server};"
+        f"DRIVER={{{odbc_driver()}}};"
         f"SERVER={os.environ.get('SQLSERVER_HOST', '74.117.224.152')};"
         f"DATABASE={os.environ.get('SQLSERVER_DB', 'irx')};"
         f"UID={os.environ.get('SQLSERVER_USER', 'claudeservices')};"
