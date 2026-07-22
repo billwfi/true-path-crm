@@ -103,10 +103,11 @@ RECON = {
         "group_name": "Anders Group",
         "eligibility": {
             "stage_table": "Eligibility834_Anders",   # loaded by parse_834.py
-            # Full reload keyed by SSN: wipe existing rows and load the file fresh,
-            # MEMBER_ID = each member's own SSN (fallback: subscriber SSN if blank).
-            "match": "reload",
-            "stage_key": "Person_Ssn",                 # MEMBER_ID = own SSN
+            # Ongoing mode (the one-time SSN reload established the baseline): match
+            # by name+DOB (unique per person, stable now that ids are SSNs), refresh
+            # fields, add new members, and mark members MISSING from the file Inactive.
+            "match": "name_dob",
+            "stage_key": "Person_Ssn",                 # MEMBER_ID for new adds (own SSN)
             "stage_key_fallback": "Member_Id",         # subscriber SSN if own SSN blank
             "map": {
                 "MEMBER_ID": "Person_Ssn",
@@ -353,13 +354,15 @@ def _elig_reconcile_namedob(cur, cfg, commit):
     # authoritative current feed). Keep the existing MEMBER_ID and MEMBER_FROM_DATE
     # (original enrollment date); everything else is overwritten with file values.
     if matched:
+        # Refresh fields but DON'T touch LoadUpdateDate — that date drives the AMT
+        # "Adds" report, so only genuine adds/terms should carry today's date.
         refresh = [c for c in e["map"] if c not in ("MEMBER_ID", "MEMBER_FROM_DATE")]
-        setcl = ", ".join(f"[{c}]=?" for c in refresh) + ", AccountStatus='Active', LoadUpdateDate=?"
+        setcl = ", ".join(f"[{c}]=?" for c in refresh) + ", AccountStatus='Active'"
         upd = []
         for k in matched:
             row = file_members[k]
             vals = [val(row, e["map"][c]) or None for c in refresh]
-            vals += [today, carrier, existing[k][0]]
+            vals += [carrier, existing[k][0]]
             upd.append(tuple(vals))
         cur.fast_executemany = True
         cur.executemany(
