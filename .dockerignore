@@ -1,0 +1,15 @@
+node_modules
+npm-debug.log
+.git
+.gitignore
+.env
+.env.*
+*.md
+FEATURE_ANALYSIS.md
+scripts
+netlify.toml
+.github
+.vscode
+docs
+*.log
+reconcile_*_preview.html
