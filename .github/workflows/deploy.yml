@@ -1,0 +1,83 @@
+name: Deploy to Azure Container Apps
+
+# Build the image once, then promote it dev -> staging -> prod.
+# dev deploys automatically; staging and prod each wait for approval
+# (GitHub Environments "staging"/"prod" required reviewers).
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  id-token: write   # OIDC federated login to Azure (no stored secret)
+  contents: read
+
+env:
+  ACR: acrtpcrm
+  ACR_LOGIN_SERVER: acrtpcrm.azurecr.io
+  IMAGE_REPO: tpcrm
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.meta.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: meta
+        run: echo "tag=${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      - name: Build & push image in ACR (server-side, no local Docker)
+        run: |
+          az acr build --registry "$ACR" \
+            --image "$IMAGE_REPO:${{ steps.meta.outputs.tag }}" \
+            --image "$IMAGE_REPO:latest" .
+
+  deploy-dev:
+    needs: build
+    runs-on: ubuntu-latest
+    environment: dev
+    steps:
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      - name: Update ca-tpcrm-dev
+        run: |
+          az containerapp update -n ca-tpcrm-dev -g rg-tpcrm-dev \
+            --image "$ACR_LOGIN_SERVER/$IMAGE_REPO:${{ needs.build.outputs.tag }}"
+
+  deploy-staging:
+    needs: [build, deploy-dev]
+    runs-on: ubuntu-latest
+    environment: staging   # requires approval
+    steps:
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      - name: Update ca-tpcrm-staging
+        run: |
+          az containerapp update -n ca-tpcrm-staging -g rg-tpcrm-staging \
+            --image "$ACR_LOGIN_SERVER/$IMAGE_REPO:${{ needs.build.outputs.tag }}"
+
+  deploy-prod:
+    needs: [build, deploy-staging]
+    runs-on: ubuntu-latest
+    environment: prod      # requires approval
+    steps:
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      - name: Update ca-tpcrm-prod
+        run: |
+          az containerapp update -n ca-tpcrm-prod -g rg-tpcrm-prod \
+            --image "$ACR_LOGIN_SERVER/$IMAGE_REPO:${{ needs.build.outputs.tag }}"
