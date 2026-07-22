@@ -27,9 +27,11 @@ for sub in "${targets[@]}"; do
   APPFQDN="$(az containerapp show -n "$APP" -g "$RG" --query properties.configuration.ingress.fqdn -o tsv)"
   VID="$(az containerapp show -n "$APP" -g "$RG" --query properties.customDomainVerificationId -o tsv)"
 
+  # DNS check via Google DNS-over-HTTPS (portable; avoids Windows nslookup
+  # truncating long TXT records — the reason a native nslookup check false-fails).
   log "[$HOST] checking DNS…"
-  CNAME_OK=$(nslookup -type=CNAME "$HOST" 2>/dev/null | grep -i "$APPFQDN" || true)
-  TXT_OK=$(nslookup -type=TXT "asuid.$HOST" 2>/dev/null | grep -i "$VID" || true)
+  CNAME_OK=$(curl -s "https://dns.google/resolve?name=$HOST&type=CNAME" | grep -io "$APPFQDN" || true)
+  TXT_OK=$(curl -s "https://dns.google/resolve?name=asuid.$HOST&type=TXT" | grep -io "$VID" || true)
   if [[ -z "$CNAME_OK" ]]; then warn "[$HOST] CNAME -> $APPFQDN not visible yet; skipping."; continue; fi
   if [[ -z "$TXT_OK" ]];   then warn "[$HOST] TXT asuid.$HOST not visible yet; skipping."; continue; fi
 
