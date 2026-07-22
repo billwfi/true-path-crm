@@ -97,6 +97,40 @@ RECON = {
                     "dayssupply", "pharmacynpi"],
         },
     },
+    "anders": {
+        "client_id": 6,
+        "carrier": "000239911",
+        "group_name": "Anders Group",
+        "eligibility": {
+            "stage_table": "Eligibility834_Anders",   # loaded by parse_834.py
+            # 834 is SSN-keyed but existing rows use payroll 0BX ids — reconcile
+            # on name+DOB so we update the same people in place, not churn ids.
+            "match": "name_dob",
+            "stage_key": "Person_Ssn",                 # MEMBER_ID assigned to new adds
+            "map": {
+                "MEMBER_ID": "Person_Ssn",
+                "RELATIONSHIP_CODE": "Relationship",
+                "LAST_NAME": "Last_Name",
+                "FIRST_NAME": "First_Name",
+                "MIDDLE_INITIAL": ("left1", "Middle_Name"),
+                "SEX": "Gender",
+                "DATE_OF_BIRTH": "Date_Of_Birth",
+                "SOCIAL_SECURITY_NUMBER": "Person_Ssn",
+                "ADDRESS_1": "Address1",
+                "ADDRESS_2": "Address2",
+                "CITY": "City",
+                "STATE": "State",
+                "ZIP": "Zip",
+                "PHONE": "Phone",
+                "EMail_Address": "Email",
+                "FAMILY_TYPE": "Coverage_Level",
+                "MEMBER_FROM_DATE": "Member_From_Date",
+                # MEMBER_THRU_DATE left NULL on adds; set only on inactivation.
+            },
+            "report_join": ("Carrier", "Person_Ssn"),
+        },
+        # eligibility-only feed (no claims)
+    },
 }
 
 
@@ -117,8 +151,42 @@ def norm(v):
 
 
 # ── Eligibility reconcile ─────────────────────────────────────────────────────
+def _stage_reader(cur, e):
+    """Return (rows, val) for the staging table: val(row, mapsrc) -> string."""
+    stage_cols = []
+    for tgt, src in e["map"].items():
+        stage_cols.append(src[1] if isinstance(src, tuple) else src)
+    stage_cols = list(dict.fromkeys(stage_cols + [e["stage_key"]]))
+    sel = ", ".join(f"[{c}]" for c in stage_cols)
+    rows = cur.execute(f"SELECT {sel} FROM dbo.[{e['stage_table']}]").fetchall()
+    colidx = {c: i for i, c in enumerate(stage_cols)}
+
+    def val(row, src):
+        if isinstance(src, tuple):
+            raw = norm(row[colidx[src[1]]])
+            return raw[:1] if src[0] == "left1" else raw
+        return norm(row[colidx[src]])
+    return rows, colidx, val
+
+
+def _insert_adds(cur, e, carrier, gname, today, add_rows, val):
+    ins_cols = list(e["map"].keys()) + ["CARRIER", "GroupName", "LoadUpdateDate", "AccountStatus"]
+    collist = ", ".join(f"[{c}]" for c in ins_cols)
+    ph = ", ".join("?" for _ in ins_cols)
+    ins_rows = []
+    for row in add_rows:
+        vals = [val(row, e["map"][c]) or None for c in e["map"]]
+        vals += [carrier, gname, today, "Active"]
+        ins_rows.append(tuple(vals))
+    if ins_rows:
+        cur.fast_executemany = True
+        cur.executemany(f"INSERT INTO dbo.eligibility ({collist}) VALUES ({ph})", ins_rows)
+
+
 def eligibility_reconcile(cur, cfg, commit):
     e = cfg["eligibility"]
+    if e.get("match") == "name_dob":
+        return _elig_reconcile_namedob(cur, cfg, commit)
     carrier, gname = cfg["carrier"], cfg["group_name"]
     today = date.today()
     stage_cols = []
@@ -187,6 +255,60 @@ def eligibility_reconcile(cur, cfg, commit):
     return {"adds": len(adds), "matched": len(matched), "terms": len(terms)}
 
 
+# ── Eligibility reconcile keyed on NAME + DOB (for id-scheme-mismatched feeds) ─
+def _elig_reconcile_namedob(cur, cfg, commit):
+    e = cfg["eligibility"]
+    carrier, gname = cfg["carrier"], cfg["group_name"]
+    today = date.today()
+    rows, colidx, val = _stage_reader(cur, e)
+
+    def nk(last, first, dob):
+        return (last.strip().upper(), first.strip().upper(), dob.strip()[:10])
+
+    file_members = {}   # (LAST,FIRST,DOB) -> stage row
+    for r in rows:
+        k = nk(val(r, e["map"]["LAST_NAME"]), val(r, e["map"]["FIRST_NAME"]),
+               val(r, e["map"]["DATE_OF_BIRTH"]))
+        if all(k):
+            file_members[k] = r
+
+    ex = cur.execute(
+        "SELECT MEMBER_ID, LAST_NAME, FIRST_NAME, DATE_OF_BIRTH, AccountStatus "
+        "FROM dbo.eligibility WHERE CARRIER=?", carrier).fetchall()
+    existing = {}       # (LAST,FIRST,DOB) -> (MEMBER_ID, AccountStatus)
+    for r in ex:
+        existing[nk(norm(r[1]), norm(r[2]), norm(r[3]))] = (norm(r[0]), norm(r[4]))
+
+    adds = [k for k in file_members if k not in existing]
+    matched = [k for k in file_members if k in existing]
+    terms = [k for k, (mid, st) in existing.items()
+             if k not in file_members and st.lower() != "inactive"]
+
+    print(f"  Eligibility (name+DOB): {len(file_members)} in file | "
+          f"{len(adds)} add, {len(matched)} matched(->Active, keep id), "
+          f"{len(terms)} term(->Inactive)")
+
+    if not commit:
+        for k in adds[:3]:
+            print(f"      + add   {k[1]} {k[0]}  DOB {k[2]}")
+        for k in terms[:3]:
+            print(f"      - term  {k[1]} {k[0]}  DOB {k[2]}  (id {existing[k][0]})")
+        return {"adds": len(adds), "matched": len(matched), "terms": len(terms)}
+
+    _insert_adds(cur, e, carrier, gname, today, [file_members[k] for k in adds], val)
+    if matched:
+        cur.executemany(
+            "UPDATE dbo.eligibility SET AccountStatus='Active', LoadUpdateDate=? "
+            "WHERE CARRIER=? AND MEMBER_ID=?",
+            [(today, carrier, existing[k][0]) for k in matched])
+    if terms:
+        cur.executemany(
+            "UPDATE dbo.eligibility SET MEMBER_THRU_DATE=?, AccountStatus='Inactive', LoadUpdateDate=? "
+            "WHERE CARRIER=? AND MEMBER_ID=?",
+            [(today.strftime("%m/%d/%Y"), today, carrier, existing[k][0]) for k in terms])
+    return {"adds": len(adds), "matched": len(matched), "terms": len(terms)}
+
+
 # ── Claims reconcile (add-only) ──────────────────────────────────────────────
 def claims_reconcile(cur, cfg, commit):
     c = cfg["claims"]
@@ -236,27 +358,28 @@ def claims_reconcile(cur, cfg, commit):
 
 # ── AMT reconciliation report (adapted from the Gregg County query) ──────────
 def build_report(cur, cfg):
-    e, c = cfg["eligibility"], cfg["claims"]
+    e = cfg["eligibility"]
     ca, mi = e["report_join"]
-    glp1 = " OR ".join(f"a.drugname LIKE '%{k}%'" for k in GLP1_LIKE)
-    sql = f"""
-    SELECT DISTINCT 'Eligibility - Adds' AS loadcategory, a.GroupName AS grp, a.LAST_NAME AS last_name, a.FIRST_NAME AS first_name, a.LoadUpdateDate AS d
+    parts = [
+        f"""SELECT DISTINCT 'Eligibility - Adds' AS loadcategory, a.GroupName AS grp, a.LAST_NAME AS last_name, a.FIRST_NAME AS first_name, a.LoadUpdateDate AS d
     FROM dbo.eligibility a
       JOIN dbo.[{e['stage_table']}] x ON x.[{ca}] = a.CARRIER AND x.[{mi}] = a.MEMBER_ID
-    WHERE CONVERT(date, a.LoadUpdateDate, 101) = CONVERT(date, GETDATE(), 101)
-    UNION
-    SELECT DISTINCT 'Eligibility - Terms', a.GroupName, a.LAST_NAME, a.FIRST_NAME, a.LoadUpdateDate
+    WHERE CONVERT(date, a.LoadUpdateDate, 101) = CONVERT(date, GETDATE(), 101) AND a.AccountStatus = 'Active'""",
+        """SELECT DISTINCT 'Eligibility - Terms', a.GroupName, a.LAST_NAME, a.FIRST_NAME, a.LoadUpdateDate
     FROM dbo.eligibility a
-      LEFT JOIN dbo.[{e['stage_table']}] x ON x.[{ca}] = a.CARRIER AND x.[{mi}] = a.MEMBER_ID
-    WHERE a.CARRIER = ? AND CONVERT(date, a.LoadUpdateDate, 101) = CONVERT(date, GETDATE(), 101) AND x.[{mi}] IS NULL
-    UNION
-    SELECT DISTINCT 'Claims - GLP1 - Adds', a.clientname, a.patientlastname, a.patientfirstname, a.LoadUpdateDate
+    WHERE a.CARRIER = ? AND a.AccountStatus = 'Inactive' AND CONVERT(date, a.LoadUpdateDate, 101) = CONVERT(date, GETDATE(), 101)""",
+    ]
+    params = [cfg["carrier"]]
+    if cfg.get("claims"):
+        c = cfg["claims"]
+        glp1 = " OR ".join(f"a.drugname LIKE '%{k}%'" for k in GLP1_LIKE)
+        parts.append(f"""SELECT DISTINCT 'Claims - GLP1 - Adds', a.clientname, a.patientlastname, a.patientfirstname, a.LoadUpdateDate
     FROM dbo.[{c['target']}] a
     WHERE a.clientid = ? AND CONVERT(date, a.LoadUpdateDate, 101) = CONVERT(date, GETDATE(), 101)
-      AND ({glp1})
-    ORDER BY loadcategory, last_name, first_name
-    """
-    return cur.execute(sql, cfg["carrier"], c["clientid"]).fetchall()
+      AND ({glp1})""")
+        params.append(c["clientid"])
+    sql = "\n    UNION\n    ".join(parts) + "\n    ORDER BY loadcategory, last_name, first_name"
+    return cur.execute(sql, *params).fetchall()
 
 
 def report_html(cfg, rows):
@@ -312,7 +435,8 @@ def main():
     print(f"== {cfg['group_name']} reconcile ({'COMMIT' if args.commit else 'DRY RUN'}) ==")
     try:
         eligibility_reconcile(cur, cfg, args.commit)
-        claims_reconcile(cur, cfg, args.commit)
+        if cfg.get("claims"):
+            claims_reconcile(cur, cfg, args.commit)
         if args.commit:
             cn.commit()
             print("  committed.")
