@@ -6,6 +6,13 @@
 #                Set to "--commit --send" to write prod eligibility/claims + email.
 # Secrets (IRX_DB_PWD, MCR_SFTP_PWD, SMTP_PASS) come from Container App secrets.
 set -e
+
+# EDI 834 feeds (e.g. Anders) use a different SFTP puller + parser than the
+# CSV/XLSX sftp_import path below. Select with PIPELINE=834.
+if [ "$PIPELINE" = "834" ]; then
+  exec python scripts/client_imports/run_834_pipeline.py "${CLIENT:-anders}"
+fi
+
 CLIENT="${CLIENT:-mcrhotels}"
 
 echo ">>> [$(date -u +%FT%TZ)] SFTP import: $CLIENT"
