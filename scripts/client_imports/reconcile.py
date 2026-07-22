@@ -285,7 +285,7 @@ def _elig_reconcile_namedob(cur, cfg, commit):
              if k not in file_members and st.lower() != "inactive"]
 
     print(f"  Eligibility (name+DOB): {len(file_members)} in file | "
-          f"{len(adds)} add, {len(matched)} matched(->Active, keep id), "
+          f"{len(adds)} add, {len(matched)} matched(->Active + refresh fields, keep id), "
           f"{len(terms)} term(->Inactive)")
 
     if not commit:
@@ -296,11 +296,21 @@ def _elig_reconcile_namedob(cur, cfg, commit):
         return {"adds": len(adds), "matched": len(matched), "terms": len(terms)}
 
     _insert_adds(cur, e, carrier, gname, today, [file_members[k] for k in adds], val)
+    # Matched -> Active AND refresh demographic/address fields from the file (the
+    # authoritative current feed). Keep the existing MEMBER_ID and MEMBER_FROM_DATE
+    # (original enrollment date); everything else is overwritten with file values.
     if matched:
+        refresh = [c for c in e["map"] if c not in ("MEMBER_ID", "MEMBER_FROM_DATE")]
+        setcl = ", ".join(f"[{c}]=?" for c in refresh) + ", AccountStatus='Active', LoadUpdateDate=?"
+        upd = []
+        for k in matched:
+            row = file_members[k]
+            vals = [val(row, e["map"][c]) or None for c in refresh]
+            vals += [today, carrier, existing[k][0]]
+            upd.append(tuple(vals))
+        cur.fast_executemany = True
         cur.executemany(
-            "UPDATE dbo.eligibility SET AccountStatus='Active', LoadUpdateDate=? "
-            "WHERE CARRIER=? AND MEMBER_ID=?",
-            [(today, carrier, existing[k][0]) for k in matched])
+            f"UPDATE dbo.eligibility SET {setcl} WHERE CARRIER=? AND MEMBER_ID=?", upd)
     if terms:
         cur.executemany(
             "UPDATE dbo.eligibility SET MEMBER_THRU_DATE=?, AccountStatus='Inactive', LoadUpdateDate=? "
