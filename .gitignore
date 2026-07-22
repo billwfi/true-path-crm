@@ -8,3 +8,4 @@ scripts/client_imports/reconcile_*_preview.html
 deploy/azure/env.dev
 deploy/azure/env.staging
 deploy/azure/env.prod
+deploy/azure/env.jobs

@@ -6,10 +6,14 @@ npm-debug.log
 .env.*
 *.md
 FEATURE_ANALYSIS.md
-scripts
-netlify.toml
 .github
 .vscode
 docs
 *.log
 reconcile_*_preview.html
+# Never ship real secrets into any build context
+.env
+deploy/azure/env.dev
+deploy/azure/env.staging
+deploy/azure/env.prod
+deploy/azure/env.jobs
