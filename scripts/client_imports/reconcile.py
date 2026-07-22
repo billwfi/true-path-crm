@@ -103,10 +103,11 @@ RECON = {
         "group_name": "Anders Group",
         "eligibility": {
             "stage_table": "Eligibility834_Anders",   # loaded by parse_834.py
-            # 834 is SSN-keyed but existing rows use payroll 0BX ids — reconcile
-            # on name+DOB so we update the same people in place, not churn ids.
-            "match": "name_dob",
-            "stage_key": "Person_Ssn",                 # MEMBER_ID assigned to new adds
+            # Full reload keyed by SSN: wipe existing rows and load the file fresh,
+            # MEMBER_ID = each member's own SSN (fallback: subscriber SSN if blank).
+            "match": "reload",
+            "stage_key": "Person_Ssn",                 # MEMBER_ID = own SSN
+            "stage_key_fallback": "Member_Id",         # subscriber SSN if own SSN blank
             "map": {
                 "MEMBER_ID": "Person_Ssn",
                 "RELATIONSHIP_CODE": "Relationship",
@@ -156,7 +157,8 @@ def _stage_reader(cur, e):
     stage_cols = []
     for tgt, src in e["map"].items():
         stage_cols.append(src[1] if isinstance(src, tuple) else src)
-    stage_cols = list(dict.fromkeys(stage_cols + [e["stage_key"]]))
+    extra = [e.get("stage_key"), e.get("stage_key_fallback")]
+    stage_cols = list(dict.fromkeys(stage_cols + [c for c in extra if c]))
     sel = ", ".join(f"[{c}]" for c in stage_cols)
     rows = cur.execute(f"SELECT {sel} FROM dbo.[{e['stage_table']}]").fetchall()
     colidx = {c: i for i, c in enumerate(stage_cols)}
@@ -185,6 +187,8 @@ def _insert_adds(cur, e, carrier, gname, today, add_rows, val):
 
 def eligibility_reconcile(cur, cfg, commit):
     e = cfg["eligibility"]
+    if e.get("match") == "reload":
+        return _elig_reconcile_reload(cur, cfg, commit)
     if e.get("match") == "name_dob":
         return _elig_reconcile_namedob(cur, cfg, commit)
     carrier, gname = cfg["carrier"], cfg["group_name"]
@@ -253,6 +257,55 @@ def eligibility_reconcile(cur, cfg, commit):
             "WHERE CARRIER=? AND MEMBER_ID=?",
             [(today.strftime("%m/%d/%Y"), today, carrier, m) for m in terms])
     return {"adds": len(adds), "matched": len(matched), "terms": len(terms)}
+
+
+# ── Full reload: wipe the carrier's rows and load the file fresh, keyed by SSN ─
+def _elig_reconcile_reload(cur, cfg, commit):
+    e = cfg["eligibility"]
+    carrier, gname = cfg["carrier"], cfg["group_name"]
+    today = date.today()
+    rows, colidx, val = _stage_reader(cur, e)
+    key_src = e["stage_key"]                       # MEMBER_ID source (SSN)
+    fb = e.get("stage_key_fallback")               # e.g. subscriber SSN if own SSN blank
+
+    def member_id(r):
+        v = norm(r[colidx[key_src]])
+        return v or (norm(r[colidx[fb]]) if fb else "")
+
+    def own_blank(r):
+        return not norm(r[colidx[key_src]])
+    no_id = [r for r in rows if not member_id(r)]
+    fb_used = [r for r in rows if own_blank(r) and member_id(r)]
+    existing = cur.execute(
+        "SELECT COUNT(*) FROM dbo.eligibility WHERE CARRIER=?", carrier).fetchone()[0]
+
+    print(f"  Eligibility (RELOAD, key={key_src}): delete {existing} existing "
+          f"-> insert {len(rows) - len(no_id)} from file"
+          + (f"; {len(no_id)} with NO id (skipped)" if no_id else ""))
+    for r in fb_used:
+        print(f"      ~ no own SSN, using subscriber SSN {member_id(r)}: "
+              f"{val(r, e['map']['FIRST_NAME'])} {val(r, e['map']['LAST_NAME'])}")
+
+    if not commit:
+        print(f"      would DELETE all {existing} rows for CARRIER {carrier}, "
+              f"then INSERT {len(rows) - len(no_id)} keyed by {key_src}")
+        return {"deleted": existing, "inserted": len(rows) - len(no_id)}
+
+    cur.execute("DELETE FROM dbo.eligibility WHERE CARRIER=?", carrier)
+    ins_cols = list(e["map"].keys()) + ["CARRIER", "GroupName", "LoadUpdateDate", "AccountStatus"]
+    collist = ", ".join(f"[{c}]" for c in ins_cols)
+    ph = ", ".join("?" for _ in ins_cols)
+    ins = []
+    for r in rows:
+        mid = member_id(r)
+        if not mid:
+            continue                                # can't key without an SSN — skip + reported
+        vals = [(mid if c == "MEMBER_ID" else val(r, e["map"][c])) or None for c in e["map"]]
+        vals += [carrier, gname, today, "Active"]
+        ins.append(tuple(vals))
+    cur.fast_executemany = True
+    cur.executemany(f"INSERT INTO dbo.eligibility ({collist}) VALUES ({ph})", ins)
+    return {"deleted": existing, "inserted": len(ins)}
 
 
 # ── Eligibility reconcile keyed on NAME + DOB (for id-scheme-mismatched feeds) ─
