@@ -8,7 +8,7 @@ set -euo pipefail
 # Subscription 1 under bwalker@truepathsourcing.com. Set this so the scripts
 # NEVER provision into whatever subscription happens to be the CLI default.
 # Find it with:  az account list -o table
-SUBSCRIPTION_ID="${SUBSCRIPTION_ID:-}"
+SUBSCRIPTION_ID="${SUBSCRIPTION_ID:-7166b785-9254-4943-9d61-62e668b7ca58}"
 
 # Expected signed-in user — a guard so we don't build in the wrong tenant.
 EXPECTED_USER="${EXPECTED_USER:-bwalker@truepathsourcing.com}"
