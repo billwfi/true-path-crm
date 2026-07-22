@@ -3,3 +3,8 @@ node_modules
 .netlify
 .vscode/
 scripts/client_imports/reconcile_*_preview.html
+
+# Azure per-environment secrets (real values — never commit)
+deploy/azure/env.dev
+deploy/azure/env.staging
+deploy/azure/env.prod
