@@ -1,3 +1,4 @@
 pyodbc>=5.1,<6
 paramiko>=3.4,<4
 openpyxl>=3.1,<4
+azure-communication-sms>=1.0,<2

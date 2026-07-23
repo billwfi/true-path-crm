@@ -12,6 +12,9 @@ set -e
 if [ "$PIPELINE" = "834" ]; then
   exec python scripts/client_imports/run_834_pipeline.py "${CLIENT:-anders}"
 fi
+if [ "$PIPELINE" = "smswatch" ]; then
+  exec python scripts/sms_verify_watch.py
+fi
 
 CLIENT="${CLIENT:-mcrhotels}"
 
