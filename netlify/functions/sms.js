@@ -25,7 +25,8 @@ exports.handler = async function (event) {
       }
       const top = Math.min(parseInt(limit, 10) || 100, 1000);
       const r = await mssql(
-        `SELECT TOP (${top}) id, to_number, from_number, message, status, error, member_key, created_at
+        `SELECT TOP (${top}) id, to_number, from_number, message, status, error,
+                delivery_status, delivery_detail, delivered_at, member_key, created_at
          FROM dbo.SMS_Log ORDER BY id DESC`);
       return ok({
         log: r.recordset,
