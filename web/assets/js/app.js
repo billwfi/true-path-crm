@@ -179,6 +179,7 @@ function initNav(activeKey) {
         <i class="fa-solid fa-chevron-down chev"></i>
       </button>
       <div class="user-menu hidden" id="user-menu">
+        <a href="https://claude.ai/code/artifact/751d6e4f-d8e4-47a4-ab83-44d367d28fd9" target="_blank" rel="noopener"><i class="fa-solid fa-map"></i> Roadmap</a>
         <a href="/project-plan/"><i class="fa-solid fa-diagram-project"></i> Project Plan</a>
         <a href="/release-notes/"><i class="fa-solid fa-rocket"></i> Release Notes</a>
         <div class="user-menu-sep"></div>
