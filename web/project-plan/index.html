@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Project Plan — True Path CRM</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+  <link rel="stylesheet" href="/assets/css/app.css">
+  <style>
+    .pp-cat { margin-bottom: 22px; }
+    .pp-cat-head { display: flex; align-items: center; gap: 12px; margin: 0 2px 10px; }
+    .pp-code { font: 700 13px/1 ui-monospace,Consolas,monospace; color: #fff; background: #0d7d74;
+      width: 30px; height: 30px; display: grid; place-items: center; border-radius: 8px; flex: none; }
+    .pp-cat-head h2 { font-size: 17px; font-weight: 650; color: #1e293b; }
+    .pp-cat-head .goal { font-size: 12.5px; color: #64748b; }
+    .pp-prog { margin-left: auto; font-size: 12px; color: #64748b; white-space: nowrap; }
+    .pp-prog .bar { display: inline-block; width: 90px; height: 6px; border-radius: 3px; background: #e2e8f0; vertical-align: middle; margin-left: 8px; overflow: hidden; }
+    .pp-prog .bar i { display: block; height: 100%; background: #15803d; }
+    .pp-task { border: 1px solid #e2e8f0; border-radius: 10px; background: #fff; padding: 12px 14px; margin-bottom: 8px; }
+    .pp-row { display: flex; align-items: flex-start; gap: 12px; }
+    .pp-main { flex: 1; min-width: 0; }
+    .pp-title { font-weight: 600; color: #1e293b; font-size: 14.5px; }
+    .pp-chip { font: 600 10.5px/1 ui-monospace,Consolas,monospace; letter-spacing: .03em; padding: 3px 6px;
+      border-radius: 5px; background: #f1f5f9; color: #475569; margin-left: 6px; vertical-align: middle; }
+    .pp-desc { font-size: 12.5px; color: #64748b; margin-top: 3px; }
+    .pp-status { flex: none; }
+    .pp-status select { font-size: 12.5px; padding: 5px 8px; border: 1px solid #cbd5e1; border-radius: 7px; background: #fff; cursor: pointer; }
+    .pp-tools { display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap; align-items: center; }
+    .pp-link { font-size: 12px; color: #0a5e57; cursor: pointer; background: none; border: 0; padding: 0; }
+    .pp-link:hover { text-decoration: underline; }
+    .pp-notes { margin-top: 10px; display: none; }
+    .pp-notes.open { display: block; }
+    .pp-notes textarea { width: 100%; }
+    .pp-fb { font-size: 11.5px; color: #94a3b8; }
+    .s-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; vertical-align: middle; }
+    .shot-modal img { max-width: 100%; max-height: 78vh; display: block; margin: 0 auto; border-radius: 8px; }
+  </style>
+</head>
+<body class="bg-slate-100 text-slate-700">
+<div id="app" class="flex h-screen overflow-hidden">
+  <div id="nav-placeholder"></div>
+  <div class="flex-1 flex flex-col overflow-hidden">
+    <div id="topbar"></div>
+    <main class="flex-1 overflow-y-auto p-6">
+      <div class="search-bar">
+        <span id="pp-summary" class="text-sm text-slate-500"></span>
+        <button class="btn btn-outline btn-sm" onclick="loadPlan()"><i class="fa-solid fa-rotate"></i> Refresh</button>
+        <button class="btn btn-primary btn-sm" onclick="addCategory()"><i class="fa-solid fa-plus"></i> Category</button>
+      </div>
+      <div id="pp-body"></div>
+      <div id="pp-empty" class="empty-state" style="display:none"><i class="fa-solid fa-diagram-project"></i><p>No project plan yet.</p></div>
+    </main>
+  </div>
+</div>
+
+<!-- screenshot viewer -->
+<div id="shot-modal" class="modal-backdrop hidden">
+  <div class="modal shot-modal" style="max-width:900px">
+    <div class="modal-header"><span>Feedback screenshot</span>
+      <button onclick="closeModal('shot-modal')" class="text-slate-400 hover:text-slate-600"><i class="fa-solid fa-xmark"></i></button></div>
+    <div class="modal-body"><img id="shot-img" alt="Screenshot"></div>
+  </div>
+</div>
+
+<script src="/assets/js/app.js"></script>
+<script>
+  const S_COLORS = { 'Not Started':'#94a3b8', 'In Progress':'#2563eb', 'Testing':'#a16207', 'Blocked':'#b91c1c', 'Done':'#15803d' };
+  let STATUSES = ['Not Started','In Progress','Testing','Blocked','Done'];
+  let CATS = [];
+
+  async function loadPlan() {
+    const data = await apiGet('/project-plan');
+    if (!data) return;
+    STATUSES = data.statuses || STATUSES;
+    CATS = data.categories || [];
+    const total = CATS.reduce((a,c)=>a+c.tasks.length,0);
+    const done = CATS.reduce((a,c)=>a+c.tasks.filter(t=>t.status==='Done').length,0);
+    document.getElementById('pp-summary').textContent = `${total} item${total===1?'':'s'} · ${done} done`;
+    const body = document.getElementById('pp-body');
+    document.getElementById('pp-empty').style.display = total || CATS.length ? 'none' : '';
+    body.innerHTML = CATS.map(renderCat).join('');
+  }
+
+  function renderCat(c) {
+    const done = c.tasks.filter(t=>t.status==='Done').length;
+    const pct = c.tasks.length ? Math.round(done/c.tasks.length*100) : 0;
+    return `<div class="pp-cat">
+      <div class="pp-cat-head">
+        <span class="pp-code">${esc(c.code||'')}</span>
+        <div><h2>${esc(c.title)}</h2>${c.goal?`<div class="goal">${esc(c.goal)}</div>`:''}</div>
+        <span class="pp-prog">${done}/${c.tasks.length}<span class="bar"><i style="width:${pct}%"></i></span></span>
+      </div>
+      ${c.tasks.map(renderTask).join('')}
+      <button class="pp-link" style="margin:4px 2px" onclick="addTask(${c.id})"><i class="fa-solid fa-plus"></i> Add item</button>
+    </div>`;
+  }
+
+  function renderTask(t) {
+    const opts = STATUSES.map(s=>`<option ${s===t.status?'selected':''}>${s}</option>`).join('');
+    const fb = t.source==='feedback';
+    return `<div class="pp-task" id="task-${t.id}">
+      <div class="pp-row">
+        <div class="pp-main">
+          <div class="pp-title">${esc(t.title)}
+            ${t.ref_tag?`<span class="pp-chip">${esc(t.ref_tag)}</span>`:''}
+            ${t.effort?`<span class="pp-chip">${esc(t.effort)}</span>`:''}
+            ${fb?`<span class="pp-chip" style="background:#e0f2f1;color:#0a5e57">feedback</span>`:''}
+          </div>
+          ${t.description?`<div class="pp-desc">${esc(t.description)}</div>`:''}
+          <div class="pp-tools">
+            <button class="pp-link" onclick="toggleNotes(${t.id})"><i class="fa-regular fa-note-sticky"></i> Dev notes${t.dev_notes?' •':''}</button>
+            ${fb && t.has_screenshot?`<button class="pp-link" onclick="viewShot(${t.id})"><i class="fa-regular fa-image"></i> Screenshot</button>`:''}
+            ${fb && t.page_url?`<a class="pp-link" href="${esc(t.page_url)}" target="_blank" rel="noopener"><i class="fa-solid fa-arrow-up-right-from-square"></i> Page</a>`:''}
+            ${fb?`<span class="pp-fb">${esc(t.updated_by_name||'')} · ${fmtDate(t.created_at)}</span>`:''}
+            <button class="pp-link" style="color:#b91c1c;margin-left:auto" onclick="delTask(${t.id})"><i class="fa-regular fa-trash-can"></i></button>
+          </div>
+          <div class="pp-notes" id="notes-${t.id}">
+            <textarea class="form-control" id="notes-ta-${t.id}" rows="3" placeholder="Dev notes…">${esc(t.dev_notes||'')}</textarea>
+            <div style="margin-top:6px"><button class="btn btn-primary btn-sm" onclick="saveNotes(${t.id})">Save notes</button></div>
+          </div>
+        </div>
+        <div class="pp-status">
+          <select onchange="changeStatus(${t.id}, this.value)">
+            ${STATUSES.map(s=>`<option ${s===t.status?'selected':''}>${s}</option>`).join('')}
+          </select>
+        </div>
+      </div>
+    </div>`;
+  }
+
+  async function changeStatus(id, status) {
+    const res = await apiPatch(`/project-plan?id=${id}`, { status });
+    if (res && res.ok) { showToast('Status updated', 'success'); loadPlan(); }
+    else showToast('Could not update', 'error');
+  }
+  function toggleNotes(id) { document.getElementById('notes-'+id).classList.toggle('open'); }
+  async function saveNotes(id) {
+    const dev_notes = document.getElementById('notes-ta-'+id).value;
+    const res = await apiPatch(`/project-plan?id=${id}`, { dev_notes });
+    if (res && res.ok) { showToast('Notes saved', 'success'); loadPlan(); }
+    else showToast('Could not save', 'error');
+  }
+  async function viewShot(id) {
+    const d = await apiGet(`/project-plan?resource=screenshot&id=${id}`);
+    if (d && d.screenshot) { document.getElementById('shot-img').src = d.screenshot; openModal('shot-modal'); }
+    else showToast('No screenshot', 'error');
+  }
+  async function addTask(catId) {
+    const title = prompt('New item title:');
+    if (!title) return;
+    const res = await apiPost('/project-plan', { category_id: catId, title });
+    if (res && res.ok) loadPlan(); else showToast('Could not add', 'error');
+  }
+  async function addCategory() {
+    const title = prompt('New category name:');
+    if (!title) return;
+    const code = (prompt('Short code (e.g. F):', '') || '').slice(0,8);
+    const res = await apiPost('/project-plan?resource=category', { title, code });
+    if (res && res.ok) loadPlan(); else showToast('Could not add', 'error');
+  }
+  async function delTask(id) {
+    if (!confirm2('Delete this item?')) return;
+    const res = await apiDelete(`/project-plan?id=${id}`);
+    if (res && res.ok) loadPlan(); else showToast('Could not delete', 'error');
+  }
+
+  initNav('project-plan');
+  loadPlan();
+</script>
+</body>
+</html>

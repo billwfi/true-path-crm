@@ -168,10 +168,23 @@ function initNav(activeKey) {
     'invoices-data': 'Invoices & Statements — Invoice Data',
     imports: 'Eligibility & Claims Imports',
     companies: 'Companies', brokers: 'Brokers', 'user-management': 'User Management',
+    'project-plan': 'Project Plan', 'release-notes': 'Release Notes',
   };
+  const userName = (user && (user.firstname + ' ' + user.lastname).trim()) || user?.email || '';
   document.getElementById('topbar').innerHTML = `
     <span class="topbar-title">${pageTitles[activeKey] || ''}</span>
-    <span class="topbar-user"><i class="fa-solid fa-user-circle"></i> ${esc((user && (user.firstname + ' ' + user.lastname)) || user?.email || '')}</span>`;
+    <div class="topbar-usermenu">
+      <button class="topbar-user" onclick="toggleUserMenu(event)" aria-haspopup="true">
+        <i class="fa-solid fa-user-circle"></i><span>${esc(userName)}</span>
+        <i class="fa-solid fa-chevron-down chev"></i>
+      </button>
+      <div class="user-menu hidden" id="user-menu">
+        <a href="/project-plan/"><i class="fa-solid fa-diagram-project"></i> Project Plan</a>
+        <a href="/release-notes/"><i class="fa-solid fa-rocket"></i> Release Notes</a>
+        <div class="user-menu-sep"></div>
+        <a onclick="logout()" style="cursor:pointer"><i class="fa-solid fa-right-from-bracket"></i> Logout</a>
+      </div>
+    </div>`;
 
   // Toast container
   if (!document.getElementById('toast-container')) {
@@ -179,6 +192,80 @@ function initNav(activeKey) {
     tc.id = 'toast-container';
     document.body.appendChild(tc);
   }
+  initFeedback();
+}
+
+/* ── User menu dropdown ── */
+function toggleUserMenu(e) {
+  e.stopPropagation();
+  const m = document.getElementById('user-menu');
+  if (m) m.classList.toggle('hidden');
+}
+document.addEventListener('click', () => {
+  const m = document.getElementById('user-menu');
+  if (m && !m.classList.contains('hidden')) m.classList.add('hidden');
+});
+
+/* ── Feedback widget (floating, every page) ── */
+const H2C_SRC = 'https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js';
+function loadScript(src) {
+  return new Promise((resolve, reject) => {
+    if (window.html2canvas) return resolve();
+    const s = document.createElement('script');
+    s.src = src; s.onload = resolve; s.onerror = reject;
+    document.head.appendChild(s);
+  });
+}
+function initFeedback() {
+  if (document.getElementById('feedback-fab')) return;
+  const fab = document.createElement('button');
+  fab.id = 'feedback-fab'; fab.className = 'feedback-fab'; fab.title = 'Send feedback';
+  fab.innerHTML = '<i class="fa-solid fa-comment-dots"></i> Feedback';
+  fab.onclick = openFeedback;
+  document.body.appendChild(fab);
+
+  const modal = document.createElement('div');
+  modal.id = 'feedback-modal'; modal.className = 'feedback-modal hidden';
+  modal.innerHTML = `
+    <div class="fb-head"><b>Send feedback</b>
+      <button class="fb-x" onclick="closeFeedback()" title="Close">&times;</button></div>
+    <div class="fb-shot"><img id="fb-preview" alt="Page screenshot"><span id="fb-capturing">Capturing screen…</span></div>
+    <textarea id="fb-text" class="form-control" rows="4"
+      placeholder="What should change or improve on this page?"></textarea>
+    <div class="fb-actions">
+      <span class="fb-note"><i class="fa-solid fa-paperclip"></i> Screenshot of this page attached</span>
+      <button class="btn btn-primary btn-sm" onclick="submitFeedback()">Send</button>
+    </div>`;
+  document.body.appendChild(modal);
+}
+async function openFeedback() {
+  const fab = document.getElementById('feedback-fab');
+  const modal = document.getElementById('feedback-modal');
+  const preview = document.getElementById('fb-preview');
+  const capturing = document.getElementById('fb-capturing');
+  document.getElementById('fb-text').value = '';
+  preview.style.display = 'none'; capturing.style.display = ''; window.__fbShot = null;
+  modal.classList.remove('hidden');
+  try {
+    await loadScript(H2C_SRC);
+    fab.style.visibility = 'hidden'; modal.style.visibility = 'hidden';
+    const canvas = await html2canvas(document.body, { logging: false, useCORS: true, scale: 0.7 });
+    modal.style.visibility = ''; fab.style.visibility = '';
+    window.__fbShot = canvas.toDataURL('image/jpeg', 0.72);
+    preview.src = window.__fbShot; preview.style.display = '';
+  } catch (e) {
+    modal.style.visibility = ''; fab.style.visibility = '';
+  }
+  capturing.style.display = 'none';
+}
+function closeFeedback() { document.getElementById('feedback-modal').classList.add('hidden'); }
+async function submitFeedback() {
+  const text = document.getElementById('fb-text').value.trim();
+  if (!text) { showToast('Please enter your feedback first', 'error'); return; }
+  const res = await apiPost('/project-plan?resource=feedback',
+    { text, page_url: location.href, screenshot: window.__fbShot || null });
+  if (res && res.ok) { showToast('Feedback sent — thank you!', 'success'); closeFeedback(); }
+  else { showToast('Could not send feedback', 'error'); }
 }
 
 /* ── Modal helpers ── */

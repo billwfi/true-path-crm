@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Release Notes — True Path CRM</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+  <link rel="stylesheet" href="/assets/css/app.css">
+  <style>
+    .rn-form { display: grid; grid-template-columns: 150px 160px 1fr; gap: 10px; }
+    .rn-form .full { grid-column: 1 / -1; }
+    @media(max-width:640px){ .rn-form { grid-template-columns: 1fr; } }
+    .rn-day { margin: 22px 0 10px; font: 600 12px/1 ui-monospace,Consolas,monospace; letter-spacing: .06em;
+      text-transform: uppercase; color: #64748b; display: flex; align-items: center; gap: 10px; }
+    .rn-day::after { content: ""; flex: 1; height: 1px; background: #e2e8f0; }
+    .rn-item { border: 1px solid #e2e8f0; border-radius: 10px; background: #fff; padding: 13px 15px; margin-bottom: 8px; }
+    .rn-top { display: flex; align-items: center; gap: 10px; }
+    .rn-title { font-weight: 600; color: #1e293b; font-size: 14.5px; }
+    .rn-body { font-size: 13px; color: #475569; margin-top: 5px; white-space: pre-wrap; }
+    .rn-meta { font-size: 11.5px; color: #94a3b8; margin-left: auto; white-space: nowrap; }
+    .rn-actions { display: flex; gap: 8px; margin-left: 6px; }
+    .rn-actions button { background: none; border: 0; color: #94a3b8; cursor: pointer; font-size: 13px; }
+    .rn-actions button:hover { color: #475569; }
+  </style>
+</head>
+<body class="bg-slate-100 text-slate-700">
+<div id="app" class="flex h-screen overflow-hidden">
+  <div id="nav-placeholder"></div>
+  <div class="flex-1 flex flex-col overflow-hidden">
+    <div id="topbar"></div>
+    <main class="flex-1 overflow-y-auto p-6">
+
+      <div class="card" style="margin-bottom:18px">
+        <div class="card-body">
+          <div class="rn-form">
+            <input type="date" id="rn-date" class="form-control">
+            <select id="rn-cat" class="form-control"></select>
+            <input type="text" id="rn-title" class="form-control" placeholder="What changed?">
+            <textarea id="rn-body" class="form-control full" rows="2" placeholder="Details (optional)"></textarea>
+            <div class="full" style="display:flex;gap:8px;align-items:center">
+              <button class="btn btn-primary btn-sm" id="rn-save" onclick="saveNote()"><i class="fa-solid fa-plus"></i> Add entry</button>
+              <button class="btn btn-outline btn-sm" id="rn-cancel" style="display:none" onclick="resetForm()">Cancel</button>
+              <span id="rn-editing" class="text-sm text-slate-400"></span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div id="rn-body-list"></div>
+      <div id="rn-empty" class="empty-state" style="display:none"><i class="fa-solid fa-rocket"></i><p>No release notes yet — add the first entry above.</p></div>
+    </main>
+  </div>
+</div>
+
+<script src="/assets/js/app.js"></script>
+<script>
+  const RN_COLORS = { Feature:'green', Fix:'red', Improvement:'blue', Infra:'purple', Data:'yellow' };
+  let CATEGORIES = ['Feature','Fix','Improvement','Infra','Data'];
+  let editingId = null;
+
+  function todayStr() { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; }
+
+  async function loadNotes() {
+    const data = await apiGet('/release-notes');
+    if (!data) return;
+    CATEGORIES = data.categories || CATEGORIES;
+    document.getElementById('rn-cat').innerHTML = CATEGORIES.map(c=>`<option>${c}</option>`).join('');
+    const notes = data.notes || [];
+    document.getElementById('rn-empty').style.display = notes.length ? 'none' : '';
+    // group by date
+    const byDay = {};
+    for (const n of notes) { const d = (n.entry_date||'').slice(0,10); (byDay[d]=byDay[d]||[]).push(n); }
+    const days = Object.keys(byDay).sort().reverse();
+    document.getElementById('rn-body-list').innerHTML = days.map(d => `
+      <div class="rn-day">${fmtDate(d)}</div>
+      ${byDay[d].map(renderNote).join('')}`).join('');
+  }
+
+  function renderNote(n) {
+    const badge = n.category ? statusBadge(n.category, RN_COLORS) : '';
+    return `<div class="rn-item">
+      <div class="rn-top">
+        ${badge}
+        <span class="rn-title">${esc(n.title)}</span>
+        <span class="rn-meta">${esc(n.author_name||'')}</span>
+        <span class="rn-actions">
+          <button title="Edit" onclick='editNote(${JSON.stringify(n).replace(/'/g,"&#39;")})'><i class="fa-solid fa-pen"></i></button>
+          <button title="Delete" onclick="delNote(${n.id})"><i class="fa-regular fa-trash-can"></i></button>
+        </span>
+      </div>
+      ${n.body?`<div class="rn-body">${esc(n.body)}</div>`:''}
+    </div>`;
+  }
+
+  async function saveNote() {
+    const entry_date = document.getElementById('rn-date').value || todayStr();
+    const title = document.getElementById('rn-title').value.trim();
+    const category = document.getElementById('rn-cat').value;
+    const body = document.getElementById('rn-body').value.trim();
+    if (!title) { showToast('Enter a title', 'error'); return; }
+    const payload = { entry_date, title, category, body };
+    const res = editingId
+      ? await apiPatch(`/release-notes?id=${editingId}`, payload)
+      : await apiPost('/release-notes', payload);
+    if (res && res.ok) { showToast(editingId?'Updated':'Added', 'success'); resetForm(); loadNotes(); }
+    else showToast('Could not save', 'error');
+  }
+  function editNote(n) {
+    editingId = n.id;
+    document.getElementById('rn-date').value = (n.entry_date||'').slice(0,10);
+    document.getElementById('rn-cat').value = n.category || CATEGORIES[0];
+    document.getElementById('rn-title').value = n.title || '';
+    document.getElementById('rn-body').value = n.body || '';
+    document.getElementById('rn-save').innerHTML = '<i class="fa-solid fa-check"></i> Update';
+    document.getElementById('rn-cancel').style.display = '';
+    document.getElementById('rn-editing').textContent = 'Editing entry';
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+  function resetForm() {
+    editingId = null;
+    document.getElementById('rn-date').value = todayStr();
+    document.getElementById('rn-title').value = '';
+    document.getElementById('rn-body').value = '';
+    document.getElementById('rn-save').innerHTML = '<i class="fa-solid fa-plus"></i> Add entry';
+    document.getElementById('rn-cancel').style.display = 'none';
+    document.getElementById('rn-editing').textContent = '';
+  }
+  async function delNote(id) {
+    if (!confirm2('Delete this entry?')) return;
+    const res = await apiDelete(`/release-notes?id=${id}`);
+    if (res && res.ok) loadNotes(); else showToast('Could not delete', 'error');
+  }
+
+  initNav('release-notes');
+  document.getElementById('rn-date').value = todayStr();
+  loadNotes();
+</script>
+</body>
+</html>
