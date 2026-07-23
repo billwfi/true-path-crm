@@ -10,6 +10,7 @@
     "start": "node server.js"
   },
   "dependencies": {
+    "@azure/communication-sms": "^1.2.0-beta.4",
     "@netlify/database": "^1.0.0",
     "bcryptjs": "^2.4.3",
     "express": "^4.22.2",
