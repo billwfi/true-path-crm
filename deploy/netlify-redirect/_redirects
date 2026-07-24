@@ -1,0 +1,3 @@
+# Old QR codes point at true-path-crm-wfi.netlify.app. The app now lives on
+# Azure at app.truepathsourcing.com — forward everything (path + query preserved).
+/*  https://app.truepathsourcing.com/:splat  302

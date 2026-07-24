@@ -355,7 +355,12 @@
     else showToast('Delete failed', 'error');
   }
 
-  function bookingUrl(publicId) { return `${location.origin}/book/?s=${publicId}`; }
+  // Stable public booking base: the true-path-crm-wfi.netlify.app site is a thin
+  // redirect that forwards /book/?s=… to wherever the app is hosted. Building QR
+  // codes off this fixed host keeps published codes valid across host moves
+  // (e.g. the Netlify → Azure migration) instead of baking in the current origin.
+  const BOOKING_BASE = 'https://true-path-crm-wfi.netlify.app';
+  function bookingUrl(publicId) { return `${BOOKING_BASE}/book/?s=${publicId}`; }
 
   function share(publicId) {
     const sched = all.find(s => s.public_id === publicId);
