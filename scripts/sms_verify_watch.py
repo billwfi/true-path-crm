@@ -17,7 +17,7 @@ from azure.communication.sms import SmsClient
 
 TO = os.environ.get("WATCH_TO", "+16153059285")
 FROM = os.environ.get("SMS_FROM", "+18665617622")
-PROBE = "True Path Sourcing: verification check. Reply STOP to opt out."
+PROBE = "TruePath Sourcing: verification check. Reply STOP to opt out."
 
 
 def db():

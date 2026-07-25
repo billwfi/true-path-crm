@@ -1,5 +1,5 @@
 -- ─────────────────────────────────────────────────────────────────────────────
--- Roadmap v2 — the True Path Sourcing business flow. Adds the client lifecycle
+-- Roadmap v2 — the TruePath Sourcing business flow. Adds the client lifecycle
 -- stages (S1-S10), AMT reporting, and executive dashboards as project categories,
 -- and re-sorts the original platform increments (A-E) to sit after them.
 -- Open questions from the source doc are captured inline (prefixed "Q:").
