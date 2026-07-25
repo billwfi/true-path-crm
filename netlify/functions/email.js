@@ -1,14 +1,12 @@
 const { mssql } = require('./_mssql');
 const { verifyToken, unauthorized, ok, badRequest, notFound, serverError, options } = require('./_auth');
-const { sendEmail, render } = require('./_email');
+const { sendEmail, render, unsubUrl } = require('./_email');
 
 // Marketing email — templates + test send (campaign send/tracking is separate).
 //   GET                          -> { from, configured }
 //   GET  ?resource=templates     -> list templates
 //   PATCH ?resource=template&id  -> update { name, subject, html_body }
 //   POST ?resource=test          -> send a test { to, tkey }  (uses sample merge values)
-
-const SAMPLE = { member_name: 'Member', unsubscribe_url: 'https://app.truepathsourcing.com/unsubscribe' };
 
 exports.handler = async function (event) {
   if (event.httpMethod === 'OPTIONS') return options();
@@ -44,7 +42,8 @@ exports.handler = async function (event) {
       const t = (await mssql('SELECT subject, html_body FROM dbo.Email_Templates WHERE tkey=@k', { k: b.tkey })).recordset[0];
       if (!t) return notFound('template not found');
       const res = await sendEmail({
-        to: b.to, subject: '[TEST] ' + t.subject, html: render(t.html_body, SAMPLE) });
+        to: b.to, subject: '[TEST] ' + t.subject,
+        html: render(t.html_body, { member_name: 'Member', unsubscribe_url: unsubUrl(b.to) }) });
       return res.ok ? ok(res) : badRequest(res.error);
     }
 

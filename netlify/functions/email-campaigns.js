@@ -1,6 +1,6 @@
 const { mssql } = require('./_mssql');
 const { verifyToken, unauthorized, ok, created, badRequest, notFound, serverError, options } = require('./_auth');
-const { sendEmail, render } = require('./_email');
+const { sendEmail, render, unsubUrl } = require('./_email');
 
 // Email campaigns: create, import recipients, batched send, and stats.
 //   GET                              -> list campaigns (+ counts)
@@ -12,7 +12,6 @@ const { sendEmail, render } = require('./_email');
 //   DELETE ?id=X
 
 function isAdmin(u) { return !!u && (u.user_type === 'Admin' || u.is_admin === true); }
-const UNSUB = 'https://app.truepathsourcing.com/unsubscribe';
 
 exports.handler = async function (event) {
   if (event.httpMethod === 'OPTIONS') return options();
@@ -54,7 +53,11 @@ exports.handler = async function (event) {
            SELECT @cid, x.company_name, x.first_name, x.last_name, LTRIM(RTRIM(x.email)), x.language
            FROM OPENJSON(@json) WITH (company_name nvarchar(200), first_name nvarchar(100),
                 last_name nvarchar(100), email nvarchar(200), language nvarchar(5)) x
-           WHERE x.email IS NOT NULL AND CHARINDEX('@', x.email) > 0 AND x.email NOT LIKE '%noemail%'
+           WHERE x.email IS NOT NULL
+             AND LTRIM(RTRIM(x.email)) LIKE '%_@_%.__%'            -- basic email shape
+             AND x.email NOT LIKE '%noemail%'
+             AND LOWER(LTRIM(RTRIM(x.email))) <> 'no@email.com'
+             AND NOT EXISTS (SELECT 1 FROM dbo.Email_OptOut o WHERE o.email = LOWER(LTRIM(RTRIM(x.email))))
              AND NOT EXISTS (SELECT 1 FROM dbo.Email_Campaign_Recipients r
                              WHERE r.campaign_id=@cid AND r.email = LTRIM(RTRIM(x.email)));
            SELECT COUNT(*) n FROM dbo.Email_Campaign_Recipients WHERE campaign_id=@cid;`,
@@ -73,6 +76,10 @@ exports.handler = async function (event) {
         for (const k of [c.template_en, c.template_es].filter(Boolean)) {
           tpls[k] = (await mssql('SELECT subject, html_body FROM dbo.Email_Templates WHERE tkey=@k', { k })).recordset[0];
         }
+        // Honor opt-outs: suppress any pending recipient who has since unsubscribed.
+        await mssql(`UPDATE dbo.Email_Campaign_Recipients SET status='Suppressed'
+                     WHERE campaign_id=@id AND status='Pending'
+                       AND LOWER(email) IN (SELECT email FROM dbo.Email_OptOut)`, { id: +id });
         const recips = (await mssql(
           `SELECT TOP (${n}) * FROM dbo.Email_Campaign_Recipients WHERE campaign_id=@id AND status='Pending' ORDER BY id`, { id: +id })).recordset;
         let sent = 0, failed = 0;
@@ -82,7 +89,7 @@ exports.handler = async function (event) {
           const t = tpls[tk];
           if (!t) { failed++; continue; }
           const name = [r.first_name, r.last_name].filter(Boolean).join(' ') || 'Member';
-          const html = render(t.html_body, { member_name: name, unsubscribe_url: UNSUB + '?e=' + encodeURIComponent(r.email) });
+          const html = render(t.html_body, { member_name: name, unsubscribe_url: unsubUrl(r.email) });
           const res = await sendEmail({ to: r.email, subject: t.subject, html, from: c.from_address });
           if (res.ok) {
             sent++;

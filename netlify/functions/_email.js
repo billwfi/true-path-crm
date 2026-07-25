@@ -1,6 +1,16 @@
 // Email via Azure Communication Services. Inert until ACS_CONNECTION_STRING is
 // set and the sender domain is verified/linked.
+const crypto = require('crypto');
 const { EmailClient } = require('@azure/communication-email');
+
+// Signed unsubscribe link so recipients can't unsubscribe others by guessing.
+function unsubToken(email) {
+  return crypto.createHmac('sha256', process.env.JWT_SECRET || 'tp-unsub')
+    .update(String(email || '').trim().toLowerCase()).digest('hex').slice(0, 20);
+}
+function unsubUrl(email) {
+  return 'https://app.truepathsourcing.com/unsubscribe/?e=' + encodeURIComponent(email) + '&t=' + unsubToken(email);
+}
 
 let _client;
 function getClient() {
@@ -34,4 +44,4 @@ async function sendEmail({ to, subject, html, from, displayName }) {
   }
 }
 
-module.exports = { sendEmail, render };
+module.exports = { sendEmail, render, unsubToken, unsubUrl };

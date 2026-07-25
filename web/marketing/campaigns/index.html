@@ -52,7 +52,7 @@
 
           <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:16px;align-items:center">
             <input type="file" id="imp-file" accept=".xlsx,.xls,.csv" class="text-sm">
-            <button class="btn btn-outline btn-sm" onclick="importFile()"><i class="fa-solid fa-file-import"></i> Import recipients</button>
+            <button class="btn btn-outline btn-sm" onclick="parseFile()"><i class="fa-solid fa-file-import"></i> Choose companies to import</button>
             <span id="imp-note" class="text-sm text-slate-500"></span>
           </div>
           <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:14px;align-items:center;border-top:1px solid #eef2f4;padding-top:14px">
@@ -86,6 +86,22 @@
   </div>
   <div class="modal-footer"><button class="btn btn-outline btn-sm" onclick="closeModal('new-modal')">Cancel</button>
     <button class="btn btn-primary btn-sm" onclick="createCampaign()">Create</button></div>
+</div></div>
+
+<!-- Company picker modal -->
+<div id="pick-modal" class="modal-backdrop hidden"><div class="modal modal-lg">
+  <div class="modal-header"><span>Select companies to import</span><button onclick="closeModal('pick-modal')" class="text-slate-400"><i class="fa-solid fa-xmark"></i></button></div>
+  <div class="modal-body">
+    <div style="display:flex;gap:12px;align-items:center;margin-bottom:8px">
+      <label class="text-sm"><input type="checkbox" id="pick-all" onchange="toggleAll(this)"> Select all</label>
+      <span id="pick-summary" class="text-sm text-slate-500" style="margin-left:auto"></span>
+    </div>
+    <div id="pick-list" style="max-height:340px;overflow-y:auto;border:1px solid #e2e8f0;border-radius:8px"></div>
+  </div>
+  <div class="modal-footer">
+    <button class="btn btn-outline btn-sm" onclick="closeModal('pick-modal')">Cancel</button>
+    <button class="btn btn-primary btn-sm" onclick="doImport()"><i class="fa-solid fa-file-import"></i> Import selected</button>
+  </div>
 </div></div>
 
 <script src="/assets/js/app.js"></script>
@@ -141,11 +157,15 @@
       <td class="num">${x.delivered}</td><td class="num">${x.bounced}</td></tr>`).join('');
   }
 
-  function importFile() {
+  // Same rule as the server import filter: real @, exclude noemail* and no@email.com.
+  function validEmail(e){ e=String(e||'').trim().toLowerCase();
+    return /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(e) && !e.includes('noemail') && e!=='no@email.com'; }
+
+  function parseFile() {
     const f = document.getElementById('imp-file').files[0];
-    if (!f) { showToast('Choose a file','error'); return; }
+    if (!f) { showToast('Choose a file first','error'); return; }
     const reader = new FileReader();
-    reader.onload = async e => {
+    reader.onload = e => {
       const wb = XLSX.read(new Uint8Array(e.target.result), { type:'array' });
       const aoa = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header:1, raw:false, defval:'' });
       const hi = aoa.findIndex(r => r.map(c=>String(c).toLowerCase()).some(c=>c.includes('email')));
@@ -153,20 +173,44 @@
       const hdr = aoa[hi].map(c=>String(c).trim().toLowerCase());
       const col = n => hdr.findIndex(h => h.includes(n));
       const ci = { co:col('company'), fn:col('first'), ln:col('last'), em:col('email'), lang:col('language') };
-      const recips = [];
+      const byCo = {};
       for (const r of aoa.slice(hi+1)) {
         const email = (r[ci.em]||'').toString().trim();
-        if (!email || !email.includes('@') || /noemail/i.test(email)) continue;
-        recips.push({ company_name:r[ci.co]||'', first_name:r[ci.fn]||'', last_name:r[ci.ln]||'',
+        if (!validEmail(email)) continue;
+        const co = (ci.co>=0 ? (r[ci.co]||'') : '').toString().trim() || '(no company)';
+        (byCo[co] = byCo[co] || []).push({ company_name:co, first_name:r[ci.fn]||'', last_name:r[ci.ln]||'',
           email, language: ci.lang>=0 ? (r[ci.lang]||'') : '' });
       }
-      if (!recips.length) { showToast('No valid emails found','error'); return; }
-      if (!confirm2(`Import ${recips.length} recipients with valid emails?`)) return;
-      const res = await apiPost(`/email-campaigns?resource=recipients&id=${CUR}`, { recipients: recips });
-      if (res && res.ok) { const j = await res.json(); showToast(`Imported — ${j.total} total recipients`,'success'); refresh(); }
-      else showToast('Import failed','error');
+      const cos = Object.keys(byCo).sort((a,b)=>byCo[b].length-byCo[a].length);
+      if (!cos.length) { showToast('No valid emails found','error'); return; }
+      PARSED = byCo;
+      document.getElementById('pick-list').innerHTML = cos.map(co=>`
+        <label style="display:flex;align-items:center;gap:10px;padding:9px 12px;border-bottom:1px solid #eef2f4;cursor:pointer">
+          <input type="checkbox" class="pick-co" value="${esc(co)}" checked onchange="updatePickSummary()">
+          <span style="flex:1">${esc(co)}</span>
+          <span class="num text-slate-500">${byCo[co].length}</span>
+        </label>`).join('');
+      document.getElementById('pick-all').checked = true;
+      updatePickSummary();
+      openModal('pick-modal');
     };
     reader.readAsArrayBuffer(f);
+  }
+  function toggleAll(cb){ document.querySelectorAll('.pick-co').forEach(x=>x.checked=cb.checked); updatePickSummary(); }
+  function updatePickSummary(){
+    let cos=0, n=0;
+    document.querySelectorAll('.pick-co').forEach(x=>{ if(x.checked){ cos++; n += (PARSED[x.value]||[]).length; } });
+    document.getElementById('pick-summary').textContent = `${cos} companies · ${n} recipients`;
+  }
+  async function doImport(){
+    const sel = [...document.querySelectorAll('.pick-co')].filter(x=>x.checked).map(x=>x.value);
+    if (!sel.length) { showToast('Select at least one company','error'); return; }
+    const recips = sel.flatMap(co => PARSED[co]);
+    closeModal('pick-modal');
+    showToast(`Importing ${recips.length}…`);
+    const res = await apiPost(`/email-campaigns?resource=recipients&id=${CUR}`, { recipients: recips });
+    if (res && res.ok) { const j = await res.json(); showToast(`Imported — now ${j.total} total recipients`,'success'); refresh(); }
+    else showToast('Import failed','error');
   }
 
   async function sendBatch() {
