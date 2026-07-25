@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Email Campaigns — True Path CRM</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+  <link rel="stylesheet" href="/assets/css/app.css">
+  <style>
+    .kpi { display:grid; grid-template-columns:repeat(auto-fit,minmax(110px,1fr)); gap:10px; margin:14px 0; }
+    .kpi .box { background:#fff; border:1px solid #e2e8f0; border-radius:10px; padding:12px 14px; }
+    .kpi .n { font-size:22px; font-weight:700; color:#1e293b; font-variant-numeric:tabular-nums; }
+    .kpi .l { font-size:11px; color:#64748b; text-transform:uppercase; letter-spacing:.04em; }
+    .bar { height:8px; border-radius:4px; background:#e2e8f0; overflow:hidden; }
+    .bar i { display:block; height:100%; background:#0d7d74; }
+  </style>
+</head>
+<body class="bg-slate-100 text-slate-700">
+<div id="app" class="flex h-screen overflow-hidden">
+  <div id="nav-placeholder"></div>
+  <div class="flex-1 flex flex-col overflow-hidden">
+    <div id="topbar"></div>
+    <main class="flex-1 overflow-y-auto p-6">
+
+      <!-- LIST -->
+      <div id="list-view">
+        <div class="search-bar">
+          <span class="text-sm text-slate-500">Send and track email campaigns.</span>
+          <button class="btn btn-primary btn-sm" onclick="openModal('new-modal')"><i class="fa-solid fa-plus"></i> New Campaign</button>
+        </div>
+        <div class="card"><div class="card-body">
+          <table class="data-table">
+            <thead><tr><th>Campaign</th><th>Status</th><th>Recipients</th><th>Sent</th><th>Progress</th><th></th></tr></thead>
+            <tbody id="camp-body"></tbody>
+          </table>
+        </div></div>
+      </div>
+
+      <!-- DETAIL -->
+      <div id="detail-view" style="display:none">
+        <button class="pp-link" onclick="showList()" style="background:none;border:0;color:#0a5e57;cursor:pointer;margin-bottom:10px"><i class="fa-solid fa-arrow-left"></i> All campaigns</button>
+        <div class="card"><div class="card-body">
+          <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+            <h2 id="d-name" style="font-size:18px;font-weight:650;color:#1e293b"></h2>
+            <span id="d-status"></span>
+            <span id="d-lang" class="text-sm text-slate-400"></span>
+          </div>
+          <div class="kpi" id="d-kpi"></div>
+          <div class="bar" style="margin-bottom:6px"><i id="d-bar" style="width:0%"></i></div>
+          <div id="d-progress" class="text-sm text-slate-500"></div>
+
+          <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:16px;align-items:center">
+            <input type="file" id="imp-file" accept=".xlsx,.xls,.csv" class="text-sm">
+            <button class="btn btn-outline btn-sm" onclick="importFile()"><i class="fa-solid fa-file-import"></i> Import recipients</button>
+            <span id="imp-note" class="text-sm text-slate-500"></span>
+          </div>
+          <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:14px;align-items:center;border-top:1px solid #eef2f4;padding-top:14px">
+            <label class="text-sm">Batch size <input id="batch" type="number" value="25" min="1" max="50" style="width:64px" class="form-control"></label>
+            <button class="btn btn-primary btn-sm" id="send-btn" onclick="startSend()"><i class="fa-solid fa-paper-plane"></i> Send batch</button>
+            <button class="btn btn-outline btn-sm" id="loop-btn" onclick="toggleLoop()"><i class="fa-solid fa-play"></i> Auto-send until done</button>
+            <button class="btn btn-outline btn-sm" onclick="pauseCampaign()">Pause</button>
+            <span id="send-note" class="text-sm text-slate-500"></span>
+          </div>
+        </div></div>
+        <div class="card" style="margin-top:14px"><div class="card-body">
+          <h3 style="font-weight:600;margin-bottom:8px">By company</h3>
+          <div style="overflow-x:auto"><table class="data-table">
+            <thead><tr><th>Company</th><th>Total</th><th>Sent</th><th>Delivered</th><th>Bounced</th></tr></thead>
+            <tbody id="co-body"></tbody>
+          </table></div>
+        </div></div>
+      </div>
+    </main>
+  </div>
+</div>
+
+<!-- New campaign modal -->
+<div id="new-modal" class="modal-backdrop hidden"><div class="modal">
+  <div class="modal-header"><span>New Campaign</span><button onclick="closeModal('new-modal')" class="text-slate-400"><i class="fa-solid fa-xmark"></i></button></div>
+  <div class="modal-body">
+    <div class="form-group"><label class="form-label">Name</label><input class="form-control" id="nc-name" placeholder="Rebrand Announcement"></div>
+    <div class="form-group"><label class="form-label">Default language</label>
+      <select class="form-control" id="nc-lang"><option value="en">English</option><option value="es">Spanish</option></select></div>
+    <p class="text-sm text-slate-500">Uses the <b>rebrand-en</b> / <b>rebrand-es</b> templates. Spanish recipients (language = es on import) get the Spanish version; everyone else gets the default.</p>
+  </div>
+  <div class="modal-footer"><button class="btn btn-outline btn-sm" onclick="closeModal('new-modal')">Cancel</button>
+    <button class="btn btn-primary btn-sm" onclick="createCampaign()">Create</button></div>
+</div></div>
+
+<script src="/assets/js/app.js"></script>
+<script>
+  const CAMP_STATUS = { Draft:'gray', Sending:'blue', Paused:'yellow', Sent:'green' };
+  let CUR = null, PARSED = null, looping = false;
+
+  async function loadList() {
+    const camps = await apiGet('/email-campaigns') || [];
+    document.getElementById('camp-body').innerHTML = camps.length ? camps.map(c => {
+      const pct = c.recipients ? Math.round(c.sent/c.recipients*100) : 0;
+      return `<tr>
+        <td class="font-medium">${esc(c.name)}</td>
+        <td>${statusBadge(c.status, CAMP_STATUS)}</td>
+        <td class="num">${c.recipients}</td><td class="num">${c.sent}</td>
+        <td style="min-width:120px"><div class="bar"><i style="width:${pct}%"></i></div></td>
+        <td class="text-right"><button class="btn btn-outline btn-sm" onclick="openCampaign(${c.id})">Open</button></td>
+      </tr>`; }).join('')
+      : '<tr><td colspan="6" class="text-center py-8 text-slate-400">No campaigns yet</td></tr>';
+  }
+  function showList(){ CUR=null; looping=false; document.getElementById('detail-view').style.display='none'; document.getElementById('list-view').style.display=''; loadList(); }
+
+  async function createCampaign() {
+    const name = document.getElementById('nc-name').value.trim();
+    if (!name) { showToast('Name required','error'); return; }
+    const res = await apiPost('/email-campaigns', { name, default_lang: document.getElementById('nc-lang').value });
+    if (res && res.ok) { const j = await res.json(); closeModal('new-modal'); openCampaign(j.id); }
+    else showToast('Create failed','error');
+  }
+
+  async function openCampaign(id) {
+    CUR = id;
+    document.getElementById('list-view').style.display='none';
+    document.getElementById('detail-view').style.display='';
+    await refresh();
+  }
+  async function refresh() {
+    const d = await apiGet(`/email-campaigns?id=${CUR}`); if (!d) return;
+    const c = d.campaign;
+    document.getElementById('d-name').textContent = c.name;
+    document.getElementById('d-status').innerHTML = statusBadge(c.status, CAMP_STATUS);
+    document.getElementById('d-lang').textContent = 'from ' + c.from_address + ' · default ' + c.default_lang;
+    const s = {}; (d.stats||[]).forEach(x => s[x.status]=x.n);
+    const total = Object.values(s).reduce((a,b)=>a+b,0);
+    const done = total - (s.Pending||0);
+    const order = ['Pending','Sent','Delivered','Opened','Bounced','Failed'];
+    document.getElementById('d-kpi').innerHTML = [['Total',total]].concat(order.map(k=>[k,s[k]||0]))
+      .map(([l,n])=>`<div class="box"><div class="n">${n}</div><div class="l">${l}</div></div>`).join('');
+    document.getElementById('d-bar').style.width = (total? Math.round(done/total*100):0)+'%';
+    document.getElementById('d-progress').textContent = `${done} of ${total} processed · ${s.Pending||0} pending`;
+    document.getElementById('co-body').innerHTML = (d.companies||[]).map(x=>`<tr>
+      <td>${esc(x.company_name||'—')}</td><td class="num">${x.total}</td><td class="num">${x.sent}</td>
+      <td class="num">${x.delivered}</td><td class="num">${x.bounced}</td></tr>`).join('');
+  }
+
+  function importFile() {
+    const f = document.getElementById('imp-file').files[0];
+    if (!f) { showToast('Choose a file','error'); return; }
+    const reader = new FileReader();
+    reader.onload = async e => {
+      const wb = XLSX.read(new Uint8Array(e.target.result), { type:'array' });
+      const aoa = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header:1, raw:false, defval:'' });
+      const hi = aoa.findIndex(r => r.map(c=>String(c).toLowerCase()).some(c=>c.includes('email')));
+      if (hi < 0) { showToast('No email column found','error'); return; }
+      const hdr = aoa[hi].map(c=>String(c).trim().toLowerCase());
+      const col = n => hdr.findIndex(h => h.includes(n));
+      const ci = { co:col('company'), fn:col('first'), ln:col('last'), em:col('email'), lang:col('language') };
+      const recips = [];
+      for (const r of aoa.slice(hi+1)) {
+        const email = (r[ci.em]||'').toString().trim();
+        if (!email || !email.includes('@') || /noemail/i.test(email)) continue;
+        recips.push({ company_name:r[ci.co]||'', first_name:r[ci.fn]||'', last_name:r[ci.ln]||'',
+          email, language: ci.lang>=0 ? (r[ci.lang]||'') : '' });
+      }
+      if (!recips.length) { showToast('No valid emails found','error'); return; }
+      if (!confirm2(`Import ${recips.length} recipients with valid emails?`)) return;
+      const res = await apiPost(`/email-campaigns?resource=recipients&id=${CUR}`, { recipients: recips });
+      if (res && res.ok) { const j = await res.json(); showToast(`Imported — ${j.total} total recipients`,'success'); refresh(); }
+      else showToast('Import failed','error');
+    };
+    reader.readAsArrayBuffer(f);
+  }
+
+  async function sendBatch() {
+    const n = Math.min(parseInt(document.getElementById('batch').value,10)||25, 50);
+    const res = await apiPost(`/email-campaigns?resource=send&id=${CUR}&count=${n}`, {});
+    if (!res || !res.ok) { showToast('Send error','error'); return { remaining:0, err:true }; }
+    const j = await res.json();
+    document.getElementById('send-note').textContent = `sent ${j.sent}${j.failed?` · ${j.failed} failed`:''} · ${j.remaining} left`;
+    await refresh();
+    return j;
+  }
+  async function startSend() { document.getElementById('send-btn').disabled = true; await sendBatch(); document.getElementById('send-btn').disabled = false; }
+  async function toggleLoop() {
+    looping = !looping;
+    document.getElementById('loop-btn').innerHTML = looping ? '<i class="fa-solid fa-pause"></i> Stop' : '<i class="fa-solid fa-play"></i> Auto-send until done';
+    while (looping) {
+      const j = await sendBatch();
+      if (j.err || j.remaining <= 0) break;
+    }
+    looping = false;
+    document.getElementById('loop-btn').innerHTML = '<i class="fa-solid fa-play"></i> Auto-send until done';
+  }
+  async function pauseCampaign() { looping=false; await apiPatch(`/email-campaigns?id=${CUR}`, { status:'Paused' }); refresh(); }
+
+  initNav('marketing-campaigns');
+  loadList();
+</script>
+</body>
+</html>
