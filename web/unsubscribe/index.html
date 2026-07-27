@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Unsubscribe — TruePath Sourcing</title>
+  <title>Unsubscribe — True Path Sourcing</title>
   <style>
     body { margin:0; background:#f2f5f5; font-family:Arial,Helvetica,sans-serif; color:#1e293b;
       display:flex; min-height:100vh; align-items:center; justify-content:center; padding:24px; }
@@ -21,7 +21,7 @@
 </head>
 <body>
   <div class="card">
-    <div class="head"><img src="https://app.truepathsourcing.com/assets/img/truepath-logo.png" alt="TruePath Sourcing"></div>
+    <div class="head"><img src="https://app.truepathsourcing.com/assets/img/truepath-logo.png" alt="True Path Sourcing"></div>
     <div class="body" id="content">Loading…</div>
   </div>
 <script>
@@ -37,7 +37,7 @@
     try { r = await fetch('/.netlify/functions/unsubscribe?e=' + encodeURIComponent(email) + '&t=' + encodeURIComponent(t)).then(x => x.json()); } catch {}
     if (r.opted_out) { done(); return; }
     if (!r.valid) { content.innerHTML = 'This unsubscribe link is invalid or has expired.<p class="muted">Questions? Call us at 877-546-6378.</p>'; return; }
-    content.innerHTML = `<p>Unsubscribe <b>${esc(email)}</b> from TruePath Sourcing emails?</p>
+    content.innerHTML = `<p>Unsubscribe <b>${esc(email)}</b> from True Path Sourcing emails?</p>
       <button id="btn">Unsubscribe</button>
       <p class="muted">You will no longer receive marketing emails from us.</p>`;
     document.getElementById('btn').onclick = confirmUnsub;
@@ -50,7 +50,7 @@
     else content.innerHTML = 'Sorry, something went wrong. Please call us at 877-546-6378.';
   }
   function done() {
-    content.innerHTML = `<p><b>You've been unsubscribed.</b></p><p>${esc(email)} will no longer receive TruePath Sourcing marketing emails.</p><p class="muted">Questions? Call us at 877-546-6378.</p>`;
+    content.innerHTML = `<p><b>You've been unsubscribed.</b></p><p>${esc(email)} will no longer receive True Path Sourcing marketing emails.</p><p class="muted">Questions? Call us at 877-546-6378.</p>`;
   }
   init();
 </script>

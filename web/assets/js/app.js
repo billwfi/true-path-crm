@@ -143,8 +143,8 @@ function initNav(activeKey) {
   document.getElementById('nav-placeholder').innerHTML = `
     <div id="sidebar">
       <div class="brand">
-        <a href="https://truepathsourcing.com/" target="_blank" rel="noopener" title="TruePath Sourcing">
-          <img src="/assets/img/truepath-logo.png" alt="TruePath Sourcing" class="brand-logo">
+        <a href="https://truepathsourcing.com/" target="_blank" rel="noopener" title="True Path Sourcing">
+          <img src="/assets/img/truepath-logo.png" alt="True Path Sourcing" class="brand-logo">
         </a>
       </div>
       ${items}

@@ -7,7 +7,7 @@
  *   role       = 'Client Concierge'
  *   nav_access = 'Call Center'   (the fixed nav lock for this role — see
  *                                 web/settings/user-management ROLE_NAV_LOCK)
- *   password   = TruePath2026!!  (bcrypt-hashed, same cost as the /users API)
+ *   password   = True Path2026!!  (bcrypt-hashed, same cost as the /users API)
  *   email      = <first-initial><lastname>@internationalrx.com (lowercased)
  *
  * Mirrors the /users POST endpoint: dbo.Users.id is NOT an identity column, so
@@ -23,7 +23,7 @@
 const sql = require('mssql');
 const bcrypt = require('bcryptjs');
 
-const PASSWORD = 'TruePath2026!!';
+const PASSWORD = 'True Path2026!!';
 const DOMAIN = 'internationalrx.com';
 const ROLE = 'Client Concierge';
 const USER_TYPE = 'User';
