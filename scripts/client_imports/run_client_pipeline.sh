@@ -15,6 +15,9 @@ fi
 if [ "$PIPELINE" = "smswatch" ]; then
   exec python scripts/sms_verify_watch.py
 fi
+if [ "$PIPELINE" = "campaign" ]; then
+  exec python scripts/campaign_send.py
+fi
 
 CLIENT="${CLIENT:-mcrhotels}"
 
