@@ -1,0 +1,292 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PBM Record — True Path CRM</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+  <link rel="stylesheet" href="/assets/css/app.css">
+</head>
+<body class="bg-slate-100 text-slate-700">
+<div id="app" class="flex h-screen overflow-hidden">
+  <div id="nav-placeholder"></div>
+  <div class="flex-1 flex flex-col overflow-hidden">
+    <div id="topbar"></div>
+    <main class="flex-1 overflow-y-auto p-6">
+
+      <div class="flex items-center justify-between mb-4">
+        <h1 class="text-xl font-bold text-slate-700" id="pbm-title">New PBM</h1>
+        <a href="/pbms/" class="btn btn-outline btn-sm"><i class="fa-solid fa-arrow-left"></i> All PBMs</a>
+      </div>
+
+      <div id="tabbar" class="tabbar mb-4 flex flex-wrap gap-1 border-b border-slate-200">
+        <button class="tab-btn active" data-tab="demographics" onclick="showTab('demographics')">Demographics</button>
+        <button class="tab-btn" data-tab="contacts" onclick="showTab('contacts')">Contacts <span id="tab-contacts"></span></button>
+        <button class="tab-btn" data-tab="contracts" onclick="showTab('contracts')">Contracts <span id="tab-contracts"></span></button>
+        <button class="tab-btn" data-tab="groups" onclick="showTab('groups')">Groups <span id="tab-groups"></span></button>
+        <button class="tab-btn" data-tab="claims" onclick="showTab('claims')">Claims</button>
+        <button class="tab-btn" data-tab="reporting" onclick="showTab('reporting')">Reporting</button>
+        <button class="tab-btn" data-tab="invoices" onclick="showTab('invoices')">Invoices</button>
+        <button class="tab-btn" data-tab="imports" onclick="showTab('imports')">Imports</button>
+      </div>
+
+      <!-- Demographics -->
+      <div class="tab-panel" data-panel="demographics">
+        <div class="card"><div class="card-body">
+          <div class="form-grid">
+            <div class="form-group"><label class="form-label">PBM Name *</label><input id="f-name" class="form-control"></div>
+            <div class="form-group"><label class="form-label">PBM Code</label><input id="f-code" class="form-control" placeholder="e.g. LIVINITI"></div>
+            <div class="form-group"><label class="form-label">Carrier (eligibility)</label><input id="f-carrier" class="form-control"></div>
+            <div class="form-group"><label class="form-label">SFTP Host</label><input id="f-sftp" class="form-control" placeholder="sftp.example.com"></div>
+            <div class="form-group"><label class="form-label">Email</label><input id="f-email" class="form-control"></div>
+            <div class="form-group"><label class="form-label">Phone</label><input id="f-phone" class="form-control"></div>
+            <div class="form-group"><label class="form-label">Website</label><input id="f-website" class="form-control"></div>
+            <div class="form-group"><label class="form-label">Account Coordinator</label><input id="f-coord" class="form-control"></div>
+            <div class="form-group"><label class="form-label">Address</label><input id="f-address" class="form-control"></div>
+            <div class="form-group"><label class="form-label">City</label><input id="f-city" class="form-control"></div>
+            <div class="form-group"><label class="form-label">State</label><input id="f-state" class="form-control"></div>
+            <div class="form-group"><label class="form-label">Zip</label><input id="f-zip" class="form-control"></div>
+          </div>
+          <div class="form-group"><label class="form-label">Notes</label><textarea id="f-notes" class="form-control" rows="3"></textarea></div>
+          <label class="form-label inline-flex items-center gap-2"><input type="checkbox" id="f-active" checked> Active</label>
+          <div class="mt-4"><button class="btn btn-primary" onclick="saveDemographics()"><i class="fa-solid fa-floppy-disk"></i> Save</button></div>
+        </div></div>
+      </div>
+
+      <!-- Contacts -->
+      <div class="tab-panel" data-panel="contacts" style="display:none">
+        <div class="flex justify-end mb-3"><button class="btn btn-primary btn-sm" onclick="openContact()"><i class="fa-solid fa-plus"></i> Add Contact</button></div>
+        <div class="card"><div class="card-body"><table class="data-table">
+          <thead><tr><th>Name</th><th>Title</th><th>Email</th><th>Phone</th><th></th></tr></thead>
+          <tbody id="contacts-body"></tbody></table></div></div>
+      </div>
+
+      <!-- Contracts -->
+      <div class="tab-panel" data-panel="contracts" style="display:none">
+        <div class="flex justify-end mb-3"><button class="btn btn-primary btn-sm" onclick="openContract()"><i class="fa-solid fa-plus"></i> Add Contract</button></div>
+        <div id="contracts-list"></div>
+      </div>
+
+      <!-- Groups -->
+      <div class="tab-panel" data-panel="groups" style="display:none">
+        <div class="flex items-center justify-between mb-3">
+          <input id="group-search" class="form-control" style="max-width:280px" placeholder="Filter groups…" oninput="debounceGroups()">
+          <button class="btn btn-primary btn-sm" onclick="openGroup()"><i class="fa-solid fa-plus"></i> Add Group</button>
+        </div>
+        <div class="card"><div class="card-body"><table class="data-table">
+          <thead><tr><th>Group ID</th><th>Group Name</th><th>Company</th><th style="text-align:right">Members</th><th>Status</th><th></th></tr></thead>
+          <tbody id="groups-body"><tr><td colspan="6" class="text-center py-8 text-slate-400">Loading…</td></tr></tbody></table></div></div>
+      </div>
+
+      <!-- Placeholder tabs (next increment) -->
+      <div class="tab-panel" data-panel="claims" style="display:none"><div class="card"><div class="card-body text-slate-400 text-center py-10">Claims — coming in the next increment.</div></div></div>
+      <div class="tab-panel" data-panel="reporting" style="display:none"><div class="card"><div class="card-body text-slate-400 text-center py-10">Reporting — coming in the next increment.</div></div></div>
+      <div class="tab-panel" data-panel="invoices" style="display:none"><div class="card"><div class="card-body text-slate-400 text-center py-10">Invoices — coming in the next increment.</div></div></div>
+      <div class="tab-panel" data-panel="imports" style="display:none"><div class="card"><div class="card-body text-slate-400 text-center py-10">Imports — coming in the next increment.</div></div></div>
+
+    </main>
+  </div>
+</div>
+
+<!-- Modals -->
+<div id="contactModal" class="modal-backdrop hidden"><div class="modal"><div class="modal-header"><span class="modal-title">Contact</span><button class="modal-close" onclick="hideModal('contactModal')">&times;</button></div>
+  <div class="modal-body"><input type="hidden" id="c-id">
+    <div class="form-group"><label class="form-label">Name *</label><input id="c-name" class="form-control"></div>
+    <div class="form-group"><label class="form-label">Title</label><input id="c-title" class="form-control"></div>
+    <div class="form-group"><label class="form-label">Email</label><input id="c-email" class="form-control"></div>
+    <div class="form-group"><label class="form-label">Phone</label><input id="c-phone" class="form-control"></div>
+    <div class="form-group"><label class="form-label">Notes</label><textarea id="c-notes" class="form-control" rows="2"></textarea></div>
+  </div><div class="modal-footer"><button class="btn btn-outline" onclick="hideModal('contactModal')">Cancel</button><button class="btn btn-primary" onclick="saveContact()">Save</button></div></div></div>
+
+<div id="contractModal" class="modal-backdrop hidden"><div class="modal"><div class="modal-header"><span class="modal-title">Contract</span><button class="modal-close" onclick="hideModal('contractModal')">&times;</button></div>
+  <div class="modal-body"><input type="hidden" id="ct-id">
+    <div class="form-group"><label class="form-label">Name *</label><input id="ct-name" class="form-control"></div>
+    <div class="form-group"><label class="form-label">Contract #</label><input id="ct-num" class="form-control"></div>
+    <div class="form-grid">
+      <div class="form-group"><label class="form-label">Effective</label><input type="date" id="ct-eff" class="form-control"></div>
+      <div class="form-group"><label class="form-label">End</label><input type="date" id="ct-end" class="form-control"></div>
+    </div>
+    <div class="form-group"><label class="form-label">Status</label><select id="ct-status" class="form-control"><option>Active</option><option>Pending</option><option>Expired</option><option>Cancelled</option></select></div>
+    <div class="form-group"><label class="form-label">Notes</label><textarea id="ct-notes" class="form-control" rows="2"></textarea></div>
+  </div><div class="modal-footer"><button class="btn btn-outline" onclick="hideModal('contractModal')">Cancel</button><button class="btn btn-primary" onclick="saveContract()">Save</button></div></div></div>
+
+<div id="benefitModal" class="modal-backdrop hidden"><div class="modal"><div class="modal-header"><span class="modal-title">Benefit</span><button class="modal-close" onclick="hideModal('benefitModal')">&times;</button></div>
+  <div class="modal-body"><input type="hidden" id="bn-id"><input type="hidden" id="bn-contract">
+    <div class="form-group"><label class="form-label">Name *</label><input id="bn-name" class="form-control"></div>
+    <div class="form-group"><label class="form-label">Type</label><input id="bn-type" class="form-control" placeholder="e.g. Pharmacy"></div>
+    <div class="form-group"><label class="form-label">Coverage</label><input id="bn-coverage" class="form-control"></div>
+    <div class="form-group"><label class="form-label">Value</label><input id="bn-value" class="form-control"></div>
+    <div class="form-group"><label class="form-label">Notes</label><textarea id="bn-notes" class="form-control" rows="2"></textarea></div>
+  </div><div class="modal-footer"><button class="btn btn-outline" onclick="hideModal('benefitModal')">Cancel</button><button class="btn btn-primary" onclick="saveBenefit()">Save</button></div></div></div>
+
+<div id="groupModal" class="modal-backdrop hidden"><div class="modal"><div class="modal-header"><span class="modal-title">Group</span><button class="modal-close" onclick="hideModal('groupModal')">&times;</button></div>
+  <div class="modal-body"><input type="hidden" id="g-id">
+    <div class="form-group"><label class="form-label">Group ID *</label><input id="g-code" class="form-control"></div>
+    <div class="form-group"><label class="form-label">Group Name</label><input id="g-name" class="form-control"></div>
+    <div class="form-grid">
+      <div class="form-group"><label class="form-label">Client ID</label><input id="g-client" class="form-control"></div>
+      <div class="form-group"><label class="form-label">Company</label><input id="g-company" class="form-control"></div>
+    </div>
+    <div class="form-grid">
+      <div class="form-group"><label class="form-label">Status</label><select id="g-status" class="form-control"><option>Active</option><option>Inactive</option><option>Pending</option><option>Termed</option></select></div>
+      <div class="form-group"><label class="form-label">Effective</label><input type="date" id="g-eff" class="form-control"></div>
+    </div>
+    <div class="form-group"><label class="form-label">Notes</label><textarea id="g-notes" class="form-control" rows="2"></textarea></div>
+  </div><div class="modal-footer"><button class="btn btn-outline" onclick="hideModal('groupModal')">Cancel</button><button class="btn btn-primary" onclick="saveGroup()">Save</button></div></div></div>
+
+<div id="membersModal" class="modal-backdrop hidden"><div class="modal modal-lg"><div class="modal-header"><span class="modal-title" id="mem-title">Eligibility</span><button class="modal-close" onclick="hideModal('membersModal')">&times;</button></div>
+  <div class="modal-body"><input id="mem-search" class="form-control mb-3" placeholder="Search members…" oninput="debounceMembers()">
+    <table class="data-table"><thead><tr><th>Member ID</th><th>Name</th><th>DOB</th><th>Group</th><th>Effective</th><th>Source</th></tr></thead>
+    <tbody id="mem-body"></tbody></table></div></div></div>
+
+<script src="/assets/js/app.js"></script>
+<script>
+  initNav('pbm-record');
+  const pbmId = parseInt(new URLSearchParams(location.search).get('id'), 10) || null;
+  let loaded = { contacts:false, contracts:false, groups:false };
+  let groupsCache = [], curGroup = null, gDebounce, mDebounce;
+
+  function showModal(id){ document.getElementById(id).classList.remove('hidden'); }
+  function hideModal(id){ document.getElementById(id).classList.add('hidden'); }
+
+  function showTab(name) {
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === name));
+    document.querySelectorAll('.tab-panel').forEach(p => p.style.display = p.dataset.panel === name ? '' : 'none');
+    if (name === 'contacts' && !loaded.contacts) loadDetail();
+    if (name === 'contracts' && !loaded.contracts) loadDetail();
+    if (name === 'groups' && !loaded.groups) loadGroups();
+  }
+
+  function gateTabs() {
+    const on = !!pbmId;
+    document.querySelectorAll('.tab-btn').forEach(b => {
+      if (b.dataset.tab === 'demographics') return;
+      b.style.opacity = on ? '' : '.45';
+      b.style.pointerEvents = on ? '' : 'none';
+    });
+  }
+
+  async function loadPbm() {
+    gateTabs();
+    if (!pbmId) { showTab('demographics'); return; }
+    const p = await apiGet(`/pbms?id=${pbmId}`);
+    if (!p) return;
+    document.getElementById('pbm-title').textContent = p.name || 'PBM';
+    const set = (id, v) => document.getElementById(id).value = v == null ? '' : v;
+    set('f-name', p.name); set('f-code', p.pbm_code); set('f-carrier', p.carrier); set('f-sftp', p.sftp_host);
+    set('f-email', p.email); set('f-phone', p.phone); set('f-website', p.website); set('f-coord', p.account_coordinator);
+    set('f-address', p.address); set('f-city', p.city); set('f-state', p.state); set('f-zip', p.zip_code);
+    set('f-notes', p.notes);
+    document.getElementById('f-active').checked = !!p.active;
+  }
+
+  async function saveDemographics() {
+    const g = id => document.getElementById(id).value.trim();
+    const body = { name:g('f-name'), pbm_code:g('f-code'), carrier:g('f-carrier'), sftp_host:g('f-sftp'),
+      email:g('f-email'), phone:g('f-phone'), website:g('f-website'), account_coordinator:g('f-coord'),
+      address:g('f-address'), city:g('f-city'), state:g('f-state'), zip_code:g('f-zip'),
+      notes:g('f-notes'), active: document.getElementById('f-active').checked };
+    if (!body.name) return showToast('Name is required', 'error');
+    if (pbmId) { const r = await apiPatch(`/pbms?id=${pbmId}`, body); if (r && r.ok) showToast('Saved'); }
+    else { const r = await apiPost('/pbms', body); if (r && r.ok) { const d = await r.json(); location.replace(`/pbms/record/?id=${d.id}`); } }
+  }
+
+  // ── Contacts + contracts ──
+  async function loadDetail() {
+    if (!pbmId) return;
+    const d = await apiGet(`/pbm-detail?pbm_id=${pbmId}`);
+    if (!d) return;
+    loaded.contacts = loaded.contracts = true;
+    document.getElementById('tab-contacts').textContent = d.contacts.length ? `(${d.contacts.length})` : '';
+    document.getElementById('tab-contracts').textContent = d.contracts.length ? `(${d.contracts.length})` : '';
+    document.getElementById('contacts-body').innerHTML = d.contacts.length ? d.contacts.map(c => `<tr>
+        <td class="font-medium">${esc(c.name)}</td><td>${esc(c.title)||'—'}</td><td>${esc(c.email)||'—'}</td><td>${esc(c.phone)||'—'}</td>
+        <td class="text-right whitespace-nowrap"><button class="btn btn-outline btn-sm" onclick='openContact(${JSON.stringify(c)})'>Edit</button>
+          <button class="btn btn-outline btn-sm" onclick="delContact(${c.id})">Delete</button></td></tr>`).join('')
+      : '<tr><td colspan="5" class="text-center py-8 text-slate-400">No contacts</td></tr>';
+    document.getElementById('contracts-list').innerHTML = d.contracts.length ? d.contracts.map(ct => `
+      <div class="card mb-3"><div class="card-body">
+        <div class="flex justify-between items-start">
+          <div><span class="font-semibold">${esc(ct.name)}</span> <span class="badge badge-gray">${esc(ct.status)}</span>
+            <div class="text-xs text-slate-400">${esc(ct.contract_number)||''} ${ct.effective_date?('· eff '+fmtDate(ct.effective_date)):''} ${ct.end_date?('· end '+fmtDate(ct.end_date)):''}</div></div>
+          <div class="whitespace-nowrap"><button class="btn btn-outline btn-sm" onclick="openBenefit(${ct.id})">+ Benefit</button>
+            <button class="btn btn-outline btn-sm" onclick='openContract(${JSON.stringify(ct)})'>Edit</button>
+            <button class="btn btn-outline btn-sm" onclick="delContract(${ct.id})">Delete</button></div>
+        </div>
+        <table class="data-table mt-2"><tbody>${(ct.benefits||[]).map(b=>`<tr>
+          <td class="font-medium">${esc(b.name)}</td><td>${esc(b.type)||'—'}</td><td>${esc(b.coverage)||'—'}</td><td>${esc(b.value)||'—'}</td>
+          <td class="text-right whitespace-nowrap"><button class="btn btn-outline btn-sm" onclick='openBenefit(${ct.id},${JSON.stringify(b)})'>Edit</button>
+            <button class="btn btn-outline btn-sm" onclick="delBenefit(${b.id})">Delete</button></td></tr>`).join('')||'<tr><td colspan="5" class="text-slate-400 text-sm">No benefits</td></tr>'}</tbody></table>
+      </div></div>`).join('') : '<div class="card"><div class="card-body text-center py-8 text-slate-400">No contracts</div></div>';
+  }
+
+  function openContact(c){ c=c||{}; ['id','name','title','email','phone','notes'].forEach(k=>document.getElementById('c-'+k).value=c[k]||''); showModal('contactModal'); }
+  async function saveContact(){ const id=document.getElementById('c-id').value;
+    const body={name:val('c-name'),title:val('c-title'),email:val('c-email'),phone:val('c-phone'),notes:val('c-notes')};
+    const r = id ? await apiPatch(`/pbm-detail?resource=contact&id=${id}`,body) : await apiPost(`/pbm-detail?resource=contact&pbm_id=${pbmId}`,body);
+    if(r&&r.ok){ hideModal('contactModal'); loaded.contacts=false; loadDetail(); } else showToast('Save failed','error'); }
+  async function delContact(id){ if(!confirm('Delete contact?'))return; const r=await apiDelete(`/pbm-detail?resource=contact&id=${id}`); if(r&&r.ok){loaded.contacts=false;loadDetail();} }
+
+  function openContract(ct){ ct=ct||{}; document.getElementById('ct-id').value=ct.id||''; document.getElementById('ct-name').value=ct.name||'';
+    document.getElementById('ct-num').value=ct.contract_number||''; document.getElementById('ct-eff').value=(ct.effective_date||'').slice(0,10);
+    document.getElementById('ct-end').value=(ct.end_date||'').slice(0,10); document.getElementById('ct-status').value=ct.status||'Active';
+    document.getElementById('ct-notes').value=ct.notes||''; showModal('contractModal'); }
+  async function saveContract(){ const id=document.getElementById('ct-id').value;
+    const body={name:val('ct-name'),contract_number:val('ct-num'),effective_date:val('ct-eff')||null,end_date:val('ct-end')||null,status:val('ct-status'),notes:val('ct-notes')};
+    const r = id ? await apiPatch(`/pbm-detail?resource=contract&id=${id}`,body) : await apiPost(`/pbm-detail?resource=contract&pbm_id=${pbmId}`,body);
+    if(r&&r.ok){ hideModal('contractModal'); loaded.contracts=false; loadDetail(); } else showToast('Save failed','error'); }
+  async function delContract(id){ if(!confirm('Delete contract and its benefits?'))return; const r=await apiDelete(`/pbm-detail?resource=contract&id=${id}`); if(r&&r.ok){loaded.contracts=false;loadDetail();} }
+
+  function openBenefit(contractId,b){ b=b||{}; document.getElementById('bn-id').value=b.id||''; document.getElementById('bn-contract').value=contractId;
+    ['name','type','coverage','value','notes'].forEach(k=>document.getElementById('bn-'+k).value=b[k]||''); showModal('benefitModal'); }
+  async function saveBenefit(){ const id=document.getElementById('bn-id').value, ctid=document.getElementById('bn-contract').value;
+    const body={name:val('bn-name'),type:val('bn-type'),coverage:val('bn-coverage'),value:val('bn-value'),notes:val('bn-notes')};
+    const r = id ? await apiPatch(`/pbm-detail?resource=benefit&id=${id}`,body) : await apiPost(`/pbm-detail?resource=benefit&contract_id=${ctid}`,body);
+    if(r&&r.ok){ hideModal('benefitModal'); loaded.contracts=false; loadDetail(); } else showToast('Save failed','error'); }
+  async function delBenefit(id){ if(!confirm('Delete benefit?'))return; const r=await apiDelete(`/pbm-detail?resource=benefit&id=${id}`); if(r&&r.ok){loaded.contracts=false;loadDetail();} }
+
+  // ── Groups ──
+  function debounceGroups(){ clearTimeout(gDebounce); gDebounce=setTimeout(loadGroups,300); }
+  async function loadGroups(){ if(!pbmId)return;
+    const s=document.getElementById('group-search').value;
+    const data=await apiGet(`/pbm-detail?resource=groups&pbm_id=${pbmId}${s?'&search='+encodeURIComponent(s):''}`);
+    if(!data)return; loaded.groups=true; groupsCache=data;
+    document.getElementById('tab-groups').textContent = data.length?`(${data.length})`:'';
+    document.getElementById('groups-body').innerHTML = data.length ? data.map(g=>`<tr>
+      <td class="font-mono text-xs">${esc(g.group_code)}</td><td class="font-medium">${esc(g.group_name)||'—'}</td>
+      <td>${esc(g.company_name)||'—'}</td><td class="text-right">${(g.members||0).toLocaleString()}</td>
+      <td><span class="badge ${g.status==='Active'?'badge-green':'badge-gray'}">${esc(g.status)}</span></td>
+      <td class="text-right whitespace-nowrap">
+        <button class="btn btn-outline btn-sm" onclick="viewMembers('${encodeURIComponent(g.group_code)}','${esc(g.group_name||g.group_code)}')">Members</button>
+        <button class="btn btn-outline btn-sm" onclick='openGroup(${JSON.stringify(g)})'>Edit</button>
+        <button class="btn btn-outline btn-sm" onclick="delGroup(${g.id})">Delete</button></td></tr>`).join('')
+      : '<tr><td colspan="6" class="text-center py-8 text-slate-400">No groups</td></tr>';
+  }
+  function openGroup(g){ g=g||{}; document.getElementById('g-id').value=g.id||''; document.getElementById('g-code').value=g.group_code||'';
+    document.getElementById('g-name').value=g.group_name||''; document.getElementById('g-client').value=g.client_code||'';
+    document.getElementById('g-company').value=g.company_name||''; document.getElementById('g-status').value=g.status||'Active';
+    document.getElementById('g-eff').value=(g.effective_date||'').slice(0,10); document.getElementById('g-notes').value=g.notes||''; showModal('groupModal'); }
+  async function saveGroup(){ const id=document.getElementById('g-id').value;
+    const body={group_code:val('g-code'),group_name:val('g-name'),client_code:val('g-client'),company_name:val('g-company'),status:val('g-status'),effective_date:val('g-eff')||null,notes:val('g-notes')};
+    if(!body.group_code)return showToast('Group ID is required','error');
+    const r = id ? await apiPatch(`/pbm-detail?resource=group&id=${id}`,body) : await apiPost(`/pbm-detail?resource=group&pbm_id=${pbmId}`,body);
+    if(r&&r.ok){ hideModal('groupModal'); loadGroups(); } else showToast('Save failed','error'); }
+  async function delGroup(id){ if(!confirm('Delete group?'))return; const r=await apiDelete(`/pbm-detail?resource=group&id=${id}`); if(r&&r.ok) loadGroups(); }
+
+  function viewMembers(codeEnc,label){ curGroup=decodeURIComponent(codeEnc); document.getElementById('mem-title').textContent='Eligibility — '+label;
+    document.getElementById('mem-search').value=''; showModal('membersModal'); loadMembers(); }
+  function debounceMembers(){ clearTimeout(mDebounce); mDebounce=setTimeout(loadMembers,300); }
+  async function loadMembers(){ const s=document.getElementById('mem-search').value;
+    const data=await apiGet(`/pbm-detail?resource=group-members&pbm_id=${pbmId}&group_code=${encodeURIComponent(curGroup)}${s?'&search='+encodeURIComponent(s):''}`);
+    document.getElementById('mem-body').innerHTML = (data&&data.length) ? data.map(m=>`<tr>
+      <td class="font-mono text-xs">${esc(m.MemberID)||'—'}</td><td>${esc(m.LastName)||''}, ${esc(m.FirstName)||''}</td>
+      <td>${esc(m.DateOfBirth)||'—'}</td><td class="font-mono text-xs">${esc(m.GroupID)||''}</td><td>${esc(m.EffectiveStart)||'—'}</td>
+      <td><span class="badge ${m.Source==='API'?'badge-green':'badge-gray'}">${esc(m.Source)}</span></td></tr>`).join('')
+      : '<tr><td colspan="6" class="text-center py-8 text-slate-400">No members</td></tr>';
+  }
+
+  function val(id){ return document.getElementById(id).value.trim(); }
+  showTab('demographics'); loadPbm();
+</script>
+</body>
+</html>

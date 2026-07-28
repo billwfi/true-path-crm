@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PBMs — True Path CRM</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+  <link rel="stylesheet" href="/assets/css/app.css">
+</head>
+<body class="bg-slate-100 text-slate-700">
+<div id="app" class="flex h-screen overflow-hidden">
+  <div id="nav-placeholder"></div>
+  <div class="flex-1 flex flex-col overflow-hidden">
+    <div id="topbar"></div>
+    <main class="flex-1 overflow-y-auto p-6">
+
+      <div class="search-bar">
+        <input type="text" id="search" class="form-control" placeholder="Search PBMs…" oninput="debounceLoad()">
+        <a class="btn btn-primary" href="/pbms/record/"><i class="fa-solid fa-plus"></i> New PBM</a>
+      </div>
+
+      <div class="card">
+        <div class="card-body">
+          <table class="data-table">
+            <thead><tr><th>#</th><th>PBM Name</th><th>Code</th><th>Groups</th><th>Email</th><th>Phone</th><th>Active</th><th>Created</th><th></th></tr></thead>
+            <tbody id="tbl-body"></tbody>
+          </table>
+        </div>
+      </div>
+    </main>
+  </div>
+</div>
+
+<script src="/assets/js/app.js"></script>
+<script>
+  initNav('pbms');
+  let debounce;
+  function debounceLoad() { clearTimeout(debounce); debounce = setTimeout(load, 300); }
+  function openPbm(id) { location.href = `/pbms/record/?id=${id}`; }
+
+  async function load() {
+    const search = document.getElementById('search').value;
+    const data = await apiGet(`/pbms${search ? '?search=' + encodeURIComponent(search) : ''}`);
+    if (!data) return;
+    document.getElementById('tbl-body').innerHTML = data.length
+      ? data.map(p => `<tr class="clickable" onclick="openPbm(${p.id})">
+          <td class="text-slate-400 font-mono text-xs">#${p.id}</td>
+          <td class="font-medium">${esc(p.name) || '—'}</td>
+          <td class="font-mono text-xs">${esc(p.pbm_code) || '—'}</td>
+          <td>${p.groups ? p.groups.toLocaleString() : 0}</td>
+          <td>${esc(p.email) || '—'}</td>
+          <td>${esc(p.phone) || '—'}</td>
+          <td>${p.active ? '<span class="badge badge-green">Active</span>' : '<span class="badge badge-gray">Inactive</span>'}</td>
+          <td class="text-xs text-slate-400">${fmtDate(p.created_at)}</td>
+          <td><button class="btn btn-outline btn-sm" onclick="event.stopPropagation();openPbm(${p.id})"><i class="fa-solid fa-folder-open"></i> Open</button></td>
+        </tr>`).join('')
+      : '<tr><td colspan="9" class="text-center py-10 text-slate-400">No PBMs found</td></tr>';
+  }
+  load();
+</script>
+</body>
+</html>

@@ -106,6 +106,8 @@ const NAV_ITEMS = [
   { section: 'Eligibility & Claims Imports' },
   { href: '/imports/', icon: 'fa-file-import', label: 'Imports', key: 'imports' },
   { href: '/imports/liviniti/', icon: 'fa-file-medical', label: 'Liviniti Feed', key: 'liviniti' },
+  { section: 'PBM Tracking' },
+  { href: '/pbms/', icon: 'fa-building-shield', label: 'PBM', key: 'pbms' },
   { section: 'Admin' },
   { href: '/brokers/',   icon: 'fa-handshake',         label: 'Brokers',     key: 'brokers' },
   { section: 'Settings', adminOnly: true },
@@ -173,6 +175,7 @@ function initNav(activeKey) {
     'invoices-data': 'Invoices & Statements — Invoice Data',
     imports: 'Eligibility & Claims Imports',
     liviniti: 'Liviniti Feed — RxCompass Eligibility',
+    pbms: 'PBM Tracking', 'pbm-record': 'PBM Record',
     companies: 'Companies', brokers: 'Brokers', 'user-management': 'User Management',
     'project-plan': 'Project Plan', 'release-notes': 'Release Notes',
   };
