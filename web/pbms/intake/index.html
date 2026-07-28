@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Member Submissions — True Path CRM</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+  <link rel="stylesheet" href="/assets/css/app.css">
+</head>
+<body class="bg-slate-100 text-slate-700">
+<div id="app" class="flex h-screen overflow-hidden">
+  <div id="nav-placeholder"></div>
+  <div class="flex-1 flex flex-col overflow-hidden">
+    <div id="topbar"></div>
+    <main class="flex-1 overflow-y-auto p-6">
+
+      <p class="text-sm text-slate-500 mb-4">Member records submitted by PBM feeds via the intake API. Verify each record and assign a Client Concierge.</p>
+
+      <div class="search-bar">
+        <div id="status-filter" class="flex gap-1"></div>
+        <input type="text" id="search" class="form-control" style="max-width:260px" placeholder="Search name / group…" oninput="debounceLoad()">
+        <button class="btn btn-outline btn-sm" onclick="loadAll()"><i class="fa-solid fa-rotate"></i></button>
+      </div>
+
+      <div class="card"><div class="card-body">
+        <table class="data-table">
+          <thead><tr><th>Received</th><th>Member</th><th>Group</th><th>DOB</th><th>Source</th><th>Status</th><th>Concierge</th><th></th></tr></thead>
+          <tbody id="tbl-body"><tr><td colspan="8" class="text-center py-10 text-slate-400">Loading…</td></tr></tbody>
+        </table>
+      </div></div>
+    </main>
+  </div>
+</div>
+
+<!-- Review modal -->
+<div id="reviewModal" class="modal-backdrop hidden"><div class="modal"><div class="modal-header">
+  <span class="modal-title">Review Submission</span><button class="modal-close" onclick="hideModal('reviewModal')">&times;</button></div>
+  <div class="modal-body"><input type="hidden" id="r-id">
+    <div id="r-summary" class="text-sm mb-3"></div>
+    <div class="form-group"><label class="form-label">Status</label>
+      <select id="r-status" class="form-control"><option>New</option><option>Verified</option><option>Assigned</option><option>Rejected</option></select></div>
+    <div class="form-group"><label class="form-label">Assign Client Concierge</label>
+      <select id="r-concierge" class="form-control"><option value="">— Unassigned —</option></select></div>
+    <div class="form-group"><label class="form-label">Notes</label><textarea id="r-notes" class="form-control" rows="2"></textarea></div>
+    <details class="text-xs text-slate-500"><summary class="cursor-pointer">Raw submitted JSON</summary>
+      <pre id="r-raw" style="white-space:pre-wrap;background:#f8fafc;border:1px solid #e2e8f0;border-radius:6px;padding:8px;max-height:200px;overflow:auto;margin-top:6px;"></pre></details>
+  </div>
+  <div class="modal-footer"><button class="btn btn-outline" onclick="hideModal('reviewModal')">Cancel</button><button class="btn btn-primary" onclick="saveReview()">Save</button></div>
+</div></div>
+
+<script src="/assets/js/app.js"></script>
+<script>
+  initNav('pbm-intake');
+  let debounce, curStatus = '', COUNTS = {}, CONCIERGES = [];
+  function debounceLoad(){ clearTimeout(debounce); debounce = setTimeout(loadList, 300); }
+  function showModal(id){ document.getElementById(id).classList.remove('hidden'); }
+  function hideModal(id){ document.getElementById(id).classList.add('hidden'); }
+
+  const PILL = { New:'badge-blue', Verified:'badge-green', Assigned:'badge-green', Rejected:'badge-gray' };
+
+  async function loadAll(){
+    COUNTS = await apiGet('/pbm-intake-review?resource=counts') || {};
+    CONCIERGES = await apiGet('/pbm-intake-review?resource=concierges') || [];
+    const sel = document.getElementById('r-concierge');
+    sel.innerHTML = '<option value="">— Unassigned —</option>' + CONCIERGES.map(c=>`<option value="${c.id}">${esc(c.name)}</option>`).join('');
+    renderFilter();
+    loadList();
+  }
+  function renderFilter(){
+    const tabs = [['','All'],['New','New'],['Verified','Verified'],['Assigned','Assigned'],['Rejected','Rejected']];
+    document.getElementById('status-filter').innerHTML = tabs.map(([v,l])=>{
+      const n = v==='' ? (COUNTS.total||0) : (COUNTS[v]||0);
+      return `<button class="btn btn-sm ${curStatus===v?'btn-primary':'btn-outline'}" onclick="setStatus('${v}')">${l} <span class="badge badge-gray ml-1">${n}</span></button>`;
+    }).join('');
+  }
+  function setStatus(v){ curStatus=v; renderFilter(); loadList(); }
+
+  async function loadList(){
+    const s = document.getElementById('search').value;
+    const data = await apiGet(`/pbm-intake-review?${curStatus?'status='+curStatus+'&':''}${s?'search='+encodeURIComponent(s):''}`);
+    if(!data) return;
+    document.getElementById('tbl-body').innerHTML = data.length ? data.map(r=>`<tr>
+      <td class="text-xs text-slate-400 whitespace-nowrap">${r.ReceivedAt?new Date(r.ReceivedAt).toLocaleString():'—'}</td>
+      <td class="font-medium">${esc(r.LastName)||''}, ${esc(r.FirstName)||''}</td>
+      <td class="text-xs"><span class="font-mono font-semibold text-sky-700">${esc(r.TPGroupID)||'—'}</span> ${esc(r.GroupName)||''}</td>
+      <td>${esc(r.DateOfBirth)||'—'}</td>
+      <td><span class="badge badge-gray">${esc(r.Source)}</span></td>
+      <td><span class="badge ${PILL[r.Status]||'badge-gray'}">${esc(r.Status)}</span></td>
+      <td>${esc(r.AssignedConciergeName)||'<span class="text-slate-300">—</span>'}</td>
+      <td class="text-right"><button class="btn btn-outline btn-sm" onclick='openReview(${JSON.stringify(r)})'>Review</button></td></tr>`).join('')
+      : '<tr><td colspan="8" class="text-center py-10 text-slate-400">No submissions</td></tr>';
+  }
+
+  function openReview(r){
+    document.getElementById('r-id').value = r.id;
+    document.getElementById('r-summary').innerHTML =
+      `<b>${esc(r.LastName)||''}, ${esc(r.FirstName)||''}</b> &nbsp; DOB ${esc(r.DateOfBirth)||'—'}<br>
+       Group <span class="font-mono text-sky-700">${esc(r.TPGroupID)||''}</span> ${esc(r.GroupName)||''} &nbsp;·&nbsp; ${esc(r.EmailAddress)||''}<br>
+       <span class="text-slate-400 text-xs">Received ${r.ReceivedAt?new Date(r.ReceivedAt).toLocaleString():''} via ${esc(r.Source)}</span>`;
+    document.getElementById('r-status').value = r.Status || 'New';
+    document.getElementById('r-concierge').value = r.AssignedConciergeId || '';
+    document.getElementById('r-notes').value = r.ReviewNotes || '';
+    let raw = r.RawJson; try { raw = JSON.stringify(JSON.parse(r.RawJson), null, 2); } catch {}
+    document.getElementById('r-raw').textContent = raw || '(none)';
+    showModal('reviewModal');
+  }
+
+  async function saveReview(){
+    const id = document.getElementById('r-id').value;
+    const body = {
+      status: document.getElementById('r-status').value,
+      assigned_concierge_id: document.getElementById('r-concierge').value || null,
+      notes: document.getElementById('r-notes').value
+    };
+    const r = await apiPatch(`/pbm-intake-review?id=${id}`, body);
+    if(r && r.ok){ hideModal('reviewModal'); showToast('Saved'); loadAll(); }
+    else showToast('Save failed','error');
+  }
+
+  loadAll();
+</script>
+</body>
+</html>
