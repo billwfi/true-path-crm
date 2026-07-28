@@ -66,7 +66,7 @@ def ensure_table(cur, header_cols, recreate):
         cur.execute(f"DROP TABLE dbo.[{TABLE}]")
         exists = False
     if not exists:
-        defs = ",\n  ".join(f"[{c}] NVARCHAR(512) NULL" for c in cols)
+        defs = ",\n  ".join(f"[{c}] NVARCHAR(4000) NULL" for c in cols)
         cur.execute(
             f"CREATE TABLE dbo.[{TABLE}] (\n  {defs},\n"
             "  [SourceFile] NVARCHAR(260) NULL,\n"
