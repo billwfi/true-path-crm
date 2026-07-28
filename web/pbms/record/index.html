@@ -36,25 +36,32 @@
 
       <!-- Demographics -->
       <div class="tab-panel" data-panel="demographics">
-        <div class="card"><div class="card-body">
-          <div class="form-grid">
-            <div class="form-group"><label class="form-label">PBM Name *</label><input id="f-name" class="form-control"></div>
-            <div class="form-group"><label class="form-label">PBM Code</label><input id="f-code" class="form-control" placeholder="e.g. LIVINITI"></div>
-            <div class="form-group"><label class="form-label">Carrier (eligibility)</label><input id="f-carrier" class="form-control"></div>
-            <div class="form-group"><label class="form-label">SFTP Host</label><input id="f-sftp" class="form-control" placeholder="sftp.example.com"></div>
-            <div class="form-group"><label class="form-label">Email</label><input id="f-email" class="form-control"></div>
-            <div class="form-group"><label class="form-label">Phone</label><input id="f-phone" class="form-control"></div>
-            <div class="form-group"><label class="form-label">Website</label><input id="f-website" class="form-control"></div>
-            <div class="form-group"><label class="form-label">Account Coordinator</label><input id="f-coord" class="form-control"></div>
-            <div class="form-group"><label class="form-label">Address</label><input id="f-address" class="form-control"></div>
-            <div class="form-group"><label class="form-label">City</label><input id="f-city" class="form-control"></div>
-            <div class="form-group"><label class="form-label">State</label><input id="f-state" class="form-control"></div>
-            <div class="form-group"><label class="form-label">Zip</label><input id="f-zip" class="form-control"></div>
+        <div class="card">
+          <div class="card-header"><span class="card-title"><i class="fa-solid fa-building-shield text-slate-400 mr-2"></i>PBM Demographics</span></div>
+          <div class="card-body form-pad">
+            <div class="field-grid">
+              <div class="form-group mb-0 full"><label class="form-label">PBM Name *</label><input class="form-control" id="f-name"></div>
+              <div class="form-group mb-0"><label class="form-label">PBM Code</label><input class="form-control" id="f-code" placeholder="e.g. LIVINITI"></div>
+              <div class="form-group mb-0"><label class="form-label">Carrier (eligibility)</label><input class="form-control" id="f-carrier"></div>
+              <div class="form-group mb-0"><label class="form-label">SFTP Host</label><input class="form-control" id="f-sftp" placeholder="sftp.example.com"></div>
+              <div class="form-group mb-0"><label class="form-label">Account Coordinator</label><input class="form-control" id="f-coord"></div>
+              <div class="form-group mb-0"><label class="form-label">Email</label><input class="form-control" type="email" id="f-email"></div>
+              <div class="form-group mb-0"><label class="form-label">Phone</label><input class="form-control" id="f-phone"></div>
+              <div class="form-group mb-0 full"><label class="form-label">Website</label><input class="form-control" id="f-website"></div>
+              <div class="form-group mb-0 full"><label class="form-label">Address</label><input class="form-control" id="f-address"></div>
+              <div class="form-group mb-0"><label class="form-label">City</label><input class="form-control" id="f-city"></div>
+              <div class="form-group mb-0"><label class="form-label">State</label><input class="form-control" id="f-state"></div>
+              <div class="form-group mb-0"><label class="form-label">Zip</label><input class="form-control" id="f-zip"></div>
+              <div class="form-group mb-0"><label class="form-label">Active</label>
+                <select class="form-control" id="f-active"><option value="1">Yes</option><option value="0">No</option></select></div>
+              <div class="form-group mb-0 full"><label class="form-label">Notes</label><textarea class="form-control" id="f-notes" rows="3"></textarea></div>
+            </div>
+            <div class="flex items-center gap-3 mt-5">
+              <button class="btn btn-primary" onclick="saveDemographics()"><i class="fa-solid fa-floppy-disk"></i> Save</button>
+              <button class="btn btn-danger" id="delete-btn" onclick="doDeletePbm()" style="display:none"><i class="fa-solid fa-trash"></i> Delete</button>
+            </div>
           </div>
-          <div class="form-group"><label class="form-label">Notes</label><textarea id="f-notes" class="form-control" rows="3"></textarea></div>
-          <label class="form-label inline-flex items-center gap-2"><input type="checkbox" id="f-active" checked> Active</label>
-          <div class="mt-4"><button class="btn btn-primary" onclick="saveDemographics()"><i class="fa-solid fa-floppy-disk"></i> Save</button></div>
-        </div></div>
+        </div>
       </div>
 
       <!-- Contacts -->
@@ -182,7 +189,14 @@
     set('f-email', p.email); set('f-phone', p.phone); set('f-website', p.website); set('f-coord', p.account_coordinator);
     set('f-address', p.address); set('f-city', p.city); set('f-state', p.state); set('f-zip', p.zip_code);
     set('f-notes', p.notes);
-    document.getElementById('f-active').checked = !!p.active;
+    document.getElementById('f-active').value = p.active ? '1' : '0';
+    document.getElementById('delete-btn').style.display = '';
+  }
+
+  async function doDeletePbm() {
+    if (!pbmId || !confirm('Delete this PBM and its contacts, contracts, and groups?')) return;
+    const r = await apiDelete(`/pbms?id=${pbmId}`);
+    if (r && r.ok) location.href = '/pbms/';
   }
 
   async function saveDemographics() {
@@ -190,7 +204,7 @@
     const body = { name:g('f-name'), pbm_code:g('f-code'), carrier:g('f-carrier'), sftp_host:g('f-sftp'),
       email:g('f-email'), phone:g('f-phone'), website:g('f-website'), account_coordinator:g('f-coord'),
       address:g('f-address'), city:g('f-city'), state:g('f-state'), zip_code:g('f-zip'),
-      notes:g('f-notes'), active: document.getElementById('f-active').checked };
+      notes:g('f-notes'), active: document.getElementById('f-active').value === '1' };
     if (!body.name) return showToast('Name is required', 'error');
     if (pbmId) { const r = await apiPatch(`/pbms?id=${pbmId}`, body); if (r && r.ok) showToast('Saved'); }
     else { const r = await apiPost('/pbms', body); if (r && r.ok) { const d = await r.json(); location.replace(`/pbms/record/?id=${d.id}`); } }
