@@ -129,7 +129,8 @@ exports.handler = async function (event) {
             </table>
             <p style="margin:14px 0 0;"><a href="https://app.truepathsourcing.com/pbms/intake/" style="color:#0a5e57;font-weight:600;">Open Member Submissions →</a></p>
           </td></tr></table></td></tr></table>`;
-        await sendEmail({ to, subject: `PBM intake: ${accepted} new member record(s) submitted`, html });
+        // Fire-and-forget: never block the partner's API response on the email send.
+        sendEmail({ to, subject: `PBM intake: ${accepted} new member record(s) submitted`, html }).catch(() => {});
       } catch (e) { /* notification is best-effort */ }
     }
 
