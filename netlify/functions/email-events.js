@@ -30,8 +30,13 @@ exports.handler = async function (event) {
         await mssql(`UPDATE dbo.Email_Campaign_Recipients SET status='Delivered', delivered_at=GETDATE()
                      WHERE message_id=@m AND status IN ('Sent','Pending')`, { m: d.messageId });
       } else if (FAILED.has(d.status)) {
+        // deliveryStatusDetails is an object ({ statusMessage: "SMTP; 550 ..." }), not a string.
+        const dsd = d.deliveryStatusDetails;
+        const reason = (dsd && typeof dsd === 'object')
+          ? (dsd.statusMessage || dsd.StatusMessage || JSON.stringify(dsd))
+          : (dsd || '');
         await mssql(`UPDATE dbo.Email_Campaign_Recipients SET status='Bounced', bounced_at=GETDATE(),
-                     error=@e WHERE message_id=@m`, { e: (d.status + ': ' + (d.deliveryStatusDetails || '')).slice(0, 400), m: d.messageId });
+                     error=@e WHERE message_id=@m`, { e: (d.status + ': ' + reason).slice(0, 400), m: d.messageId });
       }
     } else if (ev.eventType === 'Microsoft.Communication.EmailEngagementTrackingReportReceived' && d.messageId) {
       if ((d.engagementType || '').toLowerCase() === 'view') {
