@@ -49,6 +49,7 @@
           <div class="kpi" id="d-kpi"></div>
           <div class="bar" style="margin-bottom:6px"><i id="d-bar" style="width:0%"></i></div>
           <div id="d-progress" class="text-sm text-slate-500"></div>
+          <div style="margin-top:10px"><button class="btn btn-outline btn-sm" id="export-btn" onclick="exportIssues()"><i class="fa-solid fa-file-arrow-down"></i> Export bounced / failed</button></div>
 
           <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:16px;align-items:center">
             <input type="file" id="imp-file" accept=".xlsx,.xls,.csv" class="text-sm">
@@ -152,9 +153,32 @@
       .map(([l,n])=>`<div class="box"><div class="n">${n}</div><div class="l">${l}</div></div>`).join('');
     document.getElementById('d-bar').style.width = (total? Math.round(done/total*100):0)+'%';
     document.getElementById('d-progress').textContent = `${done} of ${total} processed · ${s.Pending||0} pending`;
+    const issues = (s.Bounced||0)+(s.Failed||0);
+    const eb = document.getElementById('export-btn');
+    eb.innerHTML = `<i class="fa-solid fa-file-arrow-down"></i> Export bounced / failed${issues?` (${issues})`:''}`;
+    eb.disabled = !issues; eb.style.opacity = issues ? '' : '.5';
     document.getElementById('co-body').innerHTML = (d.companies||[]).map(x=>`<tr>
       <td>${esc(x.company_name||'—')}</td><td class="num">${x.total}</td><td class="num">${x.sent}</td>
       <td class="num">${x.delivered}</td><td class="num">${x.bounced}</td></tr>`).join('');
+  }
+
+  async function exportIssues() {
+    const rows = await apiGet(`/email-campaigns?id=${CUR}&resource=issues`);
+    if (!rows) return;
+    if (!rows.length) { showToast('No bounced or failed emails','success'); return; }
+    const data = rows.map(r => ({
+      Company: r.company_name || '', 'First Name': r.first_name || '', 'Last Name': r.last_name || '',
+      Email: r.email || '', Status: r.status || '', Reason: r.error || '',
+      'Message ID': r.message_id || '',
+      'Sent At': r.sent_at ? new Date(r.sent_at).toLocaleString() : '',
+      'Bounced At': r.bounced_at ? new Date(r.bounced_at).toLocaleString() : '',
+    }));
+    const ws = XLSX.utils.json_to_sheet(data);
+    ws['!cols'] = [{wch:26},{wch:14},{wch:14},{wch:30},{wch:10},{wch:40},{wch:24},{wch:20},{wch:20}];
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Bounced & Failed');
+    const name = (document.getElementById('d-name').textContent || 'campaign').replace(/[^\w]+/g,'_');
+    XLSX.writeFile(wb, `${name}_bounced_failed.xlsx`);
   }
 
   // Same rule as the server import filter: real @, exclude noemail* and no@email.com.

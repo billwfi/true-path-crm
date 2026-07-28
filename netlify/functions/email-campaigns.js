@@ -21,6 +21,16 @@ exports.handler = async function (event) {
 
   try {
     if (event.httpMethod === 'GET') {
+      if (resource === 'issues') {
+        // Bounced/failed recipient detail for export.
+        if (!id) return badRequest('id required');
+        const r = await mssql(
+          `SELECT company_name, first_name, last_name, email, status, error, message_id, sent_at, bounced_at
+           FROM dbo.Email_Campaign_Recipients
+           WHERE campaign_id = @id AND status IN ('Bounced','Failed')
+           ORDER BY status, company_name, last_name`, { id: +id });
+        return ok(r.recordset);
+      }
       if (id) {
         const c = (await mssql('SELECT * FROM dbo.Email_Campaigns WHERE id=@id', { id: +id })).recordset[0];
         if (!c) return notFound();
