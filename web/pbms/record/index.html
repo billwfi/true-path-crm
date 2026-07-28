@@ -14,16 +14,20 @@
     <div id="topbar"></div>
     <main class="flex-1 overflow-y-auto p-6">
 
-      <div class="flex items-center justify-between mb-4">
-        <h1 class="text-xl font-bold text-slate-700" id="pbm-title">New PBM</h1>
-        <a href="/pbms/" class="btn btn-outline btn-sm"><i class="fa-solid fa-arrow-left"></i> All PBMs</a>
+      <div class="search-bar">
+        <a class="btn btn-outline" href="/pbms/"><i class="fa-solid fa-arrow-left"></i> Back to PBMs</a>
+        <span class="ml-2 text-lg font-semibold" id="pbm-title">New PBM</span>
       </div>
 
-      <div id="tabbar" class="tabbar mb-4 flex flex-wrap gap-1 border-b border-slate-200">
+      <!-- Tabs -->
+      <div id="tabbar" class="flex gap-6 border-b border-slate-200 mb-4 px-1">
         <button class="tab-btn active" data-tab="demographics" onclick="showTab('demographics')">Demographics</button>
-        <button class="tab-btn" data-tab="contacts" onclick="showTab('contacts')">Contacts <span id="tab-contacts"></span></button>
-        <button class="tab-btn" data-tab="contracts" onclick="showTab('contracts')">Contracts <span id="tab-contracts"></span></button>
-        <button class="tab-btn" data-tab="groups" onclick="showTab('groups')">Groups <span id="tab-groups"></span></button>
+        <button class="tab-btn" data-tab="contacts" onclick="showTab('contacts')">
+          Contacts <span id="tab-contacts" class="badge badge-blue ml-1">0</span></button>
+        <button class="tab-btn" data-tab="contracts" onclick="showTab('contracts')">
+          Contracts <span id="tab-contracts" class="badge badge-blue ml-1">0</span></button>
+        <button class="tab-btn" data-tab="groups" onclick="showTab('groups')">
+          Groups <span id="tab-groups" class="badge badge-blue ml-1">0</span></button>
         <button class="tab-btn" data-tab="claims" onclick="showTab('claims')">Claims</button>
         <button class="tab-btn" data-tab="reporting" onclick="showTab('reporting')">Reporting</button>
         <button class="tab-btn" data-tab="invoices" onclick="showTab('invoices')">Invoices</button>
@@ -197,8 +201,8 @@
     const d = await apiGet(`/pbm-detail?pbm_id=${pbmId}`);
     if (!d) return;
     loaded.contacts = loaded.contracts = true;
-    document.getElementById('tab-contacts').textContent = d.contacts.length ? `(${d.contacts.length})` : '';
-    document.getElementById('tab-contracts').textContent = d.contracts.length ? `(${d.contracts.length})` : '';
+    document.getElementById('tab-contacts').textContent = d.contacts.length;
+    document.getElementById('tab-contracts').textContent = d.contracts.length;
     document.getElementById('contacts-body').innerHTML = d.contacts.length ? d.contacts.map(c => `<tr>
         <td class="font-medium">${esc(c.name)}</td><td>${esc(c.title)||'—'}</td><td>${esc(c.email)||'—'}</td><td>${esc(c.phone)||'—'}</td>
         <td class="text-right whitespace-nowrap"><button class="btn btn-outline btn-sm" onclick='openContact(${JSON.stringify(c)})'>Edit</button>
@@ -251,7 +255,7 @@
     const s=document.getElementById('group-search').value;
     const data=await apiGet(`/pbm-detail?resource=groups&pbm_id=${pbmId}${s?'&search='+encodeURIComponent(s):''}`);
     if(!data)return; loaded.groups=true; groupsCache=data;
-    document.getElementById('tab-groups').textContent = data.length?`(${data.length})`:'';
+    document.getElementById('tab-groups').textContent = data.length;
     document.getElementById('groups-body').innerHTML = data.length ? data.map(g=>`<tr>
       <td class="font-mono text-xs">${esc(g.group_code)}</td><td class="font-medium">${esc(g.group_name)||'—'}</td>
       <td>${esc(g.company_name)||'—'}</td><td class="text-right">${(g.members||0).toLocaleString()}</td>
