@@ -44,9 +44,14 @@ app.use((req, res, next) => {
 // Capture the raw body as a string for every content type: functions do
 // `JSON.parse(event.body)` themselves and file uploads arrive as base64 in
 // JSON, so we must not pre-parse. 50mb covers spreadsheet imports.
-app.use('/.netlify/functions', express.raw({ type: '*/*', limit: '50mb' }));
+// The same functions are served under two prefixes:
+//   /.netlify/functions/<name>  — used by the app's own frontend (unchanged)
+//   /api/<name>                 — clean Azure-hosted path for external/partner calls
+const rawBody = express.raw({ type: '*/*', limit: '50mb' });
+app.use('/.netlify/functions', rawBody);
+app.use('/api', rawBody);
 
-app.all('/.netlify/functions/:name', async (req, res) => {
+async function invokeFunction(req, res) {
   const { name } = req.params;
   if (!FUNCTIONS.has(name)) {
     return res.status(404).json({ error: `Function not found: ${name}` });
@@ -76,7 +81,10 @@ app.all('/.netlify/functions/:name', async (req, res) => {
     console.error(`Function ${name} threw:`, err);
     res.status(500).json({ error: 'Internal server error' });
   }
-});
+}
+
+app.all('/.netlify/functions/:name', invokeFunction);
+app.all('/api/:name', invokeFunction);
 
 // ── Static site (was netlify.toml publish = "web") ──────────────────────────
 // Mirror Netlify's clean-URL behavior: 301 an extensionless path with no

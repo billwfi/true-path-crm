@@ -5,7 +5,7 @@ const { sendEmail } = require('./_email');
 // Inbound member-record intake API for a PBM feed (e.g. Liviniti).
 // AUTH: static key in the `x-api-key` header, compared to env PBM_INTAKE_KEY.
 //   (No user JWT — this is called by an external system.)
-// POST /.netlify/functions/pbm-intake        body: one record  OR  { members: [ ... ] }  OR  [ ... ]
+// POST /api/pbm-intake        body: one record  OR  { members: [ ... ] }  OR  [ ... ]
 // Each record identifies its group by our internal TP Group ID, sent as
 //   "TPGroupID": "TP1001"   (or carried in "GroupID": "TP1001").
 // The API resolves it to the PBM group, stamps the real eligibility GroupID/GroupName
