@@ -18,6 +18,9 @@ fi
 if [ "$PIPELINE" = "campaign" ]; then
   exec python scripts/campaign_send.py
 fi
+if [ "$PIPELINE" = "liviniti" ]; then
+  exec python scripts/liviniti_import.py
+fi
 
 CLIENT="${CLIENT:-mcrhotels}"
 
