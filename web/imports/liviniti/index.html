@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Liviniti Feed — True Path CRM</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+  <link rel="stylesheet" href="/assets/css/app.css">
+</head>
+<body class="bg-slate-100 text-slate-700">
+<div id="app" class="flex h-screen overflow-hidden">
+  <div id="nav-placeholder"></div>
+  <div class="flex-1 flex flex-col overflow-hidden">
+    <div id="topbar"></div>
+    <main class="flex-1 overflow-y-auto p-6">
+
+      <div class="flex items-center justify-between mb-4">
+        <p class="text-sm text-slate-500">RxCompass eligibility pulled weekly from <b>sftp.liviniti.com</b> into <code>dbo.Eligibility_Liviniti</code> (staging only — not fed to production).</p>
+        <button class="btn btn-outline btn-sm" onclick="load()"><i class="fa-solid fa-rotate"></i> Refresh</button>
+      </div>
+
+      <!-- Summary cards -->
+      <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6" id="cards">
+        <div class="card"><div class="card-body"><div class="text-xs text-slate-400 uppercase">Batch date</div><div class="text-2xl font-bold" id="c-date">—</div></div></div>
+        <div class="card"><div class="card-body"><div class="text-xs text-slate-400 uppercase">Member rows</div><div class="text-2xl font-bold" id="c-rows">—</div></div></div>
+        <div class="card"><div class="card-body"><div class="text-xs text-slate-400 uppercase">Companies</div><div class="text-2xl font-bold" id="c-cos">—</div></div></div>
+        <div class="card"><div class="card-body"><div class="text-xs text-slate-400 uppercase">Last loaded (UTC)</div><div class="text-sm font-semibold mt-1" id="c-loaded">—</div></div></div>
+      </div>
+
+      <!-- Run history -->
+      <h2 class="text-sm font-semibold text-slate-600 uppercase mb-2">Import runs</h2>
+      <div class="card mb-6"><div class="card-body">
+        <table class="data-table">
+          <thead><tr><th>#</th><th>File batch</th><th>Status</th><th>Rows</th><th>Finished</th><th>Message</th></tr></thead>
+          <tbody id="runs"><tr><td colspan="6" class="text-center py-8 text-slate-400">Loading…</td></tr></tbody>
+        </table>
+      </div></div>
+
+      <!-- Per-company -->
+      <div class="flex items-center justify-between mb-2">
+        <h2 class="text-sm font-semibold text-slate-600 uppercase">Members by company (current batch)</h2>
+        <input type="text" id="filter" class="form-control" style="max-width:260px" placeholder="Filter companies…" oninput="renderCompanies()">
+      </div>
+      <div class="card"><div class="card-body">
+        <table class="data-table">
+          <thead><tr><th>Company</th><th style="text-align:right">Members</th></tr></thead>
+          <tbody id="companies"><tr><td colspan="2" class="text-center py-8 text-slate-400">Loading…</td></tr></tbody>
+        </table>
+      </div></div>
+
+    </main>
+  </div>
+</div>
+
+<script src="/assets/js/app.js"></script>
+<script>
+  initNav('liviniti');
+  let COMPANIES = [];
+
+  function statusPill(s) {
+    const map = { Success:'bg-emerald-100 text-emerald-700', Partial:'bg-amber-100 text-amber-700',
+      Error:'bg-red-100 text-red-700', Running:'bg-sky-100 text-sky-700', NoFile:'bg-slate-100 text-slate-500' };
+    return `<span class="px-2 py-0.5 rounded text-xs font-semibold ${map[s]||'bg-slate-100 text-slate-600'}">${esc(s||'')}</span>`;
+  }
+  function fmtDt(d){ if(!d) return '—'; const t=new Date(d); return isNaN(t)?esc(d):t.toLocaleString(); }
+  function num(n){ return (n==null)?'—':Number(n).toLocaleString(); }
+
+  async function load() {
+    const data = await apiGet('/liviniti');
+    if (!data) return;
+    const s = data.summary || {};
+    document.getElementById('c-date').textContent   = s.batch_date || '—';
+    document.getElementById('c-rows').textContent   = num(s.rows_total);
+    document.getElementById('c-cos').textContent    = num(s.companies);
+    document.getElementById('c-loaded').textContent = s.loaded_at ? new Date(s.loaded_at).toISOString().replace('T',' ').slice(0,19) : '—';
+
+    document.getElementById('runs').innerHTML = (data.runs && data.runs.length)
+      ? data.runs.map(r => `<tr>
+          <td>${r.id}</td>
+          <td>${esc(r.file_name||'')}</td>
+          <td>${statusPill(r.status)}</td>
+          <td>${num(r.rows_loaded)}</td>
+          <td>${fmtDt(r.finished_at)}</td>
+          <td class="text-slate-400 text-xs">${esc(r.message||'')}</td></tr>`).join('')
+      : `<tr><td colspan="6" class="text-center py-8 text-slate-400">No runs yet.</td></tr>`;
+
+    COMPANIES = data.byCompany || [];
+    renderCompanies();
+  }
+
+  function renderCompanies() {
+    const q = (document.getElementById('filter').value || '').toLowerCase();
+    const rows = COMPANIES.filter(c => (c.CompanyName||'').toLowerCase().includes(q));
+    document.getElementById('companies').innerHTML = rows.length
+      ? rows.map(c => `<tr><td>${esc(c.CompanyName||'')}</td><td style="text-align:right">${num(c.members)}</td></tr>`).join('')
+      : `<tr><td colspan="2" class="text-center py-8 text-slate-400">No companies.</td></tr>`;
+  }
+
+  load();
+</script>
+</body>
+</html>

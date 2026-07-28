@@ -105,6 +105,7 @@ const NAV_ITEMS = [
   { href: '/invoices/data/',      icon: 'fa-table',     label: 'Invoice Data', key: 'invoices-data' },
   { section: 'Eligibility & Claims Imports' },
   { href: '/imports/', icon: 'fa-file-import', label: 'Imports', key: 'imports' },
+  { href: '/imports/liviniti/', icon: 'fa-file-medical', label: 'Liviniti Feed', key: 'liviniti' },
   { section: 'Admin' },
   { href: '/brokers/',   icon: 'fa-handshake',         label: 'Brokers',     key: 'brokers' },
   { section: 'Settings', adminOnly: true },
@@ -171,6 +172,7 @@ function initNav(activeKey) {
     'invoices-dashboard': 'Invoices & Statements — Dashboard',
     'invoices-data': 'Invoices & Statements — Invoice Data',
     imports: 'Eligibility & Claims Imports',
+    liviniti: 'Liviniti Feed — RxCompass Eligibility',
     companies: 'Companies', brokers: 'Brokers', 'user-management': 'User Management',
     'project-plan': 'Project Plan', 'release-notes': 'Release Notes',
   };
