@@ -5,9 +5,12 @@ const { ok, created, badRequest, serverError, options } = require('./_auth');
 // AUTH: static key in the `x-api-key` header, compared to env PBM_INTAKE_KEY.
 //   (No user JWT — this is called by an external system.)
 // POST /.netlify/functions/pbm-intake        body: one record  OR  { members: [ ... ] }  OR  [ ... ]
-//   ?pbm_id=N  (optional; defaults to the PBM with pbm_code='LIVINITI')
-// Records use the RxCompass eligibility field names (see COLS). Unknown keys are
-// still preserved in RawJson. Rows land in dbo.PBM_Member_Intake (accumulates).
+// Each record identifies its group by our internal TP Group ID, sent as
+//   "TPGroupID": "TP1001"   (or carried in "GroupID": "TP1001").
+// The API resolves it to the PBM group, stamps the real eligibility GroupID/GroupName
+// and pbm_id, and records TPGroupID. A raw eligibility GroupID is still accepted as a
+// fallback. Other fields use the RxCompass eligibility names (see COLS); unknown keys
+// are preserved in RawJson. Rows land in dbo.PBM_Member_Intake (accumulates).
 
 const COLS = [
   'CardholderID','PersonCode','Relationship','LastName','FirstName','MiddleName','Suffix','Gender',
@@ -46,32 +49,65 @@ exports.handler = async function (event) {
     if (!records.length) return badRequest('no records');
     if (records.length > 5000) return badRequest('max 5000 records per request');
 
-    // resolve target PBM
+    // A record identifies its group by our internal TP Group ID (preferred),
+    // supplied as `TPGroupID` (or carried in `GroupID` as e.g. "TP1001").
+    const tpRefOf = (rec) => {
+      let raw = null;
+      for (const [k, v] of Object.entries(rec || {})) {
+        const lk = String(k).toLowerCase();
+        if ((lk === 'tpgroupid' || lk === 'tp_group_id') && v != null && v !== '') { raw = String(v).trim(); break; }
+      }
+      if (!raw) { const g = normalize(rec).GroupID; if (g && /^TP\d+$/i.test(g)) raw = g; }
+      return raw;
+    };
+
+    // Pre-load referenced TP groups in one query.
+    const refs = [...new Set(records.map(tpRefOf).filter(Boolean).map(r => r.toUpperCase()))];
+    const tpMap = {};
+    if (refs.length) {
+      const inList = refs.map((_, i) => `@t${i}`).join(',');
+      const params = {}; refs.forEach((v, i) => params['t' + i] = v);
+      (await mssql(`SELECT tp_group_id, pbm_id, group_code, group_name FROM dbo.PBM_Groups
+                    WHERE UPPER(tp_group_id) IN (${inList})`, params)).recordset
+        .forEach(g => { tpMap[g.tp_group_id.toUpperCase()] = g; });
+    }
+
     const q = event.queryStringParameters || {};
-    let pbmId = parseInt(q.pbm_id || body.pbm_id, 10) || null;
-    if (!pbmId) {
+    let defaultPbm = parseInt(q.pbm_id || body.pbm_id, 10) || null;
+    if (!defaultPbm) {
       const r = await mssql("SELECT id FROM dbo.tp_pbms WHERE pbm_code='LIVINITI'");
-      pbmId = r.recordset[0] ? r.recordset[0].id : null;
+      defaultPbm = r.recordset[0] ? r.recordset[0].id : null;
     }
 
     let accepted = 0;
     const rejected = [];
     for (let i = 0; i < records.length; i++) {
       const mapped = normalize(records[i]);
-      if (!mapped.GroupID) { rejected.push({ index: i, reason: 'GroupID required' }); continue; }
+      let pbmId = defaultPbm, tpGroupId = null;
+      const tpRef = tpRefOf(records[i]);
+      if (tpRef) {
+        const g = tpMap[tpRef.toUpperCase()];
+        if (!g) { rejected.push({ index: i, reason: `unknown TP Group ID '${tpRef}'` }); continue; }
+        mapped.GroupID = g.group_code;                       // stamp the real eligibility GroupID
+        if (!mapped.GroupName && g.group_name) mapped.GroupName = g.group_name;
+        pbmId = g.pbm_id || defaultPbm;
+        tpGroupId = g.tp_group_id;
+      } else if (!mapped.GroupID) {
+        rejected.push({ index: i, reason: 'TPGroupID (or GroupID) required' }); continue;
+      }
       if (!mapped.LastName && !mapped.CardholderID && !mapped.MemberSSN) {
         rejected.push({ index: i, reason: 'need LastName or CardholderID or MemberSSN' }); continue;
       }
       const cols = Object.keys(mapped);
-      const colList = ['pbm_id', ...cols, 'Source', 'RawJson'].map(c => `[${c}]`).join(', ');
-      const valList = ['@pbm_id', ...cols.map(c => `@${c}`), "'api'", '@RawJson'].join(', ');
-      const params = { pbm_id: pbmId, RawJson: JSON.stringify(records[i]).slice(0, 1000000) };
+      const colList = ['pbm_id', ...cols, 'TPGroupID', 'Source', 'RawJson'].map(c => `[${c}]`).join(', ');
+      const valList = ['@pbm_id', ...cols.map(c => `@${c}`), '@TPGroupID', "'api'", '@RawJson'].join(', ');
+      const params = { pbm_id: pbmId, TPGroupID: tpGroupId, RawJson: JSON.stringify(records[i]).slice(0, 1000000) };
       cols.forEach(c => { params[c] = mapped[c]; });
       await mssql(`INSERT INTO dbo.PBM_Member_Intake (${colList}) VALUES (${valList})`, params);
       accepted++;
     }
 
-    return created({ accepted, rejected, pbm_id: pbmId, received: records.length });
+    return created({ accepted, rejected, received: records.length });
   } catch (err) {
     return serverError(err);
   }

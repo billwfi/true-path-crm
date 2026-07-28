@@ -26,11 +26,11 @@ exports.handler = async function (event) {
         const pid = parseInt(pbm_id, 10);
         if (!pid) return badRequest('pbm_id is required');
         const groups = (await mssql(
-          `SELECT id, pbm_id, group_code, group_name, client_code, company_name, status, effective_date, notes, created_at, updated_at
+          `SELECT id, pbm_id, tp_group_id, group_code, group_name, client_code, company_name, status, effective_date, notes, created_at, updated_at
            FROM dbo.PBM_Groups
            WHERE pbm_id=@pid
-             AND (@s IS NULL OR group_code LIKE @s OR group_name LIKE @s OR company_name LIKE @s)
-           ORDER BY company_name, group_name`,
+             AND (@s IS NULL OR tp_group_id LIKE @s OR group_code LIKE @s OR group_name LIKE @s OR company_name LIKE @s)
+           ORDER BY tp_group_id`,
           { pid, s: search ? `%${search}%` : null })).recordset;
 
         // member counts by GroupID: SFTP eligibility (Liviniti table, if present) + API intake
@@ -137,8 +137,10 @@ exports.handler = async function (event) {
         if (!pid) return badRequest('pbm_id is required');
         if (!b.group_code) return badRequest('group_code is required');
         const r = await mssql(
-          `INSERT INTO dbo.PBM_Groups (pbm_id, group_code, group_name, client_code, company_name, status, effective_date, notes, created_by)
-           OUTPUT INSERTED.* VALUES (@pid,@code,@name,@client,@company,@status,@eff,@notes,@by)`,
+          `INSERT INTO dbo.PBM_Groups (pbm_id, group_code, group_name, client_code, company_name, status, effective_date, notes, created_by, tp_group_id)
+           OUTPUT INSERTED.*
+           VALUES (@pid,@code,@name,@client,@company,@status,@eff,@notes,@by,
+                   'TP' + CAST(NEXT VALUE FOR dbo.PBM_TP_Group_Seq AS varchar(10)))`,
           { pid, code: b.group_code, name: b.group_name || null, client: b.client_code || null,
             company: b.company_name || null, status: groupStatus(b.status),
             eff: b.effective_date || null, notes: b.notes || null, by: user.id || null });
