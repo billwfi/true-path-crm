@@ -20,6 +20,7 @@ Env vars (never commit secrets):
 Requires: pip install pyodbc paramiko openpyxl
 """
 import argparse
+import csv
 import fnmatch
 import io
 import os
@@ -60,6 +61,21 @@ CLIENTS = {
                 # groupid = SUBSTRING([group id], 1, 8)
                 "computed": {"groupid": ("group id", lambda v: (v or "")[:8] or None)},
             },
+        ],
+    },
+    "bbsi": {
+        "label": "Barrett Business Services (BBSi)",
+        "client_id": 8,                   # tp_clients.id — BARRETT BUSINESS SVCS INC
+        "sftp_host": "us-east-1.sftpcloud.io",
+        "sftp_port": 22,
+        "sftp_user": "MANAGER",
+        "sftp_pwd_env": "MCR_SFTP_PWD",   # same SFTP account has access to all /InternationalRx folders
+        "remote_dir": "/InternationalRx/BBSi",
+        "feeds": [
+            # Eligibility file has a .xlsx extension but is an Office-ENCRYPTED workbook.
+            {"name": "Eligibility", "pattern": "BBSI*Eligibility*.xls*", "table": "Eligibility_BBSi",
+             "password_env": "BBSI_XLSX_PWD", "computed": {}},
+            {"name": "Claims", "pattern": "Claim_Detail*.csv", "table": "ClaimsData_BBSi", "computed": {}},
         ],
     },
 }
@@ -137,6 +153,73 @@ def parse_xlsx(data, sheet=None):
     return header, body
 
 
+def parse_csv(data):
+    text = data.decode("utf-8-sig", "replace")
+    rows = [list(r) for r in csv.reader(io.StringIO(text))]
+    while rows and not any((str(c).strip() if c is not None else "") for c in rows[-1]):
+        rows.pop()
+    if not rows:
+        return [], []
+    header = [to_text(c) or "" for c in rows[0]]
+    body = [r for r in rows[1:] if any(c is not None and str(c).strip() for c in r)]
+    return header, body
+
+
+def parse_xls(data, sheet=None):
+    import xlrd  # only needed for legacy .xls (OLE2) files
+    wb = xlrd.open_workbook(file_contents=data)
+    ws = wb.sheet_by_name(sheet) if (sheet and sheet in wb.sheet_names()) else wb.sheet_by_index(0)
+
+    def cellval(c):
+        if c.ctype == 3:  # date
+            try:
+                return xlrd.xldate_as_datetime(c.value, wb.datemode)
+            except Exception:
+                return c.value
+        if c.ctype == 2:  # number
+            return c.value
+        if c.ctype in (0, 6):  # empty / blank
+            return None
+        return c.value
+
+    rows = [[cellval(ws.cell(r, cc)) for cc in range(ws.ncols)] for r in range(ws.nrows)]
+    while rows and not any((str(c).strip() if c is not None else "") for c in rows[-1]):
+        rows.pop()
+    if not rows:
+        return [], []
+    header = [to_text(c) or "" for c in rows[0]]
+    body = [r for r in rows[1:] if any(c is not None and str(c).strip() for c in r)]
+    return header, body
+
+
+def parse_file(data, filename, sheet=None, password=None):
+    """Dispatch by real format: PK=xlsx (zip); D0CF11E0=OLE2 (a legacy .xls OR an
+    Office-encrypted OOXML package -> decrypt with `password` then read); else CSV."""
+    if data[:2] == b"PK":
+        return parse_xlsx(data, sheet)
+    if data[:4] == b"\xd0\xcf\x11\xe0":
+        import msoffcrypto
+        try:
+            off = msoffcrypto.OfficeFile(io.BytesIO(data))
+            encrypted = off.is_encrypted()
+        except Exception:
+            off, encrypted = None, False
+        if encrypted:
+            if not password:
+                raise ValueError("file is password-protected; set the feed's password_env")
+            off.load_key(password=password)
+            out = io.BytesIO()
+            off.decrypt(out)
+            return parse_xlsx(out.getvalue(), sheet)
+        return parse_xls(data, sheet)
+    if (filename or "").lower().endswith((".csv", ".txt", ".tsv")):
+        return parse_csv(data)
+    try:
+        return parse_xlsx(data, sheet)
+    except Exception:
+        return parse_csv(data)
+
+
 def to_text(v):
     if v is None:
         return None
@@ -184,7 +267,8 @@ def col_type(values):
 
 # ── Load one feed ─────────────────────────────────────────────────────────────
 def load_feed(cur, cfg, feed, name, data, recreate):
-    header, body = parse_xlsx(data, feed.get("sheet"))
+    pwd = os.environ.get(feed["password_env"]) if feed.get("password_env") else None
+    header, body = parse_file(data, name, feed.get("sheet"), pwd)
     if not header:
         print(f"  [{feed['name']}] {name}: no rows, skipped")
         return 0
