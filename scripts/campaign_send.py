@@ -44,6 +44,21 @@ def render(html, name, email):
                 .replace("{{unsubscribe_url}}", unsub_url(email)))
 
 
+def _message_id(poller):
+    """Message id from the send's initial response (immediate, no wait); fallback to result()."""
+    try:
+        body = poller.polling_method()._initial_response.http_response.text()
+        mid = json.loads(body).get("id")
+        if mid:
+            return mid
+    except Exception:
+        pass
+    try:
+        return poller.result().get("id")
+    except Exception:
+        return None
+
+
 def main():
     today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     cap = RAMP.get(today)
@@ -100,15 +115,13 @@ def main():
                 "content": {"subject": subject, "html": html},
                 "recipients": {"to": [{"address": email, "displayName": name}]},
             })
-            res = poller.result()
-            if res.get("status") == "Succeeded":
-                sent += 1
-                cur.execute("UPDATE dbo.Email_Campaign_Recipients SET status='Sent', message_id=?, "
-                            "sent_at=GETDATE(), error=NULL WHERE id=?", res.get("id"), rid)
-            else:
-                failed += 1
-                cur.execute("UPDATE dbo.Email_Campaign_Recipients SET status='Failed', error=? WHERE id=?",
-                            str(res.get("status"))[:400], rid)
+            # Don't wait for the send operation to reach 'Succeeded' (pollUntilDone is
+            # slow — ~10-30s each — and blows the replica timeout on big batches). The
+            # message id is in the initial response immediately; delivery/bounce is
+            # finalized separately by the email-events Event Grid webhook.
+            sent += 1
+            cur.execute("UPDATE dbo.Email_Campaign_Recipients SET status='Sent', message_id=?, "
+                        "sent_at=GETDATE(), error=NULL WHERE id=?", _message_id(poller), rid)
         except Exception as e:  # noqa: BLE001 — record and continue
             failed += 1
             cur.execute("UPDATE dbo.Email_Campaign_Recipients SET status='Failed', error=? WHERE id=?",
