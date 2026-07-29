@@ -78,6 +78,18 @@ CLIENTS = {
             {"name": "Claims", "pattern": "Claim_Detail*.csv", "table": "ClaimsData_BBSi", "computed": {}},
         ],
     },
+    "cityofmcallen": {
+        "label": "City of McAllen",
+        "client_id": 10,
+        "sftp_host": "us-east-1.sftpcloud.io",
+        "sftp_port": 22,
+        "sftp_user": "MANAGER",
+        "sftp_pwd_env": "MCR_SFTP_PWD",
+        "remote_dir": "/InternationalRx/CityOfMcAllen",
+        "feeds": [
+            {"name": "Eligibility", "pattern": "HRx*McAllen*Eligibility*.xls*", "table": "Eligibility_CityOfMcAllen", "computed": {}},
+        ],
+    },
 }
 
 
