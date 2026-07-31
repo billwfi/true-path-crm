@@ -104,35 +104,55 @@ def main():
         return
 
     client = EmailClient.from_connection_string(os.environ["ACS_CONNECTION_STRING"])
+
+    def db_run(sqltext, *params, fetch=False):
+        """Run a statement, reconnecting + retrying on a dropped SQL connection (08S01)."""
+        nonlocal cn, cur
+        for attempt in range(4):
+            try:
+                c = cur.execute(sqltext, *params)
+                return c.fetchone() if fetch else None
+            except pyodbc.Error:
+                if attempt == 3:
+                    raise
+                try:
+                    cn.close()
+                except Exception:
+                    pass
+                time.sleep(2 * (attempt + 1))
+                cn = db()
+                cur = cn.cursor()
+
     sent = failed = 0
     for r in rows:
         rid, fn, ln, email = r.id, r.first_name, r.last_name, r.email
         name = " ".join([x for x in [fn, ln] if x]).strip() or "Member"
         html = render(html_body, name, email)
+        # 1) send via ACS (fast; delivery/bounce finalized by the email-events webhook).
         try:
             poller = client.begin_send({
                 "senderAddress": from_addr,
                 "content": {"subject": subject, "html": html},
                 "recipients": {"to": [{"address": email, "displayName": name}]},
             })
-            # Don't wait for the send operation to reach 'Succeeded' (pollUntilDone is
-            # slow — ~10-30s each — and blows the replica timeout on big batches). The
-            # message id is in the initial response immediately; delivery/bounce is
-            # finalized separately by the email-events Event Grid webhook.
+            rstatus, mid, err = "Sent", _message_id(poller), None
+        except Exception as e:  # noqa: BLE001
+            rstatus, mid, err = "Failed", None, str(e)[:400]
+        # 2) record — survives DB connection drops so the email isn't lost/double-sent.
+        if rstatus == "Sent":
             sent += 1
-            cur.execute("UPDATE dbo.Email_Campaign_Recipients SET status='Sent', message_id=?, "
-                        "sent_at=GETDATE(), error=NULL WHERE id=?", _message_id(poller), rid)
-        except Exception as e:  # noqa: BLE001 — record and continue
+            db_run("UPDATE dbo.Email_Campaign_Recipients SET status='Sent', message_id=?, "
+                   "sent_at=GETDATE(), error=NULL WHERE id=?", mid, rid)
+        else:
             failed += 1
-            cur.execute("UPDATE dbo.Email_Campaign_Recipients SET status='Failed', error=? WHERE id=?",
-                        str(e)[:400], rid)
+            db_run("UPDATE dbo.Email_Campaign_Recipients SET status='Failed', error=? WHERE id=?", err, rid)
         if DELAY:
             time.sleep(DELAY)
 
-    rem = cur.execute("SELECT COUNT(*) FROM dbo.Email_Campaign_Recipients "
-                      "WHERE campaign_id=? AND status='Pending'", CAMPAIGN_ID).fetchone()[0]
-    cur.execute("UPDATE dbo.Email_Campaigns SET status=?, sent_at=COALESCE(sent_at,GETDATE()) WHERE id=?",
-                "Sending" if rem > 0 else "Sent", CAMPAIGN_ID)
+    rem = db_run("SELECT COUNT(*) FROM dbo.Email_Campaign_Recipients "
+                 "WHERE campaign_id=? AND status='Pending'", CAMPAIGN_ID, fetch=True)[0]
+    db_run("UPDATE dbo.Email_Campaigns SET status=?, sent_at=COALESCE(sent_at,GETDATE()) WHERE id=?",
+           "Sending" if rem > 0 else "Sent", CAMPAIGN_ID)
     print(f"[{today}] done: sent={sent} failed={failed} remaining={rem}")
 
 
