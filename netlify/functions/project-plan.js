@@ -48,7 +48,7 @@ exports.handler = async function (event) {
         return r.recordset[0] ? ok(r.recordset[0]) : notFound();
       }
       const cats = (await mssql(
-        `SELECT id, code, title, goal, sort_order, [plan],
+        `SELECT id, code, title, goal, sort_order, [plan], lead, dev_lead,
                 CONVERT(varchar(10), start_date, 23) AS start_date,
                 CONVERT(varchar(10), end_date, 23)   AS end_date
          FROM dbo.Project_Categories ORDER BY sort_order, code`)).recordset;
@@ -93,11 +93,12 @@ exports.handler = async function (event) {
       if (isCategory) {
         if (!b.title) return badRequest('title required');
         const r = await mssql(
-          `INSERT INTO dbo.Project_Categories (code, title, goal, sort_order, [plan], start_date, end_date)
-           VALUES (@code,@title,@goal,@sort,@plan,@sd,@ed);
+          `INSERT INTO dbo.Project_Categories (code, title, goal, sort_order, [plan], start_date, end_date, lead, dev_lead)
+           VALUES (@code,@title,@goal,@sort,@plan,@sd,@ed,@lead,@devlead);
            SELECT CAST(SCOPE_IDENTITY() AS INT) AS id;`,
           { code: b.code || '', title: b.title, goal: b.goal || null, sort: b.sort_order || 99,
-            plan: b.plan || 'New Development', sd: b.start_date || null, ed: b.end_date || null });
+            plan: b.plan || 'New Development', sd: b.start_date || null, ed: b.end_date || null,
+            lead: b.lead || null, devlead: b.dev_lead || null });
         return created({ id: r.recordset[0].id });
       }
       // Upload a document attachment onto a task/sub-task (base64 payload).
@@ -134,12 +135,16 @@ exports.handler = async function (event) {
           `UPDATE dbo.Project_Categories SET title=COALESCE(@title,title), goal=@goal,
              sort_order=COALESCE(@sort,sort_order), [plan]=COALESCE(@plan,[plan]),
              start_date=CASE WHEN @sd_set=1 THEN @sd ELSE start_date END,
-             end_date=CASE WHEN @ed_set=1 THEN @ed ELSE end_date END
+             end_date=CASE WHEN @ed_set=1 THEN @ed ELSE end_date END,
+             lead=CASE WHEN @lead_set=1 THEN @lead ELSE lead END,
+             dev_lead=CASE WHEN @dl_set=1 THEN @devlead ELSE dev_lead END
            WHERE id=@id`,
           { title: b.title || null, goal: b.goal ?? null, sort: b.sort_order ?? null,
             plan: b.plan || null,
             sd_set: b.start_date !== undefined ? 1 : 0, sd: b.start_date || null,
             ed_set: b.end_date !== undefined ? 1 : 0, ed: b.end_date || null,
+            lead_set: b.lead !== undefined ? 1 : 0, lead: b.lead || null,
+            dl_set: b.dev_lead !== undefined ? 1 : 0, devlead: b.dev_lead || null,
             id: parseInt(id, 10) });
         return ok({ id });
       }

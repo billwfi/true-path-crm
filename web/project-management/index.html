@@ -7,29 +7,47 @@
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
   <link rel="stylesheet" href="/assets/css/app.css">
   <style>
-    .pm-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 14px; margin-bottom: 22px; }
-    .pm-card { background: #fff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 16px 18px; }
-    .pm-card .n { font-size: 26px; font-weight: 700; color: #1e293b; line-height: 1.1; }
-    .pm-card .l { font-size: 12px; color: #64748b; margin-top: 4px; display: flex; align-items: center; gap: 6px; }
-    .pm-card .l .dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
-    .pm-grid { display: grid; grid-template-columns: 1.3fr 1fr; gap: 18px; align-items: start; }
-    @media (max-width: 900px) { .pm-grid { grid-template-columns: 1fr; } }
-    .pm-panel { background: #fff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 16px 18px; }
-    .pm-panel h2 { font-size: 15px; font-weight: 650; color: #1e293b; margin-bottom: 12px; display: flex; align-items: center; gap: 8px; }
-    .pm-panel h2 .see { margin-left: auto; font-size: 12px; font-weight: 500; }
-    .cat-row { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-top: 1px solid #f1f5f9; }
-    .cat-row:first-of-type { border-top: 0; }
-    .cat-code { font: 700 11px/1 ui-monospace,Consolas,monospace; color: #fff; background: #0d7d74; width: 26px; height: 26px;
-      display: grid; place-items: center; border-radius: 7px; flex: none; }
-    .cat-name { flex: 1; min-width: 0; font-size: 13.5px; color: #334155; font-weight: 550; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .cat-bar { width: 120px; height: 7px; border-radius: 4px; background: #e2e8f0; overflow: hidden; flex: none; }
-    .cat-bar i { display: block; height: 100%; background: #15803d; }
-    .cat-num { font-size: 12px; color: #64748b; white-space: nowrap; width: 52px; text-align: right; flex: none; }
-    .bug-row { display: flex; gap: 10px; padding: 10px 0; border-top: 1px solid #f1f5f9; }
-    .bug-row:first-of-type { border-top: 0; }
-    .bug-main { flex: 1; min-width: 0; }
-    .bug-title { font-size: 13px; color: #1e293b; font-weight: 550; }
-    .bug-meta { font-size: 11.5px; color: #94a3b8; margin-top: 2px; }
+    .dash { display: flex; flex-direction: column; gap: 16px; }
+    .stat-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 14px; }
+    .stat { background: #fff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 14px 16px; position: relative; }
+    .stat .lbl { font-size: 10.5px; font-weight: 700; letter-spacing: .05em; color: #94a3b8; text-transform: uppercase; }
+    .stat .n { font-size: 28px; font-weight: 700; color: #1e293b; margin-top: 4px; line-height: 1; }
+    .stat .ic { position: absolute; top: 14px; right: 14px; font-size: 15px; }
+    .stat a { color: inherit; }
+    .panel { background: #fff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 16px 18px; }
+    .panel h2 { font-size: 14px; font-weight: 650; color: #334155; margin-bottom: 12px; display: flex; align-items: center; gap: 8px; }
+    .panel h2 .r { margin-left: auto; font-size: 12px; font-weight: 500; }
+    .two { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    @media (max-width: 860px){ .two, .three { grid-template-columns: 1fr; } }
+    .three { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; }
+    .donut-wrap { display: flex; align-items: center; gap: 18px; }
+    .legend { display: flex; flex-direction: column; gap: 7px; font-size: 12.5px; }
+    .legend .row { display: flex; align-items: center; gap: 8px; color: #475569; }
+    .legend .dot { width: 10px; height: 10px; border-radius: 3px; flex: none; }
+    .legend .v { margin-left: auto; font-weight: 650; color: #1e293b; padding-left: 14px; }
+    table.pp { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+    table.pp th { text-align: left; font-size: 10.5px; font-weight: 700; letter-spacing: .04em; color: #94a3b8;
+      text-transform: uppercase; padding: 6px 10px; border-bottom: 1px solid #e2e8f0; white-space: nowrap; }
+    table.pp td { padding: 9px 10px; border-bottom: 1px solid #f1f5f9; color: #475569; white-space: nowrap; }
+    table.pp td .pname { font-weight: 600; color: #1e293b; }
+    .ptag { font-size: 9.5px; font-weight: 700; letter-spacing: .03em; padding: 2px 6px; border-radius: 5px; margin-left: 8px; vertical-align: middle; }
+    .ptag.mig { background: #e0f2f1; color: #0a5e57; }
+    .ptag.dev { background: #eef2ff; color: #4338ca; }
+    .badge2 { font-size: 10.5px; font-weight: 650; padding: 3px 9px; border-radius: 999px; }
+    .b-active { background: #dbeafe; color: #1d4ed8; }
+    .b-notstarted { background: #f1f5f9; color: #64748b; }
+    .b-completed { background: #dcfce7; color: #15803d; }
+    .pbar { width: 150px; height: 7px; border-radius: 4px; background: #e2e8f0; overflow: hidden; display: inline-block; vertical-align: middle; }
+    .pbar i { display: block; height: 100%; background: #0d7d74; }
+    .list .li { display: flex; gap: 10px; padding: 9px 0; border-top: 1px solid #f1f5f9; }
+    .list .li:first-child { border-top: 0; }
+    .list .li .main { flex: 1; min-width: 0; }
+    .list .li .t { font-size: 12.5px; color: #1e293b; font-weight: 550; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .list .li .sub { font-size: 11px; color: #94a3b8; margin-top: 1px; }
+    .list .li .when { font-size: 11.5px; white-space: nowrap; }
+    .grp-h { font-size: 11px; font-weight: 700; color: #64748b; margin: 10px 0 2px; display: flex; align-items: center; gap: 6px; }
+    .grp-h:first-child { margin-top: 0; }
+    .scz { max-height: 340px; overflow-y: auto; }
   </style>
 </head>
 <body class="bg-slate-100 text-slate-700">
@@ -39,22 +57,12 @@
     <div id="topbar"></div>
     <main class="flex-1 overflow-y-auto p-6">
       <div class="search-bar">
-        <span id="pm-summary" class="text-sm text-slate-500"></span>
+        <span class="text-lg font-semibold text-slate-800">Project Management Dashboard</span>
+        <span id="pm-sub" class="text-sm text-slate-400" style="margin-left:12px"></span>
+        <a class="btn btn-outline btn-sm" href="/project-plan/" style="margin-left:auto"><i class="fa-solid fa-list-check"></i> Project Plan</a>
         <button class="btn btn-outline btn-sm" onclick="loadDash()"><i class="fa-solid fa-rotate"></i> Refresh</button>
       </div>
-      <div id="pm-cards" class="pm-cards"></div>
-      <div class="pm-grid">
-        <div class="pm-panel">
-          <h2><i class="fa-solid fa-diagram-project text-slate-400"></i> Progress by area
-            <a class="see text-sky-600" href="/project-plan/">Project Plan →</a></h2>
-          <div id="pm-cats"></div>
-        </div>
-        <div class="pm-panel">
-          <h2><i class="fa-solid fa-bug text-slate-400"></i> Recent bugs / changes
-            <a class="see text-sky-600" href="/project-management/bugs/">View all →</a></h2>
-          <div id="pm-bugs"></div>
-        </div>
-      </div>
+      <div id="pm-dash" class="dash"></div>
     </main>
   </div>
 </div>
@@ -62,54 +70,143 @@
 <script src="/assets/js/app.js"></script>
 <script>
   const S_COLORS = { 'Not Started':'#94a3b8', 'In Progress':'#2563eb', 'Testing':'#a16207', 'Blocked':'#b91c1c', 'Done':'#15803d' };
+  const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const toYMD = d => d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
+  const fmtD = ymd => { if (!ymd) return '—'; const [y,m,d] = ymd.split('-'); return `${MONTHS[+m-1]} ${+d}, ${y}`; };
+
+  function donut(segs, total) {
+    const R = 52, C = 2 * Math.PI * R, cx = 66, cy = 66, sw = 17;
+    let off = 0;
+    const arcs = segs.filter(s => s.v > 0).map(s => {
+      const frac = s.v / (total || 1);
+      const el = `<circle cx="${cx}" cy="${cy}" r="${R}" fill="none" stroke="${s.color}" stroke-width="${sw}"
+        stroke-dasharray="${frac*C} ${C-frac*C}" stroke-dashoffset="${-off*C}" transform="rotate(-90 ${cx} ${cy})"/>`;
+      off += frac; return el;
+    }).join('');
+    return `<svg width="132" height="132" viewBox="0 0 132 132">
+      <circle cx="${cx}" cy="${cy}" r="${R}" fill="none" stroke="#eef2f7" stroke-width="${sw}"/>
+      ${arcs}
+      <text x="${cx}" y="${cy-1}" text-anchor="middle" font-size="23" font-weight="700" fill="#1e293b">${total}</text>
+      <text x="${cx}" y="${cy+15}" text-anchor="middle" font-size="9.5" fill="#94a3b8">total</text></svg>`;
+  }
+  const legend = segs => `<div class="legend">${segs.map(s =>
+    `<div class="row"><span class="dot" style="background:${s.color}"></span>${s.label}<span class="v">${s.v}</span></div>`).join('')}</div>`;
+
+  function projStatus(done, total, tasks) {
+    if (total === 0) return 'Not Started';
+    if (done === total) return 'Completed';
+    if (done > 0 || tasks.some(t => t.status !== 'Not Started')) return 'Active';
+    return 'Not Started';
+  }
+  const badgeClass = s => s === 'Active' ? 'b-active' : s === 'Completed' ? 'b-completed' : 'b-notstarted';
 
   async function loadDash() {
     const data = await apiGet('/project-plan');
     if (!data) return;
-    const cats = data.categories || [];
-    const tasks = cats.flatMap(c => c.tasks);
-    const total = tasks.length;
-    const by = s => tasks.filter(t => t.status === s).length;
-    const bugs = tasks.filter(t => t.source === 'feedback');
-    const openBugs = bugs.filter(t => t.status !== 'Done').length;
+    const cats = (data.categories || []);
+    const projects = cats.filter(c => c.code !== 'FB');
+    const STAT = ['Not Started','In Progress','Testing','Blocked','Done'];
 
-    document.getElementById('pm-summary').textContent =
-      `${total} item${total===1?'':'s'} across ${cats.length} area${cats.length===1?'':'s'}`;
+    // Flatten tasks (tagged with their project) — excludes Feedback (only under FB).
+    const allTasks = [];
+    projects.forEach(p => (p.tasks||[]).forEach(t => allTasks.push({ ...t, _proj: p.title, _plan: p.plan })));
+    const bugsDone = cats.flatMap(c => c.tasks||[]).filter(t => t.source === 'feedback' && t.status === 'Done').length;
 
-    // Stat cards
-    const card = (n, label, color) => `<div class="pm-card"><div class="n">${n}</div>
-      <div class="l">${color?`<span class="dot" style="background:${color}"></span>`:''}${label}</div></div>`;
-    document.getElementById('pm-cards').innerHTML =
-      card(total, 'Total items', '#0d7d74') +
-      card(by('Not Started'), 'Not Started', S_COLORS['Not Started']) +
-      card(by('In Progress'), 'In Progress', S_COLORS['In Progress']) +
-      card(by('Testing'), 'Testing', S_COLORS['Testing']) +
-      card(by('Blocked'), 'Blocked', S_COLORS['Blocked']) +
-      card(by('Done'), 'Done', S_COLORS['Done']) +
-      card(openBugs, 'Open bugs / changes', '#b91c1c');
+    const now = new Date();
+    const todayStr = toYMD(now);
+    const wk = new Date(now); wk.setDate(wk.getDate()+7); const weekStr = toYMD(wk);
+    const ago7 = new Date(now); ago7.setDate(ago7.getDate()-7);
 
-    // Progress by category
-    document.getElementById('pm-cats').innerHTML = cats.length ? cats.map(c => {
-      const done = c.tasks.filter(t => t.status === 'Done').length;
-      const pct = c.tasks.length ? Math.round(done / c.tasks.length * 100) : 0;
-      return `<div class="cat-row">
-        <span class="cat-code">${esc(c.code || '–')}</span>
-        <span class="cat-name" title="${esc(c.title)}">${esc(c.title)}</span>
-        <span class="cat-bar"><i style="width:${pct}%"></i></span>
-        <span class="cat-num">${done}/${c.tasks.length}</span>
+    // Per-project rollup
+    let nActive = 0, nDone = 0, nNot = 0;
+    const rows = projects.map(p => {
+      const tasks = p.tasks || [];
+      const done = tasks.filter(t => t.status === 'Done').length;
+      const st = projStatus(done, tasks.length, tasks);
+      if (st === 'Active') nActive++; else if (st === 'Completed') nDone++; else nNot++;
+      return { p, tasks, done, total: tasks.length, pct: tasks.length ? Math.round(done/tasks.length*100) : 0, st };
+    });
+
+    const overdue = allTasks.filter(t => t.due_date && t.due_date < todayStr && t.status !== 'Done');
+    const dueWeek = allTasks.filter(t => t.due_date && t.due_date >= todayStr && t.due_date <= weekStr && t.status !== 'Done');
+    const dueSoon = allTasks.filter(t => t.due_date && t.due_date >= todayStr && t.status !== 'Done')
+                            .sort((a,b) => a.due_date.localeCompare(b.due_date)).slice(0, 12);
+    const doneRecent = allTasks.filter(t => t.status === 'Done' && t.updated_at && new Date(t.updated_at) >= ago7)
+                               .sort((a,b) => new Date(b.updated_at) - new Date(a.updated_at)).slice(0, 12);
+
+    document.getElementById('pm-sub').textContent =
+      `${projects.length} projects · ${allTasks.length} tasks`;
+
+    // ── Stat cards ──
+    const card = (lbl, n, icon, color, href) => {
+      const inner = `<div class="lbl">${lbl}</div><div class="n">${n}</div>
+        <i class="fa-solid ${icon} ic" style="color:${color}"></i>`;
+      return `<div class="stat">${href ? `<a href="${href}">${inner}</a>` : inner}</div>`;
+    };
+    const cards = card('Active Projects', nActive, 'fa-diagram-project', '#2563eb')
+      + card('Overdue Tasks', overdue.length, 'fa-triangle-exclamation', '#dc2626')
+      + card('Due This Week', dueWeek.length, 'fa-clock', '#d97706')
+      + card('Completed Projects', nDone, 'fa-circle-check', '#16a34a')
+      + card('Bugs / Changes Completed', bugsDone, 'fa-bug', '#7c3aed', '/project-management/bugs/');
+
+    // ── Donuts ──
+    const projSegs = [
+      { label:'Not Started', v:nNot, color:'#cbd5e1' },
+      { label:'Active', v:nActive, color:'#2563eb' },
+      { label:'Completed', v:nDone, color:'#16a34a' },
+    ];
+    const taskSegs = STAT.map(s => ({ label:s, v: allTasks.filter(t=>t.status===s).length, color:S_COLORS[s] }));
+
+    // ── Project Progress table ──
+    const table = `<div style="overflow-x:auto"><table class="pp"><thead><tr>
+        <th>Project</th><th>Lead</th><th>Dev Lead</th><th>Due</th><th>Status</th><th>Progress</th><th>Tasks</th><th>%</th>
+      </tr></thead><tbody>${rows.map(r => `<tr>
+        <td><span class="pname">${esc(r.p.title)}</span><span class="ptag ${r.p.plan==='CRM Migration'?'mig':'dev'}">${r.p.plan==='CRM Migration'?'MIGRATION':'NEW DEV'}</span></td>
+        <td>${r.p.lead ? esc(r.p.lead) : '—'}</td>
+        <td>${r.p.dev_lead ? esc(r.p.dev_lead) : '—'}</td>
+        <td>${fmtD(r.p.end_date)}</td>
+        <td><span class="badge2 ${badgeClass(r.st)}">${r.st}</span></td>
+        <td><span class="pbar"><i style="width:${r.pct}%"></i></span></td>
+        <td>${r.done}/${r.total}</td>
+        <td style="font-weight:600;color:#334155">${r.pct}%</td>
+      </tr>`).join('')}</tbody></table></div>`;
+
+    // ── Bottom lists ──
+    const soonList = dueSoon.length ? dueSoon.map(t => `<div class="li">
+        <div class="main"><div class="t">${esc(t.title)}</div><div class="sub">${esc(t._proj)}${t.assignee?' · '+esc(t.assignee):''}</div></div>
+        <div class="when" style="color:${t.due_date===todayStr?'#d97706':'#64748b'}">${fmtD(t.due_date)}</div>
+      </div>`).join('') : '<div class="text-sm text-slate-400 py-6 text-center">Nothing due.</div>';
+
+    // Overdue grouped by status
+    let overList = '<div class="text-sm text-slate-400 py-6 text-center">No overdue tasks. 🎉</div>';
+    if (overdue.length) {
+      const byStat = {};
+      overdue.forEach(t => (byStat[t.status] = byStat[t.status] || []).push(t));
+      overList = Object.keys(byStat).map(s => `<div class="grp-h"><span class="dot" style="width:8px;height:8px;border-radius:50%;background:${S_COLORS[s]||'#94a3b8'}"></span>${s} · ${byStat[s].length} overdue</div>`
+        + byStat[s].sort((a,b)=>a.due_date.localeCompare(b.due_date)).map(t => `<div class="li">
+            <div class="main"><div class="t">${esc(t.title)}</div><div class="sub">${esc(t._proj)}${t.assignee?' · '+esc(t.assignee):''}</div></div>
+            <div class="when" style="color:#dc2626">${fmtD(t.due_date)}</div></div>`).join('')).join('');
+    }
+
+    const doneList = doneRecent.length ? doneRecent.map(t => `<div class="li">
+        <div class="main"><div class="t">${esc(t.title)}</div><div class="sub">${esc(t._proj)}${t.updated_by_name?' · '+esc(t.updated_by_name):''}</div></div>
+        <div class="when" style="color:#16a34a">${fmtDate(t.updated_at)}</div>
+      </div>`).join('') : '<div class="text-sm text-slate-400 py-6 text-center">Nothing completed recently.</div>';
+
+    document.getElementById('pm-dash').innerHTML = `
+      <div class="stat-row">${cards}</div>
+      <div class="two">
+        <div class="panel"><h2><i class="fa-solid fa-chart-pie text-slate-400"></i> Projects by Status</h2>
+          <div class="donut-wrap">${donut(projSegs, projects.length)}${legend(projSegs)}</div></div>
+        <div class="panel"><h2><i class="fa-solid fa-list-check text-slate-400"></i> Tasks by Status</h2>
+          <div class="donut-wrap">${donut(taskSegs, allTasks.length)}${legend(taskSegs)}</div></div>
+      </div>
+      <div class="panel"><h2><i class="fa-solid fa-diagram-project text-slate-400"></i> Project Progress</h2>${table}</div>
+      <div class="three">
+        <div class="panel"><h2><i class="fa-regular fa-clock text-slate-400"></i> Due Soon</h2><div class="list scz">${soonList}</div></div>
+        <div class="panel"><h2><i class="fa-solid fa-triangle-exclamation" style="color:#dc2626"></i> Overdue Tasks</h2><div class="list scz">${overList}</div></div>
+        <div class="panel"><h2><i class="fa-solid fa-circle-check" style="color:#16a34a"></i> Completed <span class="text-slate-400 font-normal" style="font-size:11px">(last 7 days)</span></h2><div class="list scz">${doneList}</div></div>
       </div>`;
-    }).join('') : '<div class="text-sm text-slate-400 py-4 text-center">No areas yet.</div>';
-
-    // Recent bugs / changes (newest first)
-    const recent = bugs.slice().sort((a,b) => new Date(b.created_at) - new Date(a.created_at)).slice(0, 6);
-    document.getElementById('pm-bugs').innerHTML = recent.length ? recent.map(t => `
-      <div class="bug-row">
-        <span class="dot" style="width:9px;height:9px;border-radius:50%;margin-top:5px;flex:none;background:${S_COLORS[t.status]||'#94a3b8'}"></span>
-        <div class="bug-main">
-          <div class="bug-title">${esc(t.title)}</div>
-          <div class="bug-meta">${esc(t.status)} · ${esc(t.updated_by_name||'')} · ${fmtDate(t.created_at)}</div>
-        </div>
-      </div>`).join('') : '<div class="text-sm text-slate-400 py-4 text-center">No bugs or change requests yet.</div>';
   }
 
   initNav('pm-dashboard');

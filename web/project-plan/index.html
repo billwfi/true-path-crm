@@ -139,6 +139,10 @@
       <div class="fld"><label>Name</label><input id="msm-name" class="form-control"></div>
       <div class="fld"><label>Focus</label><textarea id="msm-focus" class="form-control" rows="2"></textarea></div>
       <div style="display:flex; gap:10px">
+        <div class="fld" style="flex:1"><label>Lead</label><input id="msm-lead" class="form-control" placeholder="Project lead"></div>
+        <div class="fld" style="flex:1"><label>Dev Lead</label><input id="msm-devlead" class="form-control" placeholder="Dev lead"></div>
+      </div>
+      <div style="display:flex; gap:10px">
         <div class="fld" style="flex:1"><label>Start date</label><input type="date" id="msm-start" class="form-control"></div>
         <div class="fld" style="flex:1"><label>End date</label><input type="date" id="msm-end" class="form-control"></div>
       </div>
@@ -374,6 +378,8 @@
     document.getElementById('msm-heading').textContent = m ? 'Edit milestone' : 'New milestone';
     document.getElementById('msm-name').value = m ? m.title : '';
     document.getElementById('msm-focus').value = m ? (m.goal||'') : '';
+    document.getElementById('msm-lead').value = m ? (m.lead||'') : '';
+    document.getElementById('msm-devlead').value = m ? (m.dev_lead||'') : '';
     document.getElementById('msm-start').value = m ? (m.start_date||'') : '';
     document.getElementById('msm-end').value = m ? (m.end_date||'') : '';
     openModal('ms-modal');
@@ -383,6 +389,8 @@
     if (!title) { showToast('Name required', 'error'); return; }
     const payload = { title, plan: 'CRM Migration',
       goal: document.getElementById('msm-focus').value.trim() || null,
+      lead: document.getElementById('msm-lead').value.trim() || null,
+      dev_lead: document.getElementById('msm-devlead').value.trim() || null,
       start_date: document.getElementById('msm-start').value || null,
       end_date: document.getElementById('msm-end').value || null };
     let r;
