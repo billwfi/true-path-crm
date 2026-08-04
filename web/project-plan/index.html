@@ -72,7 +72,8 @@
     const data = await apiGet('/project-plan');
     if (!data) return;
     STATUSES = data.statuses || STATUSES;
-    CATS = data.categories || [];
+    // Feedback (FB) is tracked separately under Project Management → Bugs/Changes.
+    CATS = (data.categories || []).filter(c => c.code !== 'FB');
     const total = CATS.reduce((a,c)=>a+c.tasks.length,0);
     const done = CATS.reduce((a,c)=>a+c.tasks.filter(t=>t.status==='Done').length,0);
     document.getElementById('pp-summary').textContent = `${total} item${total===1?'':'s'} · ${done} done`;
