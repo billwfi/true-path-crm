@@ -29,7 +29,7 @@ exports.handler = async function (event) {
         return r.recordset[0] ? ok({ screenshot: r.recordset[0].screenshot }) : notFound();
       }
       const cats = (await mssql(
-        `SELECT id, code, title, goal, sort_order FROM dbo.Project_Categories ORDER BY sort_order, code`)).recordset;
+        `SELECT id, code, title, goal, sort_order, [plan] FROM dbo.Project_Categories ORDER BY sort_order, code`)).recordset;
       const tasks = (await mssql(
         `SELECT t.id, t.category_id, t.title, t.description, t.ref_tag, t.effort, t.status,
                 t.dev_notes, t.source, t.page_url, t.sort_order, t.updated_at, t.created_at,
@@ -68,10 +68,11 @@ exports.handler = async function (event) {
       if (isCategory) {
         if (!b.title) return badRequest('title required');
         const r = await mssql(
-          `INSERT INTO dbo.Project_Categories (code, title, goal, sort_order)
-           VALUES (@code,@title,@goal,@sort);
+          `INSERT INTO dbo.Project_Categories (code, title, goal, sort_order, [plan])
+           VALUES (@code,@title,@goal,@sort,@plan);
            SELECT CAST(SCOPE_IDENTITY() AS INT) AS id;`,
-          { code: b.code || '', title: b.title, goal: b.goal || null, sort: b.sort_order || 99 });
+          { code: b.code || '', title: b.title, goal: b.goal || null, sort: b.sort_order || 99,
+            plan: b.plan || 'New Development' });
         return created({ id: r.recordset[0].id });
       }
       if (!b.category_id || !b.title) return badRequest('category_id and title required');
@@ -92,8 +93,9 @@ exports.handler = async function (event) {
       if (isCategory) {
         await mssql(
           `UPDATE dbo.Project_Categories SET title=COALESCE(@title,title), goal=@goal,
-             sort_order=COALESCE(@sort,sort_order) WHERE id=@id`,
-          { title: b.title || null, goal: b.goal ?? null, sort: b.sort_order ?? null, id: parseInt(id, 10) });
+             sort_order=COALESCE(@sort,sort_order), [plan]=COALESCE(@plan,[plan]) WHERE id=@id`,
+          { title: b.title || null, goal: b.goal ?? null, sort: b.sort_order ?? null,
+            plan: b.plan || null, id: parseInt(id, 10) });
         return ok({ id });
       }
       // Build a partial update — only overwrite fields that were sent.

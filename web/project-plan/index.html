@@ -34,6 +34,11 @@
     .pp-fb { font-size: 11.5px; color: #94a3b8; }
     .s-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; vertical-align: middle; }
     .shot-modal img { max-width: 100%; max-height: 78vh; display: block; margin: 0 auto; border-radius: 8px; }
+    .pp-tabs { display: flex; gap: 6px; flex-wrap: wrap; }
+    .pp-tab { font-size: 13px; font-weight: 550; padding: 6px 14px; border: 1px solid #cbd5e1; border-radius: 999px;
+      background: #fff; color: #475569; cursor: pointer; white-space: nowrap; }
+    .pp-tab.active { background: #0d7d74; border-color: #0d7d74; color: #fff; }
+    .pp-tab .c { opacity: .7; margin-left: 5px; font-size: 11.5px; }
   </style>
 </head>
 <body class="bg-slate-100 text-slate-700">
@@ -42,8 +47,9 @@
   <div class="flex-1 flex flex-col overflow-hidden">
     <div id="topbar"></div>
     <main class="flex-1 overflow-y-auto p-6">
-      <div class="search-bar">
-        <span id="pp-summary" class="text-sm text-slate-500"></span>
+      <div class="search-bar" style="flex-wrap:wrap; gap:10px">
+        <div id="pp-tabs" class="pp-tabs"></div>
+        <span id="pp-summary" class="text-sm text-slate-500" style="margin-left:auto"></span>
         <button class="btn btn-outline btn-sm" onclick="loadPlan()"><i class="fa-solid fa-rotate"></i> Refresh</button>
         <button class="btn btn-primary btn-sm" onclick="addCategory()"><i class="fa-solid fa-plus"></i> Category</button>
       </div>
@@ -65,22 +71,39 @@
 <script src="/assets/js/app.js"></script>
 <script>
   const S_COLORS = { 'Not Started':'#94a3b8', 'In Progress':'#2563eb', 'Testing':'#a16207', 'Blocked':'#b91c1c', 'Done':'#15803d' };
+  const PLANS = ['CRM Migration', 'New Development'];
   let STATUSES = ['Not Started','In Progress','Testing','Blocked','Done'];
-  let CATS = [];
+  let ALL_CATS = [];              // all plan categories (FB excluded)
+  let CATS = [];                  // categories for the active plan
+  let ACTIVE_PLAN = 'CRM Migration';
+  const planOf = c => c.plan || 'New Development';
 
   async function loadPlan() {
     const data = await apiGet('/project-plan');
     if (!data) return;
     STATUSES = data.statuses || STATUSES;
     // Feedback (FB) is tracked separately under Project Management → Bugs/Changes.
-    CATS = (data.categories || []).filter(c => c.code !== 'FB');
+    ALL_CATS = (data.categories || []).filter(c => c.code !== 'FB');
+    renderPlan();
+  }
+
+  function renderPlan() {
+    document.getElementById('pp-tabs').innerHTML = PLANS.map(pl => {
+      const n = ALL_CATS.filter(c => planOf(c) === pl).length;
+      return `<button class="pp-tab ${pl===ACTIVE_PLAN?'active':''}" onclick="setPlan('${pl}')">${pl}<span class="c">${n}</span></button>`;
+    }).join('');
+
+    CATS = ALL_CATS.filter(c => planOf(c) === ACTIVE_PLAN);
     const total = CATS.reduce((a,c)=>a+c.tasks.length,0);
     const done = CATS.reduce((a,c)=>a+c.tasks.filter(t=>t.status==='Done').length,0);
-    document.getElementById('pp-summary').textContent = `${total} item${total===1?'':'s'} · ${done} done`;
+    document.getElementById('pp-summary').textContent =
+      `${CATS.length} categor${CATS.length===1?'y':'ies'} · ${total} item${total===1?'':'s'} · ${done} done`;
     const body = document.getElementById('pp-body');
-    document.getElementById('pp-empty').style.display = total || CATS.length ? 'none' : '';
+    document.getElementById('pp-empty').style.display = CATS.length ? 'none' : '';
     body.innerHTML = CATS.map(renderCat).join('');
   }
+
+  function setPlan(pl) { ACTIVE_PLAN = pl; renderPlan(); }
 
   function renderCat(c) {
     const done = c.tasks.filter(t=>t.status==='Done').length;
@@ -153,10 +176,10 @@
     if (res && res.ok) loadPlan(); else showToast('Could not add', 'error');
   }
   async function addCategory() {
-    const title = prompt('New category name:');
+    const title = prompt(`New category name (added to "${ACTIVE_PLAN}"):`);
     if (!title) return;
     const code = (prompt('Short code (e.g. F):', '') || '').slice(0,8);
-    const res = await apiPost('/project-plan?resource=category', { title, code });
+    const res = await apiPost('/project-plan?resource=category', { title, code, plan: ACTIVE_PLAN });
     if (res && res.ok) loadPlan(); else showToast('Could not add', 'error');
   }
   async function delTask(id) {
