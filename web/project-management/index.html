@@ -48,6 +48,8 @@
     .grp-h { font-size: 11px; font-weight: 700; color: #64748b; margin: 10px 0 2px; display: flex; align-items: center; gap: 6px; }
     .grp-h:first-child { margin-top: 0; }
     .scz { max-height: 340px; overflow-y: auto; }
+    .fld { margin-bottom: 12px; }
+    .fld label { display: block; font-size: 12px; font-weight: 600; color: #64748b; margin-bottom: 4px; }
   </style>
 </head>
 <body class="bg-slate-100 text-slate-700">
@@ -61,9 +63,38 @@
         <span id="pm-sub" class="text-sm text-slate-400" style="margin-left:12px"></span>
         <a class="btn btn-outline btn-sm" href="/project-plan/" style="margin-left:auto"><i class="fa-solid fa-list-check"></i> Project Plan</a>
         <button class="btn btn-outline btn-sm" onclick="loadDash()"><i class="fa-solid fa-rotate"></i> Refresh</button>
+        <button class="btn btn-primary btn-sm" onclick="openProjModal()"><i class="fa-solid fa-plus"></i> New Project</button>
       </div>
       <div id="pm-dash" class="dash"></div>
     </main>
+  </div>
+</div>
+
+<!-- new project -->
+<div id="proj-modal" class="modal-backdrop hidden">
+  <div class="modal" style="max-width:480px">
+    <div class="modal-header"><span>New Project</span>
+      <button onclick="closeModal('proj-modal')" class="text-slate-400 hover:text-slate-600"><i class="fa-solid fa-xmark"></i></button></div>
+    <div class="modal-body">
+      <div class="fld"><label>Project name</label><input id="pj-name" class="form-control" placeholder="e.g. Provider Portal"></div>
+      <div class="fld"><label>Plan</label>
+        <select id="pj-plan" class="form-control">
+          <option>New Development</option>
+          <option>CRM Migration</option>
+        </select></div>
+      <div style="display:flex; gap:10px">
+        <div class="fld" style="flex:1"><label>Lead</label><input id="pj-lead" class="form-control" placeholder="Project lead"></div>
+        <div class="fld" style="flex:1"><label>Dev Lead</label><input id="pj-devlead" class="form-control" placeholder="Dev lead"></div>
+      </div>
+      <div style="display:flex; gap:10px">
+        <div class="fld" style="flex:1"><label>Start date</label><input type="date" id="pj-start" class="form-control"></div>
+        <div class="fld" style="flex:1"><label>Due date</label><input type="date" id="pj-end" class="form-control"></div>
+      </div>
+      <div class="fld"><label>Focus</label><textarea id="pj-focus" class="form-control" rows="2" placeholder="What this project delivers"></textarea></div>
+    </div>
+    <div style="padding:14px; border-top:1px solid #eef2f7; text-align:right">
+      <button class="btn btn-primary btn-sm" onclick="saveProject()">Create project</button>
+    </div>
   </div>
 </div>
 
@@ -100,10 +131,13 @@
   }
   const badgeClass = s => s === 'Active' ? 'b-active' : s === 'Completed' ? 'b-completed' : 'b-notstarted';
 
+  let DASH_CATS = [];
+
   async function loadDash() {
     const data = await apiGet('/project-plan');
     if (!data) return;
     const cats = (data.categories || []);
+    DASH_CATS = cats;
     const projects = cats.filter(c => c.code !== 'FB');
     const STAT = ['Not Started','In Progress','Testing','Blocked','Done'];
 
@@ -207,6 +241,30 @@
         <div class="panel"><h2><i class="fa-solid fa-triangle-exclamation" style="color:#dc2626"></i> Overdue Tasks</h2><div class="list scz">${overList}</div></div>
         <div class="panel"><h2><i class="fa-solid fa-circle-check" style="color:#16a34a"></i> Completed <span class="text-slate-400 font-normal" style="font-size:11px">(last 7 days)</span></h2><div class="list scz">${doneList}</div></div>
       </div>`;
+  }
+
+  /* create a new project (a top-level milestone/category) */
+  function openProjModal() {
+    ['pj-name','pj-lead','pj-devlead','pj-start','pj-end','pj-focus'].forEach(id => document.getElementById(id).value = '');
+    document.getElementById('pj-plan').value = 'New Development';
+    openModal('proj-modal');
+    setTimeout(() => document.getElementById('pj-name').focus(), 40);
+  }
+  async function saveProject() {
+    const title = document.getElementById('pj-name').value.trim();
+    if (!title) { showToast('Project name required', 'error'); return; }
+    const plan = document.getElementById('pj-plan').value;
+    // Append within the chosen plan (after its existing projects).
+    const maxSort = Math.max(0, ...DASH_CATS.filter(c => (c.plan||'New Development') === plan).map(c => c.sort_order || 0));
+    const payload = { title, plan, sort_order: maxSort + 1,
+      lead: document.getElementById('pj-lead').value.trim() || null,
+      dev_lead: document.getElementById('pj-devlead').value.trim() || null,
+      start_date: document.getElementById('pj-start').value || null,
+      end_date: document.getElementById('pj-end').value || null,
+      goal: document.getElementById('pj-focus').value.trim() || null };
+    const r = await apiPost('/project-plan?resource=category', payload);
+    if (r && r.ok) { closeModal('proj-modal'); showToast('Project created', 'success'); loadDash(); }
+    else showToast('Could not create project', 'error');
   }
 
   initNav('pm-dashboard');
