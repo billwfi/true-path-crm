@@ -7,6 +7,7 @@
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
   <link rel="stylesheet" href="/assets/css/app.css">
   <style>
+    /* New Development card view */
     .pp-cat { margin-bottom: 22px; }
     .pp-cat-head { display: flex; align-items: center; gap: 12px; margin: 0 2px 10px; }
     .pp-code { font: 700 13px/1 ui-monospace,Consolas,monospace; color: #fff; background: #0d7d74;
@@ -39,6 +40,48 @@
       background: #fff; color: #475569; cursor: pointer; white-space: nowrap; }
     .pp-tab.active { background: #0d7d74; border-color: #0d7d74; color: #fff; }
     .pp-tab .c { opacity: .7; margin-left: 5px; font-size: 11.5px; }
+
+    /* CRM Migration milestone grid */
+    .mig { display: flex; flex-direction: column; gap: 10px; }
+    .ms { border: 1px solid #e2e8f0; border-radius: 12px; background: #fff; overflow: hidden; }
+    .ms-head { display: flex; align-items: center; gap: 12px; padding: 12px 14px; cursor: pointer; }
+    .ms-head:hover { background: #f8fafc; }
+    .ms-chev { color: #94a3b8; width: 13px; transition: transform .15s; }
+    .ms.open .ms-chev { transform: rotate(90deg); }
+    .ms-name { font-weight: 650; color: #1e293b; font-size: 15px; }
+    .ms-focus { font-size: 12px; color: #94a3b8; font-weight: 400; margin-left: 8px; }
+    .ms-dates { font-size: 12px; color: #475569; white-space: nowrap; }
+    .ms-prog { display: flex; align-items: center; gap: 8px; font-size: 12px; color: #64748b; white-space: nowrap; }
+    .ms-prog .bar { width: 110px; height: 7px; border-radius: 4px; background: #e2e8f0; overflow: hidden; }
+    .ms-prog .bar i { display: block; height: 100%; background: #15803d; }
+    .ms-body { border-top: 1px solid #f1f5f9; padding: 4px 0 8px; display: none; }
+    .ms.open .ms-body { display: block; }
+    .grow { flex: 1; min-width: 0; }
+    .tk-row { display: flex; align-items: center; gap: 10px; padding: 7px 14px 7px 34px; border-top: 1px solid #f8fafc; }
+    .tk-row:hover { background: #f9fafb; }
+    .st-row { padding-left: 62px; background: #fbfcfd; }
+    .tk-chev { color: #cbd5e1; width: 12px; cursor: pointer; transition: transform .15s; }
+    .tk-open > .tk-row .tk-chev { transform: rotate(90deg); }
+    .mini-status { font-size: 11.5px; font-weight: 600; padding: 3px 7px; border: 1px solid #cbd5e1; border-radius: 6px; background: #fff; cursor: pointer; }
+    .tk-name { font-size: 13.5px; color: #1e293b; font-weight: 550; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .st-row .tk-name { font-weight: 450; color: #334155; font-size: 13px; }
+    .tk-meta { font-size: 11.5px; color: #94a3b8; display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
+    .tk-due input { font-size: 11.5px; border: 1px solid #e2e8f0; border-radius: 6px; padding: 2px 5px; color: #475569; background: #fff; }
+    .icon-btn { background: none; border: 0; color: #94a3b8; cursor: pointer; font-size: 12.5px; padding: 3px 4px; }
+    .icon-btn:hover { color: #0a5e57; }
+    .icon-btn.del:hover { color: #b91c1c; }
+    .tk-subs { display: none; }
+    .tk.tk-open > .tk-subs { display: block; }
+    .atts { padding: 4px 14px 6px 62px; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+    .att-chip { display: inline-flex; align-items: center; gap: 6px; font-size: 11.5px; background: #eef2f7;
+      border: 1px solid #e2e8f0; border-radius: 999px; padding: 3px 10px; color: #334155; }
+    .att-chip a { color: #0a5e57; }
+    .att-chip .x { color: #94a3b8; cursor: pointer; font-weight: 700; }
+    .att-chip .x:hover { color: #b91c1c; }
+    .strike > .tk-row .tk-name { text-decoration: line-through; color: #94a3b8; }
+    .add-row { padding: 6px 34px; }
+    .fld { margin-bottom: 12px; }
+    .fld label { display: block; font-size: 12px; font-weight: 600; color: #64748b; margin-bottom: 4px; }
   </style>
 </head>
 <body class="bg-slate-100 text-slate-700">
@@ -51,7 +94,7 @@
         <div id="pp-tabs" class="pp-tabs"></div>
         <span id="pp-summary" class="text-sm text-slate-500" style="margin-left:auto"></span>
         <button class="btn btn-outline btn-sm" onclick="loadPlan()"><i class="fa-solid fa-rotate"></i> Refresh</button>
-        <button class="btn btn-primary btn-sm" onclick="addCategory()"><i class="fa-solid fa-plus"></i> Category</button>
+        <button id="pp-add-btn" class="btn btn-primary btn-sm" onclick="addTopLevel()"><i class="fa-solid fa-plus"></i> Add</button>
       </div>
       <div id="pp-body"></div>
       <div id="pp-empty" class="empty-state" style="display:none"><i class="fa-solid fa-diagram-project"></i><p>No project plan yet.</p></div>
@@ -59,7 +102,7 @@
   </div>
 </div>
 
-<!-- screenshot viewer -->
+<!-- screenshot viewer (feedback) -->
 <div id="shot-modal" class="modal-backdrop hidden">
   <div class="modal shot-modal" style="max-width:900px">
     <div class="modal-header"><span>Feedback screenshot</span>
@@ -68,15 +111,58 @@
   </div>
 </div>
 
+<!-- task / sub-task add+edit -->
+<div id="task-modal" class="modal-backdrop hidden">
+  <div class="modal" style="max-width:460px">
+    <div class="modal-header"><span id="tm-heading">Task</span>
+      <button onclick="closeModal('task-modal')" class="text-slate-400 hover:text-slate-600"><i class="fa-solid fa-xmark"></i></button></div>
+    <div class="modal-body">
+      <div class="fld"><label>Title</label><input id="tm-name" class="form-control" placeholder="What needs to be done?"></div>
+      <div class="fld"><label>Assignee</label><input id="tm-assignee" class="form-control" placeholder="Name (optional)"></div>
+      <div style="display:flex; gap:10px">
+        <div class="fld" style="flex:1"><label>Due date</label><input type="date" id="tm-due" class="form-control"></div>
+        <div class="fld" style="flex:1"><label>Status</label><select id="tm-status" class="form-control"></select></div>
+      </div>
+    </div>
+    <div style="padding:14px; border-top:1px solid #eef2f7; text-align:right">
+      <button class="btn btn-primary btn-sm" onclick="saveTaskModal()">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- milestone add+edit -->
+<div id="ms-modal" class="modal-backdrop hidden">
+  <div class="modal" style="max-width:480px">
+    <div class="modal-header"><span id="msm-heading">Milestone</span>
+      <button onclick="closeModal('ms-modal')" class="text-slate-400 hover:text-slate-600"><i class="fa-solid fa-xmark"></i></button></div>
+    <div class="modal-body">
+      <div class="fld"><label>Name</label><input id="msm-name" class="form-control"></div>
+      <div class="fld"><label>Focus</label><textarea id="msm-focus" class="form-control" rows="2"></textarea></div>
+      <div style="display:flex; gap:10px">
+        <div class="fld" style="flex:1"><label>Start date</label><input type="date" id="msm-start" class="form-control"></div>
+        <div class="fld" style="flex:1"><label>End date</label><input type="date" id="msm-end" class="form-control"></div>
+      </div>
+    </div>
+    <div style="padding:14px; border-top:1px solid #eef2f7; text-align:right">
+      <button class="btn btn-primary btn-sm" onclick="saveMsModal()">Save</button>
+    </div>
+  </div>
+</div>
+
 <script src="/assets/js/app.js"></script>
 <script>
   const S_COLORS = { 'Not Started':'#94a3b8', 'In Progress':'#2563eb', 'Testing':'#a16207', 'Blocked':'#b91c1c', 'Done':'#15803d' };
   const PLANS = ['CRM Migration', 'New Development'];
+  const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
   let STATUSES = ['Not Started','In Progress','Testing','Blocked','Done'];
   let ALL_CATS = [];              // all plan categories (FB excluded)
   let CATS = [];                  // categories for the active plan
   let ACTIVE_PLAN = 'CRM Migration';
+  const OPEN_MS = new Set();      // expanded milestones
+  const OPEN_TK = new Set();      // expanded tasks (to show sub-tasks/attachments)
+  const ATT = {};                 // taskId -> [attachments] (lazy)
   const planOf = c => c.plan || 'New Development';
+  const findTask = id => { for (const m of ALL_CATS) { const t = (m.tasks||[]).find(x=>x.id===id); if (t) return t; } return null; };
 
   async function loadPlan() {
     const data = await apiGet('/project-plan');
@@ -92,19 +178,259 @@
       const n = ALL_CATS.filter(c => planOf(c) === pl).length;
       return `<button class="pp-tab ${pl===ACTIVE_PLAN?'active':''}" onclick="setPlan('${pl}')">${pl}<span class="c">${n}</span></button>`;
     }).join('');
-
     CATS = ALL_CATS.filter(c => planOf(c) === ACTIVE_PLAN);
+    document.getElementById('pp-add-btn').innerHTML = ACTIVE_PLAN === 'CRM Migration'
+      ? '<i class="fa-solid fa-plus"></i> Milestone' : '<i class="fa-solid fa-plus"></i> Category';
+
+    if (ACTIVE_PLAN === 'CRM Migration') { renderMigrationGrid(); return; }
+
+    // New Development — card view
     const total = CATS.reduce((a,c)=>a+c.tasks.length,0);
     const done = CATS.reduce((a,c)=>a+c.tasks.filter(t=>t.status==='Done').length,0);
     document.getElementById('pp-summary').textContent =
       `${CATS.length} categor${CATS.length===1?'y':'ies'} · ${total} item${total===1?'':'s'} · ${done} done`;
-    const body = document.getElementById('pp-body');
     document.getElementById('pp-empty').style.display = CATS.length ? 'none' : '';
-    body.innerHTML = CATS.map(renderCat).join('');
+    document.getElementById('pp-body').innerHTML = CATS.map(renderCat).join('');
   }
 
   function setPlan(pl) { ACTIVE_PLAN = pl; renderPlan(); }
+  function addTopLevel() { ACTIVE_PLAN === 'CRM Migration' ? openMsModal({}) : addCategory(); }
 
+  /* ─────────── CRM Migration: milestone → task → sub-task grid ─────────── */
+  function fmtRange(sd, ed) {
+    const f = d => { if (!d) return '?'; const [y,m,day] = d.split('-'); return MONTHS[+m-1] + ' ' + (+day); };
+    if (!sd && !ed) return '<span style="color:#cbd5e1">no dates</span>';
+    return `${f(sd)} – ${f(ed)}, ${(ed||sd).split('-')[0]}`;
+  }
+  function taskTree(m) {
+    const tops = m.tasks.filter(t => !t.parent_task_id);
+    const kids = {};
+    m.tasks.filter(t => t.parent_task_id).forEach(t => (kids[t.parent_task_id] = kids[t.parent_task_id]||[]).push(t));
+    return { tops, kids };
+  }
+
+  function renderMigrationGrid() {
+    const totalT = CATS.reduce((a,m)=>a+m.tasks.length,0);
+    const doneT = CATS.reduce((a,m)=>a+m.tasks.filter(t=>t.status==='Done').length,0);
+    document.getElementById('pp-summary').textContent = `${CATS.length} milestones · ${totalT} tasks · ${doneT} done`;
+    document.getElementById('pp-empty').style.display = CATS.length ? 'none' : '';
+    document.getElementById('pp-body').innerHTML = `<div class="mig">${CATS.map(renderMilestone).join('')}</div>`;
+    hydrateAtts();
+  }
+
+  function renderMilestone(m) {
+    const done = m.tasks.filter(t=>t.status==='Done').length;
+    const pct = m.tasks.length ? Math.round(done/m.tasks.length*100) : 0;
+    const { tops, kids } = taskTree(m);
+    return `<div class="ms ${OPEN_MS.has(m.id)?'open':''}">
+      <div class="ms-head" onclick="toggleMs(${m.id})">
+        <i class="fa-solid fa-chevron-right ms-chev"></i>
+        <div class="grow"><span class="ms-name">${esc(m.title)}</span>${m.goal?`<span class="ms-focus">${esc(m.goal)}</span>`:''}</div>
+        <span class="ms-dates">${fmtRange(m.start_date, m.end_date)}</span>
+        <span class="ms-prog"><span class="bar"><i style="width:${pct}%"></i></span>${done}/${m.tasks.length}</span>
+        <button class="icon-btn" title="Edit milestone" onclick="event.stopPropagation();editMilestone(${m.id})"><i class="fa-solid fa-pen"></i></button>
+      </div>
+      <div class="ms-body">
+        ${tops.map(t=>renderTaskRow(t, kids[t.id]||[], m.id)).join('')
+          || '<div style="padding:8px 34px;font-size:12.5px;color:#94a3b8">No tasks yet.</div>'}
+        <div class="add-row"><button class="pp-link" onclick="openTaskModal({categoryId:${m.id}})"><i class="fa-solid fa-plus"></i> Add task</button></div>
+      </div>
+    </div>`;
+  }
+
+  function statusSel(t) {
+    return `<select class="mini-status" style="color:${S_COLORS[t.status]||'#475569'}" onchange="quickStatus(${t.id}, this.value)">
+      ${STATUSES.map(s=>`<option ${s===t.status?'selected':''}>${s}</option>`).join('')}</select>`;
+  }
+  const dueInput = t => `<span class="tk-due"><input type="date" value="${t.due_date||''}" onchange="quickDue(${t.id}, this.value)"></span>`;
+  const attsBox = id => `<div class="atts" id="atts-${id}">${renderAttChips(id)}</div>`;
+
+  function renderTaskRow(t, subs, msId) {
+    const attN = t.attachment_count || 0;
+    const subDone = subs.filter(s=>s.status==='Done').length;
+    return `<div class="tk ${OPEN_TK.has(t.id)?'tk-open':''} ${t.status==='Done'?'strike':''}">
+      <div class="tk-row">
+        <i class="fa-solid fa-chevron-right tk-chev" onclick="toggleTk(${t.id})"></i>
+        ${statusSel(t)}
+        <span class="tk-name grow">${esc(t.title)}</span>
+        ${t.assignee?`<span class="tk-meta"><i class="fa-regular fa-user"></i> ${esc(t.assignee)}</span>`:''}
+        ${subs.length?`<span class="tk-meta"><i class="fa-solid fa-list-ul"></i> ${subDone}/${subs.length}</span>`:''}
+        ${attN?`<span class="tk-meta"><i class="fa-solid fa-paperclip"></i> ${attN}</span>`:''}
+        ${dueInput(t)}
+        <button class="icon-btn" title="Add sub-task" onclick="openTaskModal({categoryId:${msId}, parentId:${t.id}})"><i class="fa-solid fa-plus"></i></button>
+        <button class="icon-btn" title="Edit" onclick="openTaskModal({task:${t.id}})"><i class="fa-solid fa-pen"></i></button>
+        <button class="icon-btn del" title="Delete" onclick="delTask(${t.id})"><i class="fa-regular fa-trash-can"></i></button>
+      </div>
+      <div class="tk-subs">
+        ${subs.map(s=>renderSubRow(s)).join('')}
+        ${attsBox(t.id)}
+        <div class="add-row" style="padding-left:62px">
+          <button class="pp-link" onclick="openTaskModal({categoryId:${msId}, parentId:${t.id}})"><i class="fa-solid fa-plus"></i> Sub-task</button>
+          <button class="pp-link" style="margin-left:16px" onclick="pickFile(${t.id})"><i class="fa-solid fa-paperclip"></i> Attach document</button>
+        </div>
+      </div>
+    </div>`;
+  }
+
+  function renderSubRow(s) {
+    return `<div class="tk ${s.status==='Done'?'strike':''}">
+      <div class="tk-row st-row">
+        <i class="fa-solid fa-arrow-turn-up fa-rotate-90" style="color:#cbd5e1;font-size:10px"></i>
+        ${statusSel(s)}
+        <span class="tk-name grow">${esc(s.title)}</span>
+        ${s.assignee?`<span class="tk-meta"><i class="fa-regular fa-user"></i> ${esc(s.assignee)}</span>`:''}
+        ${s.attachment_count?`<span class="tk-meta"><i class="fa-solid fa-paperclip"></i> ${s.attachment_count}</span>`:''}
+        ${dueInput(s)}
+        <button class="icon-btn" title="Attach document" onclick="pickFile(${s.id})"><i class="fa-solid fa-paperclip"></i></button>
+        <button class="icon-btn" title="Edit" onclick="openTaskModal({task:${s.id}})"><i class="fa-solid fa-pen"></i></button>
+        <button class="icon-btn del" title="Delete" onclick="delTask(${s.id})"><i class="fa-regular fa-trash-can"></i></button>
+      </div>
+      ${attsBox(s.id)}
+    </div>`;
+  }
+
+  function renderAttChips(id) {
+    const list = ATT[id];
+    if (list === undefined) return (findTask(id)?.attachment_count) ? '<span style="font-size:11px;color:#cbd5e1">loading…</span>' : '';
+    if (!list.length) return '';
+    return list.map(a => `<span class="att-chip"><i class="fa-regular fa-file"></i>
+      <a href="#" onclick="downloadAtt(${a.id});return false" title="Download">${esc(a.filename)}</a>
+      <span class="x" title="Remove" onclick="deleteAtt(${a.id}, ${id})">&times;</span></span>`).join('');
+  }
+
+  // Fetch attachment lists for tasks/sub-tasks that are visible (their milestone+task open).
+  async function hydrateAtts() {
+    const wanted = [];
+    CATS.forEach(m => {
+      if (!OPEN_MS.has(m.id)) return;
+      const { tops, kids } = taskTree(m);
+      tops.filter(t=>OPEN_TK.has(t.id)).forEach(t => {
+        [t, ...(kids[t.id]||[])].forEach(x => {
+          if ((x.attachment_count>0) && ATT[x.id] === undefined) wanted.push(x.id);
+        });
+      });
+    });
+    for (const tid of wanted) {
+      const d = await apiGet(`/project-plan?resource=attachments&task_id=${tid}`);
+      ATT[tid] = (d && d.attachments) || [];
+      const el = document.getElementById('atts-'+tid);
+      if (el) el.innerHTML = renderAttChips(tid);
+    }
+  }
+
+  function toggleMs(id) { OPEN_MS.has(id) ? OPEN_MS.delete(id) : OPEN_MS.add(id); renderPlan(); }
+  function toggleTk(id) { OPEN_TK.has(id) ? OPEN_TK.delete(id) : OPEN_TK.add(id); renderPlan(); }
+
+  // Optimistic quick edits (status / due) — patch, update local, re-render.
+  async function quickStatus(id, status) {
+    const t = findTask(id); if (t) t.status = status; renderPlan();
+    const r = await apiPatch(`/project-plan?id=${id}`, { status });
+    if (!(r && r.ok)) { showToast('Could not update', 'error'); loadPlan(); }
+  }
+  async function quickDue(id, due_date) {
+    const t = findTask(id); if (t) t.due_date = due_date || null;
+    const r = await apiPatch(`/project-plan?id=${id}`, { due_date: due_date || null });
+    if (!(r && r.ok)) showToast('Could not update', 'error');
+  }
+
+  /* task / sub-task modal */
+  let TM = {};
+  function openTaskModal(opts) {
+    TM = opts || {};
+    const t = TM.task ? findTask(TM.task) : null;
+    document.getElementById('tm-heading').textContent = t ? 'Edit item' : (TM.parentId ? 'New sub-task' : 'New task');
+    document.getElementById('tm-name').value = t ? t.title : '';
+    document.getElementById('tm-assignee').value = t ? (t.assignee||'') : '';
+    document.getElementById('tm-due').value = t ? (t.due_date||'') : '';
+    document.getElementById('tm-status').innerHTML = STATUSES.map(s=>`<option ${t&&s===t.status?'selected':''}>${s}</option>`).join('');
+    openModal('task-modal');
+    setTimeout(()=>document.getElementById('tm-name').focus(), 40);
+  }
+  async function saveTaskModal() {
+    const title = document.getElementById('tm-name').value.trim();
+    if (!title) { showToast('Title required', 'error'); return; }
+    const payload = { title,
+      assignee: document.getElementById('tm-assignee').value.trim() || null,
+      due_date: document.getElementById('tm-due').value || null,
+      status: document.getElementById('tm-status').value };
+    let r;
+    if (TM.task) { r = await apiPatch(`/project-plan?id=${TM.task}`, payload); }
+    else {
+      payload.category_id = TM.categoryId;
+      if (TM.parentId) { payload.parent_task_id = TM.parentId; OPEN_TK.add(TM.parentId); }
+      if (TM.categoryId) OPEN_MS.add(TM.categoryId);
+      r = await apiPost('/project-plan', payload);
+    }
+    if (r && r.ok) { closeModal('task-modal'); await loadPlan(); }
+    else showToast('Could not save', 'error');
+  }
+
+  /* milestone modal */
+  let MSM = {};
+  function editMilestone(id) { openMsModal({ id }); }
+  function openMsModal(opts) {
+    MSM = opts || {};
+    const m = MSM.id ? ALL_CATS.find(c=>c.id===MSM.id) : null;
+    document.getElementById('msm-heading').textContent = m ? 'Edit milestone' : 'New milestone';
+    document.getElementById('msm-name').value = m ? m.title : '';
+    document.getElementById('msm-focus').value = m ? (m.goal||'') : '';
+    document.getElementById('msm-start').value = m ? (m.start_date||'') : '';
+    document.getElementById('msm-end').value = m ? (m.end_date||'') : '';
+    openModal('ms-modal');
+  }
+  async function saveMsModal() {
+    const title = document.getElementById('msm-name').value.trim();
+    if (!title) { showToast('Name required', 'error'); return; }
+    const payload = { title, plan: 'CRM Migration',
+      goal: document.getElementById('msm-focus').value.trim() || null,
+      start_date: document.getElementById('msm-start').value || null,
+      end_date: document.getElementById('msm-end').value || null };
+    let r;
+    if (MSM.id) r = await apiPatch(`/project-plan?resource=category&id=${MSM.id}`, payload);
+    else r = await apiPost('/project-plan?resource=category', payload);
+    if (r && r.ok) { closeModal('ms-modal'); await loadPlan(); }
+    else showToast('Could not save', 'error');
+  }
+
+  /* attachments */
+  function pickFile(taskId) {
+    const inp = document.createElement('input');
+    inp.type = 'file';
+    inp.onchange = async () => {
+      const f = inp.files[0]; if (!f) return;
+      if (f.size > 8 * 1024 * 1024) { showToast('File too large (max 8MB)', 'error'); return; }
+      const data_b64 = await new Promise(res => { const rd = new FileReader(); rd.onload = () => res(rd.result.split(',')[1]); rd.readAsDataURL(f); });
+      showToast('Uploading…');
+      const r = await apiPost('/project-plan?resource=attachment',
+        { task_id: taskId, filename: f.name, content_type: f.type, size_bytes: f.size, data_b64 });
+      if (r && r.ok) {
+        const t = findTask(taskId); if (t) t.attachment_count = (t.attachment_count||0) + 1;
+        delete ATT[taskId];
+        renderPlan();
+        showToast('Attached', 'success');
+      } else showToast('Upload failed', 'error');
+    };
+    inp.click();
+  }
+  async function downloadAtt(id) {
+    const d = await apiGet(`/project-plan?resource=attachment&id=${id}`);
+    if (!d || !d.data_b64) { showToast('Not found', 'error'); return; }
+    const bytes = Uint8Array.from(atob(d.data_b64), c => c.charCodeAt(0));
+    const url = URL.createObjectURL(new Blob([bytes], { type: d.content_type || 'application/octet-stream' }));
+    const a = document.createElement('a'); a.href = url; a.download = d.filename || 'download'; a.click();
+    URL.revokeObjectURL(url);
+  }
+  async function deleteAtt(id, taskId) {
+    if (!confirm2('Remove this document?')) return;
+    const r = await apiDelete(`/project-plan?resource=attachment&id=${id}`);
+    if (r && r.ok) {
+      const t = findTask(taskId); if (t) t.attachment_count = Math.max(0, (t.attachment_count||1) - 1);
+      delete ATT[taskId];
+      renderPlan();
+    } else showToast('Could not remove', 'error');
+  }
+
+  /* ─────────── New Development: card view (unchanged) ─────────── */
   function renderCat(c) {
     const done = c.tasks.filter(t=>t.status==='Done').length;
     const pct = c.tasks.length ? Math.round(done/c.tasks.length*100) : 0;
@@ -114,13 +440,11 @@
         <div><h2>${esc(c.title)}</h2>${c.goal?`<div class="goal">${esc(c.goal)}</div>`:''}</div>
         <span class="pp-prog">${done}/${c.tasks.length}<span class="bar"><i style="width:${pct}%"></i></span></span>
       </div>
-      ${c.tasks.map(renderTask).join('')}
+      ${c.tasks.filter(t=>!t.parent_task_id).map(renderTask).join('')}
       <button class="pp-link" style="margin:4px 2px" onclick="addTask(${c.id})"><i class="fa-solid fa-plus"></i> Add item</button>
     </div>`;
   }
-
   function renderTask(t) {
-    const opts = STATUSES.map(s=>`<option ${s===t.status?'selected':''}>${s}</option>`).join('');
     const fb = t.source==='feedback';
     return `<div class="pp-task" id="task-${t.id}">
       <div class="pp-row">
@@ -128,14 +452,10 @@
           <div class="pp-title">${esc(t.title)}
             ${t.ref_tag?`<span class="pp-chip">${esc(t.ref_tag)}</span>`:''}
             ${t.effort?`<span class="pp-chip">${esc(t.effort)}</span>`:''}
-            ${fb?`<span class="pp-chip" style="background:#e0f2f1;color:#0a5e57">feedback</span>`:''}
           </div>
           ${t.description?`<div class="pp-desc">${esc(t.description)}</div>`:''}
           <div class="pp-tools">
             <button class="pp-link" onclick="toggleNotes(${t.id})"><i class="fa-regular fa-note-sticky"></i> Dev notes${t.dev_notes?' •':''}</button>
-            ${fb && t.has_screenshot?`<button class="pp-link" onclick="viewShot(${t.id})"><i class="fa-regular fa-image"></i> Screenshot</button>`:''}
-            ${fb && t.page_url?`<a class="pp-link" href="${esc(t.page_url)}" target="_blank" rel="noopener"><i class="fa-solid fa-arrow-up-right-from-square"></i> Page</a>`:''}
-            ${fb?`<span class="pp-fb">${esc(t.updated_by_name||'')} · ${fmtDate(t.created_at)}</span>`:''}
             <button class="pp-link" style="color:#b91c1c;margin-left:auto" onclick="delTask(${t.id})"><i class="fa-regular fa-trash-can"></i></button>
           </div>
           <div class="pp-notes" id="notes-${t.id}">
@@ -151,41 +471,33 @@
       </div>
     </div>`;
   }
-
   async function changeStatus(id, status) {
-    const res = await apiPatch(`/project-plan?id=${id}`, { status });
-    if (res && res.ok) { showToast('Status updated', 'success'); loadPlan(); }
-    else showToast('Could not update', 'error');
+    const r = await apiPatch(`/project-plan?id=${id}`, { status });
+    if (r && r.ok) loadPlan(); else showToast('Could not update', 'error');
   }
   function toggleNotes(id) { document.getElementById('notes-'+id).classList.toggle('open'); }
   async function saveNotes(id) {
     const dev_notes = document.getElementById('notes-ta-'+id).value;
-    const res = await apiPatch(`/project-plan?id=${id}`, { dev_notes });
-    if (res && res.ok) { showToast('Notes saved', 'success'); loadPlan(); }
-    else showToast('Could not save', 'error');
-  }
-  async function viewShot(id) {
-    const d = await apiGet(`/project-plan?resource=screenshot&id=${id}`);
-    if (d && d.screenshot) { document.getElementById('shot-img').src = d.screenshot; openModal('shot-modal'); }
-    else showToast('No screenshot', 'error');
+    const r = await apiPatch(`/project-plan?id=${id}`, { dev_notes });
+    if (r && r.ok) { showToast('Notes saved', 'success'); loadPlan(); } else showToast('Could not save', 'error');
   }
   async function addTask(catId) {
-    const title = prompt('New item title:');
-    if (!title) return;
-    const res = await apiPost('/project-plan', { category_id: catId, title });
-    if (res && res.ok) loadPlan(); else showToast('Could not add', 'error');
+    const title = prompt('New item title:'); if (!title) return;
+    const r = await apiPost('/project-plan', { category_id: catId, title });
+    if (r && r.ok) loadPlan(); else showToast('Could not add', 'error');
   }
   async function addCategory() {
-    const title = prompt(`New category name (added to "${ACTIVE_PLAN}"):`);
-    if (!title) return;
+    const title = prompt('New category name (New Development):'); if (!title) return;
     const code = (prompt('Short code (e.g. F):', '') || '').slice(0,8);
-    const res = await apiPost('/project-plan?resource=category', { title, code, plan: ACTIVE_PLAN });
-    if (res && res.ok) loadPlan(); else showToast('Could not add', 'error');
+    const r = await apiPost('/project-plan?resource=category', { title, code, plan: 'New Development' });
+    if (r && r.ok) loadPlan(); else showToast('Could not add', 'error');
   }
+
+  /* shared delete (task or sub-task) */
   async function delTask(id) {
-    if (!confirm2('Delete this item?')) return;
-    const res = await apiDelete(`/project-plan?id=${id}`);
-    if (res && res.ok) loadPlan(); else showToast('Could not delete', 'error');
+    if (!confirm2('Delete this item and any sub-tasks?')) return;
+    const r = await apiDelete(`/project-plan?id=${id}`);
+    if (r && r.ok) loadPlan(); else showToast('Could not delete', 'error');
   }
 
   initNav('project-plan');
