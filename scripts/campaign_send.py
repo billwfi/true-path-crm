@@ -19,6 +19,7 @@ from urllib.parse import quote
 
 import pyodbc
 from azure.communication.email import EmailClient
+from azure.core.exceptions import HttpResponseError
 
 CAMPAIGN_ID = int(os.environ.get("CAMPAIGN_ID", "1"))
 EMAIL_FROM = os.environ.get("EMAIL_FROM", "noreply@truepathsourcing.com")
@@ -45,16 +46,16 @@ def render(html, name, email):
 
 
 def _message_id(poller):
-    """Message id from the send's initial response (immediate, no wait); fallback to result()."""
+    """Message id from the send's initial response — immediate, no network wait.
+
+    We deliberately do NOT fall back to poller.result() (pollUntilDone): that call
+    blocks 10-30s per email and, worse, can hang indefinitely with no timeout,
+    stalling the whole batch. Delivery/bounce/open are correlated by this id via the
+    email-events webhook; if it's ever missing the email still sends.
+    """
     try:
         body = poller.polling_method()._initial_response.http_response.text()
-        mid = json.loads(body).get("id")
-        if mid:
-            return mid
-    except Exception:
-        pass
-    try:
-        return poller.result().get("id")
+        return json.loads(body).get("id")
     except Exception:
         return None
 
@@ -103,7 +104,13 @@ def main():
         print(f"  ... {len(rows)} total this run")
         return
 
-    client = EmailClient.from_connection_string(os.environ["ACS_CONNECTION_STRING"])
+    # retry_total=0 so an HTTP 429 (ACS PerSubscriptionPerHour send limit) surfaces
+    # immediately instead of azure-core silently sleeping on its Retry-After header
+    # (often ~1 hour) — that sleep is what looked like a "hang" and killed the jobs.
+    # Explicit connect/read timeouts stop any single request from blocking forever.
+    client = EmailClient.from_connection_string(
+        os.environ["ACS_CONNECTION_STRING"],
+        connection_timeout=15, read_timeout=30, retry_total=0)
 
     def db_run(sqltext, *params, fetch=False):
         """Run a statement, reconnecting + retrying on a dropped SQL connection (08S01)."""
@@ -124,6 +131,7 @@ def main():
                 cur = cn.cursor()
 
     sent = failed = 0
+    throttle_after = None  # Retry-After seconds if ACS rate-limits us mid-run
     for r in rows:
         rid, fn, ln, email = r.id, r.first_name, r.last_name, r.email
         name = " ".join([x for x in [fn, ln] if x]).strip() or "Member"
@@ -136,6 +144,17 @@ def main():
                 "recipients": {"to": [{"address": email, "displayName": name}]},
             })
             rstatus, mid, err = "Sent", _message_id(poller), None
+        except HttpResponseError as e:
+            # Hit the hourly send limit — stop now and leave this + the rest Pending
+            # so they go out in the next window. Don't mark anything Failed.
+            if e.status_code == 429:
+                hdrs = getattr(getattr(e, "response", None), "headers", None) or {}
+                try:
+                    throttle_after = int(hdrs.get("Retry-After") or hdrs.get("retry-after") or 3700)
+                except (TypeError, ValueError):
+                    throttle_after = 3700
+                break
+            rstatus, mid, err = "Failed", None, str(e)[:400]
         except Exception as e:  # noqa: BLE001
             rstatus, mid, err = "Failed", None, str(e)[:400]
         # 2) record — survives DB connection drops so the email isn't lost/double-sent.
@@ -153,7 +172,8 @@ def main():
                  "WHERE campaign_id=? AND status='Pending'", CAMPAIGN_ID, fetch=True)[0]
     db_run("UPDATE dbo.Email_Campaigns SET status=?, sent_at=COALESCE(sent_at,GETDATE()) WHERE id=?",
            "Sending" if rem > 0 else "Sent", CAMPAIGN_ID)
-    print(f"[{today}] done: sent={sent} failed={failed} remaining={rem}")
+    extra = f" throttled retry_after={throttle_after}" if throttle_after else ""
+    print(f"[{today}] done: sent={sent} failed={failed} remaining={rem}{extra}")
 
 
 if __name__ == "__main__":
