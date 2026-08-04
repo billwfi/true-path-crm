@@ -16,7 +16,6 @@
     .stat a { color: inherit; }
     .panel { background: #fff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 16px 18px; }
     .panel h2 { font-size: 14px; font-weight: 650; color: #334155; margin-bottom: 12px; display: flex; align-items: center; gap: 8px; }
-    .panel h2 .r { margin-left: auto; font-size: 12px; font-weight: 500; }
     .two { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
     @media (max-width: 860px){ .two, .three { grid-template-columns: 1fr; } }
     .three { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; }
@@ -29,15 +28,14 @@
     table.pp th { text-align: left; font-size: 10.5px; font-weight: 700; letter-spacing: .04em; color: #94a3b8;
       text-transform: uppercase; padding: 6px 10px; border-bottom: 1px solid #e2e8f0; white-space: nowrap; }
     table.pp td { padding: 9px 10px; border-bottom: 1px solid #f1f5f9; color: #475569; white-space: nowrap; }
+    table.pp tr.crow:hover { background: #f8fafc; cursor: pointer; }
     table.pp td .pname { font-weight: 600; color: #1e293b; }
-    .ptag { font-size: 9.5px; font-weight: 700; letter-spacing: .03em; padding: 2px 6px; border-radius: 5px; margin-left: 8px; vertical-align: middle; }
-    .ptag.mig { background: #e0f2f1; color: #0a5e57; }
-    .ptag.dev { background: #eef2ff; color: #4338ca; }
+    .prio-High { color: #b91c1c; font-weight: 700; } .prio-Medium { color: #64748b; font-weight: 600; } .prio-Low { color: #15803d; font-weight: 600; }
     .badge2 { font-size: 10.5px; font-weight: 650; padding: 3px 9px; border-radius: 999px; }
     .b-active { background: #dbeafe; color: #1d4ed8; }
     .b-notstarted { background: #f1f5f9; color: #64748b; }
     .b-completed { background: #dcfce7; color: #15803d; }
-    .pbar { width: 150px; height: 7px; border-radius: 4px; background: #e2e8f0; overflow: hidden; display: inline-block; vertical-align: middle; }
+    .pbar { width: 140px; height: 7px; border-radius: 4px; background: #e2e8f0; overflow: hidden; display: inline-block; vertical-align: middle; }
     .pbar i { display: block; height: 100%; background: #0d7d74; }
     .list .li { display: flex; gap: 10px; padding: 9px 0; border-top: 1px solid #f1f5f9; }
     .list .li:first-child { border-top: 0; }
@@ -61,7 +59,7 @@
       <div class="search-bar">
         <span class="text-lg font-semibold text-slate-800">Project Management Dashboard</span>
         <span id="pm-sub" class="text-sm text-slate-400" style="margin-left:12px"></span>
-        <a class="btn btn-outline btn-sm" href="/project-plan/" style="margin-left:auto"><i class="fa-solid fa-list-check"></i> Project Plan</a>
+        <a class="btn btn-outline btn-sm" href="/project-plan/" style="margin-left:auto"><i class="fa-solid fa-list-check"></i> Projects</a>
         <button class="btn btn-outline btn-sm" onclick="loadDash()"><i class="fa-solid fa-rotate"></i> Refresh</button>
         <button class="btn btn-primary btn-sm" onclick="openProjModal()"><i class="fa-solid fa-plus"></i> New Project</button>
       </div>
@@ -77,11 +75,7 @@
       <button onclick="closeModal('proj-modal')" class="text-slate-400 hover:text-slate-600"><i class="fa-solid fa-xmark"></i></button></div>
     <div class="modal-body">
       <div class="fld"><label>Project name</label><input id="pj-name" class="form-control" placeholder="e.g. Provider Portal"></div>
-      <div class="fld"><label>Plan</label>
-        <select id="pj-plan" class="form-control">
-          <option>New Development</option>
-          <option>CRM Migration</option>
-        </select></div>
+      <div class="fld"><label>Priority</label><select id="pj-prio" class="form-control"><option>Low</option><option selected>Medium</option><option>High</option></select></div>
       <div style="display:flex; gap:10px">
         <div class="fld" style="flex:1"><label>Lead</label><input id="pj-lead" class="form-control" placeholder="Project lead"></div>
         <div class="fld" style="flex:1"><label>Dev Lead</label><input id="pj-devlead" class="form-control" placeholder="Dev lead"></div>
@@ -90,7 +84,7 @@
         <div class="fld" style="flex:1"><label>Start date</label><input type="date" id="pj-start" class="form-control"></div>
         <div class="fld" style="flex:1"><label>Due date</label><input type="date" id="pj-end" class="form-control"></div>
       </div>
-      <div class="fld"><label>Focus</label><textarea id="pj-focus" class="form-control" rows="2" placeholder="What this project delivers"></textarea></div>
+      <div class="fld"><label>Description</label><textarea id="pj-focus" class="form-control" rows="2" placeholder="What this project delivers"></textarea></div>
     </div>
     <div style="padding:14px; border-top:1px solid #eef2f7; text-align:right">
       <button class="btn btn-primary btn-sm" onclick="saveProject()">Create project</button>
@@ -101,9 +95,12 @@
 <script src="/assets/js/app.js"></script>
 <script>
   const S_COLORS = { 'Not Started':'#94a3b8', 'In Progress':'#2563eb', 'Testing':'#a16207', 'Blocked':'#b91c1c', 'Done':'#15803d' };
+  const STAT = ['Not Started','In Progress','Testing','Blocked','Done'];
   const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
   const toYMD = d => d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
   const fmtD = ymd => { if (!ymd) return '—'; const [y,m,d] = ymd.split('-'); return `${MONTHS[+m-1]} ${+d}, ${y}`; };
+  const badgeClass = s => s === 'Active' ? 'b-active' : s === 'Completed' ? 'b-completed' : 'b-notstarted';
+  let PROJECTS = [];
 
   function donut(segs, total) {
     const R = 52, C = 2 * Math.PI * R, cx = 66, cy = 66, sw = 17;
@@ -115,51 +112,45 @@
       off += frac; return el;
     }).join('');
     return `<svg width="132" height="132" viewBox="0 0 132 132">
-      <circle cx="${cx}" cy="${cy}" r="${R}" fill="none" stroke="#eef2f7" stroke-width="${sw}"/>
-      ${arcs}
+      <circle cx="${cx}" cy="${cy}" r="${R}" fill="none" stroke="#eef2f7" stroke-width="${sw}"/>${arcs}
       <text x="${cx}" y="${cy-1}" text-anchor="middle" font-size="23" font-weight="700" fill="#1e293b">${total}</text>
       <text x="${cx}" y="${cy+15}" text-anchor="middle" font-size="9.5" fill="#94a3b8">total</text></svg>`;
   }
   const legend = segs => `<div class="legend">${segs.map(s =>
     `<div class="row"><span class="dot" style="background:${s.color}"></span>${s.label}<span class="v">${s.v}</span></div>`).join('')}</div>`;
 
-  function projStatus(done, total, tasks) {
+  function projStatus(p, done, total, tasks) {
+    if (p.status) return p.status;
     if (total === 0) return 'Not Started';
     if (done === total) return 'Completed';
     if (done > 0 || tasks.some(t => t.status !== 'Not Started')) return 'Active';
     return 'Not Started';
   }
-  const badgeClass = s => s === 'Active' ? 'b-active' : s === 'Completed' ? 'b-completed' : 'b-notstarted';
-
-  let DASH_CATS = [];
 
   async function loadDash() {
     const data = await apiGet('/project-plan');
     if (!data) return;
     const cats = (data.categories || []);
-    DASH_CATS = cats;
-    const projects = cats.filter(c => c.code !== 'FB');
-    const STAT = ['Not Started','In Progress','Testing','Blocked','Done'];
-
-    // Flatten tasks (tagged with their project) — excludes Feedback (only under FB).
-    const allTasks = [];
-    projects.forEach(p => (p.tasks||[]).forEach(t => allTasks.push({ ...t, _proj: p.title, _plan: p.plan })));
-    const bugsDone = cats.flatMap(c => c.tasks||[]).filter(t => t.source === 'feedback' && t.status === 'Done').length;
+    PROJECTS = data.projects || [];
 
     const now = new Date();
     const todayStr = toYMD(now);
     const wk = new Date(now); wk.setDate(wk.getDate()+7); const weekStr = toYMD(wk);
     const ago7 = new Date(now); ago7.setDate(ago7.getDate()-7);
 
-    // Per-project rollup
+    // Roll up each project from its milestones/tasks.
+    const allTasks = [];
     let nActive = 0, nDone = 0, nNot = 0;
-    const rows = projects.map(p => {
-      const tasks = p.tasks || [];
+    const rows = PROJECTS.map(p => {
+      const pcats = cats.filter(c => c.project_id === p.id && c.code !== 'FB');
+      const tasks = pcats.flatMap(c => c.tasks || []);
+      tasks.forEach(t => allTasks.push({ ...t, _proj: p.name }));
       const done = tasks.filter(t => t.status === 'Done').length;
-      const st = projStatus(done, tasks.length, tasks);
+      const st = projStatus(p, done, tasks.length, tasks);
       if (st === 'Active') nActive++; else if (st === 'Completed') nDone++; else nNot++;
-      return { p, tasks, done, total: tasks.length, pct: tasks.length ? Math.round(done/tasks.length*100) : 0, st };
+      return { p, done, total: tasks.length, pct: tasks.length ? Math.round(done/tasks.length*100) : 0, st };
     });
+    const bugsDone = cats.flatMap(c => c.tasks||[]).filter(t => t.source === 'feedback' && t.status === 'Done').length;
 
     const overdue = allTasks.filter(t => t.due_date && t.due_date < todayStr && t.status !== 'Done');
     const dueWeek = allTasks.filter(t => t.due_date && t.due_date >= todayStr && t.due_date <= weekStr && t.status !== 'Done');
@@ -168,13 +159,10 @@
     const doneRecent = allTasks.filter(t => t.status === 'Done' && t.updated_at && new Date(t.updated_at) >= ago7)
                                .sort((a,b) => new Date(b.updated_at) - new Date(a.updated_at)).slice(0, 12);
 
-    document.getElementById('pm-sub').textContent =
-      `${projects.length} projects · ${allTasks.length} tasks`;
+    document.getElementById('pm-sub').textContent = `${PROJECTS.length} projects · ${allTasks.length} tasks`;
 
-    // ── Stat cards ──
     const card = (lbl, n, icon, color, href) => {
-      const inner = `<div class="lbl">${lbl}</div><div class="n">${n}</div>
-        <i class="fa-solid ${icon} ic" style="color:${color}"></i>`;
+      const inner = `<div class="lbl">${lbl}</div><div class="n">${n}</div><i class="fa-solid ${icon} ic" style="color:${color}"></i>`;
       return `<div class="stat">${href ? `<a href="${href}">${inner}</a>` : inner}</div>`;
     };
     const cards = card('Active Projects', nActive, 'fa-diagram-project', '#2563eb')
@@ -183,7 +171,6 @@
       + card('Completed Projects', nDone, 'fa-circle-check', '#16a34a')
       + card('Bugs / Changes Completed', bugsDone, 'fa-bug', '#7c3aed', '/project-management/bugs/');
 
-    // ── Donuts ──
     const projSegs = [
       { label:'Not Started', v:nNot, color:'#cbd5e1' },
       { label:'Active', v:nActive, color:'#2563eb' },
@@ -191,11 +178,11 @@
     ];
     const taskSegs = STAT.map(s => ({ label:s, v: allTasks.filter(t=>t.status===s).length, color:S_COLORS[s] }));
 
-    // ── Project Progress table ──
     const table = `<div style="overflow-x:auto"><table class="pp"><thead><tr>
-        <th>Project</th><th>Lead</th><th>Dev Lead</th><th>Due</th><th>Status</th><th>Progress</th><th>Tasks</th><th>%</th>
-      </tr></thead><tbody>${rows.map(r => `<tr>
-        <td><span class="pname">${esc(r.p.title)}</span><span class="ptag ${r.p.plan==='CRM Migration'?'mig':'dev'}">${r.p.plan==='CRM Migration'?'MIGRATION':'NEW DEV'}</span></td>
+        <th>Project</th><th>Priority</th><th>Lead</th><th>Dev Lead</th><th>Due</th><th>Status</th><th>Progress</th><th>Tasks</th><th>%</th>
+      </tr></thead><tbody>${rows.map(r => `<tr class="crow" onclick="location.href='/project-plan/?project=${r.p.id}'">
+        <td><span class="pname">${esc(r.p.name)}</span></td>
+        <td><span class="prio-${r.p.priority||'Medium'}">${esc(r.p.priority||'Medium')}</span></td>
         <td>${r.p.lead ? esc(r.p.lead) : '—'}</td>
         <td>${r.p.dev_lead ? esc(r.p.dev_lead) : '—'}</td>
         <td>${fmtD(r.p.end_date)}</td>
@@ -205,13 +192,11 @@
         <td style="font-weight:600;color:#334155">${r.pct}%</td>
       </tr>`).join('')}</tbody></table></div>`;
 
-    // ── Bottom lists ──
     const soonList = dueSoon.length ? dueSoon.map(t => `<div class="li">
         <div class="main"><div class="t">${esc(t.title)}</div><div class="sub">${esc(t._proj)}${t.assignee?' · '+esc(t.assignee):''}</div></div>
-        <div class="when" style="color:${t.due_date===todayStr?'#d97706':'#64748b'}">${fmtD(t.due_date)}</div>
-      </div>`).join('') : '<div class="text-sm text-slate-400 py-6 text-center">Nothing due.</div>';
+        <div class="when" style="color:${t.due_date===todayStr?'#d97706':'#64748b'}">${fmtD(t.due_date)}</div></div>`).join('')
+      : '<div class="text-sm text-slate-400 py-6 text-center">Nothing due.</div>';
 
-    // Overdue grouped by status
     let overList = '<div class="text-sm text-slate-400 py-6 text-center">No overdue tasks. 🎉</div>';
     if (overdue.length) {
       const byStat = {};
@@ -224,14 +209,14 @@
 
     const doneList = doneRecent.length ? doneRecent.map(t => `<div class="li">
         <div class="main"><div class="t">${esc(t.title)}</div><div class="sub">${esc(t._proj)}${t.updated_by_name?' · '+esc(t.updated_by_name):''}</div></div>
-        <div class="when" style="color:#16a34a">${fmtDate(t.updated_at)}</div>
-      </div>`).join('') : '<div class="text-sm text-slate-400 py-6 text-center">Nothing completed recently.</div>';
+        <div class="when" style="color:#16a34a">${fmtDate(t.updated_at)}</div></div>`).join('')
+      : '<div class="text-sm text-slate-400 py-6 text-center">Nothing completed recently.</div>';
 
     document.getElementById('pm-dash').innerHTML = `
       <div class="stat-row">${cards}</div>
       <div class="two">
         <div class="panel"><h2><i class="fa-solid fa-chart-pie text-slate-400"></i> Projects by Status</h2>
-          <div class="donut-wrap">${donut(projSegs, projects.length)}${legend(projSegs)}</div></div>
+          <div class="donut-wrap">${donut(projSegs, PROJECTS.length)}${legend(projSegs)}</div></div>
         <div class="panel"><h2><i class="fa-solid fa-list-check text-slate-400"></i> Tasks by Status</h2>
           <div class="donut-wrap">${donut(taskSegs, allTasks.length)}${legend(taskSegs)}</div></div>
       </div>
@@ -243,26 +228,24 @@
       </div>`;
   }
 
-  /* create a new project (a top-level milestone/category) */
+  /* create a new top-level project */
   function openProjModal() {
     ['pj-name','pj-lead','pj-devlead','pj-start','pj-end','pj-focus'].forEach(id => document.getElementById(id).value = '');
-    document.getElementById('pj-plan').value = 'New Development';
+    document.getElementById('pj-prio').value = 'Medium';
     openModal('proj-modal');
     setTimeout(() => document.getElementById('pj-name').focus(), 40);
   }
   async function saveProject() {
-    const title = document.getElementById('pj-name').value.trim();
-    if (!title) { showToast('Project name required', 'error'); return; }
-    const plan = document.getElementById('pj-plan').value;
-    // Append within the chosen plan (after its existing projects).
-    const maxSort = Math.max(0, ...DASH_CATS.filter(c => (c.plan||'New Development') === plan).map(c => c.sort_order || 0));
-    const payload = { title, plan, sort_order: maxSort + 1,
+    const name = document.getElementById('pj-name').value.trim();
+    if (!name) { showToast('Project name required', 'error'); return; }
+    const payload = { name, priority: document.getElementById('pj-prio').value,
+      sort_order: Math.max(0, ...PROJECTS.map(p => p.sort_order || 0)) + 1,
       lead: document.getElementById('pj-lead').value.trim() || null,
       dev_lead: document.getElementById('pj-devlead').value.trim() || null,
       start_date: document.getElementById('pj-start').value || null,
       end_date: document.getElementById('pj-end').value || null,
-      goal: document.getElementById('pj-focus').value.trim() || null };
-    const r = await apiPost('/project-plan?resource=category', payload);
+      description: document.getElementById('pj-focus').value.trim() || null };
+    const r = await apiPost('/project-plan?resource=project', payload);
     if (r && r.ok) { closeModal('proj-modal'); showToast('Project created', 'success'); loadDash(); }
     else showToast('Could not create project', 'error');
   }

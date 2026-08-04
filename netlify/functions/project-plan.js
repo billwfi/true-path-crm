@@ -19,6 +19,7 @@ exports.handler = async function (event) {
 
   const { id, resource } = event.queryStringParameters || {};
   const isCategory = resource === 'category';
+  const isProject = resource === 'project';
 
   try {
     if (event.httpMethod === 'GET') {
@@ -47,8 +48,13 @@ exports.handler = async function (event) {
           { id: parseInt(id, 10) });
         return r.recordset[0] ? ok(r.recordset[0]) : notFound();
       }
+      const projects = (await mssql(
+        `SELECT id, name, description, lead, dev_lead, priority, status, sort_order,
+                CONVERT(varchar(10), start_date, 23) AS start_date,
+                CONVERT(varchar(10), end_date, 23)   AS end_date
+         FROM dbo.Projects ORDER BY sort_order, name`)).recordset;
       const cats = (await mssql(
-        `SELECT id, code, title, goal, sort_order, [plan], lead, dev_lead,
+        `SELECT id, code, title, goal, sort_order, [plan], project_id, lead, dev_lead,
                 CONVERT(varchar(10), start_date, 23) AS start_date,
                 CONVERT(varchar(10), end_date, 23)   AS end_date
          FROM dbo.Project_Categories ORDER BY sort_order, code`)).recordset;
@@ -66,11 +72,23 @@ exports.handler = async function (event) {
       const byCat = {};
       for (const t of tasks) (byCat[t.category_id] = byCat[t.category_id] || []).push(t);
       for (const c of cats) c.tasks = byCat[c.id] || [];
-      return ok({ categories: cats, statuses: STATUSES });
+      return ok({ projects, categories: cats, statuses: STATUSES });
     }
 
     if (event.httpMethod === 'POST') {
       const b = JSON.parse(event.body || '{}');
+      // Top-level project.
+      if (isProject) {
+        if (!b.name && !b.title) return badRequest('name required');
+        const r = await mssql(
+          `INSERT INTO dbo.Projects (name, description, lead, dev_lead, priority, start_date, end_date, sort_order)
+           VALUES (@name,@descr,@lead,@devlead,@prio,@sd,@ed,@sort);
+           SELECT CAST(SCOPE_IDENTITY() AS INT) AS id;`,
+          { name: b.name || b.title, descr: b.description || null, lead: b.lead || null,
+            devlead: b.dev_lead || null, prio: b.priority || 'Medium',
+            sd: b.start_date || null, ed: b.end_date || null, sort: b.sort_order || 100 });
+        return created({ id: r.recordset[0].id });
+      }
       // In-app feedback -> a task under the Feedback category (screenshot + page url).
       if (resource === 'feedback') {
         const text = (b.text || '').trim();
@@ -93,11 +111,12 @@ exports.handler = async function (event) {
       if (isCategory) {
         if (!b.title) return badRequest('title required');
         const r = await mssql(
-          `INSERT INTO dbo.Project_Categories (code, title, goal, sort_order, [plan], start_date, end_date, lead, dev_lead)
-           VALUES (@code,@title,@goal,@sort,@plan,@sd,@ed,@lead,@devlead);
+          `INSERT INTO dbo.Project_Categories (code, title, goal, sort_order, [plan], project_id, start_date, end_date, lead, dev_lead)
+           VALUES (@code,@title,@goal,@sort,@plan,@pid,@sd,@ed,@lead,@devlead);
            SELECT CAST(SCOPE_IDENTITY() AS INT) AS id;`,
           { code: b.code || '', title: b.title, goal: b.goal || null, sort: b.sort_order || 99,
-            plan: b.plan || 'New Development', sd: b.start_date || null, ed: b.end_date || null,
+            plan: b.plan || 'New Development', pid: b.project_id ? parseInt(b.project_id, 10) : null,
+            sd: b.start_date || null, ed: b.end_date || null,
             lead: b.lead || null, devlead: b.dev_lead || null });
         return created({ id: r.recordset[0].id });
       }
@@ -130,6 +149,30 @@ exports.handler = async function (event) {
     if (event.httpMethod === 'PATCH') {
       if (!id) return badRequest('id required');
       const b = JSON.parse(event.body || '{}');
+      if (isProject) {
+        await mssql(
+          `UPDATE dbo.Projects SET
+             name        = COALESCE(@name, name),
+             description = CASE WHEN @descr_set=1 THEN @descr ELSE description END,
+             lead        = CASE WHEN @lead_set=1 THEN @lead ELSE lead END,
+             dev_lead    = CASE WHEN @dl_set=1 THEN @devlead ELSE dev_lead END,
+             priority    = COALESCE(@prio, priority),
+             status      = CASE WHEN @st_set=1 THEN @status ELSE status END,
+             start_date  = CASE WHEN @sd_set=1 THEN @sd ELSE start_date END,
+             end_date    = CASE WHEN @ed_set=1 THEN @ed ELSE end_date END,
+             sort_order  = COALESCE(@sort, sort_order)
+           WHERE id=@id`,
+          { name: b.name || b.title || null,
+            descr_set: b.description !== undefined ? 1 : 0, descr: b.description ?? null,
+            lead_set: b.lead !== undefined ? 1 : 0, lead: b.lead || null,
+            dl_set: b.dev_lead !== undefined ? 1 : 0, devlead: b.dev_lead || null,
+            prio: b.priority || null,
+            st_set: b.status !== undefined ? 1 : 0, status: b.status ?? null,
+            sd_set: b.start_date !== undefined ? 1 : 0, sd: b.start_date || null,
+            ed_set: b.end_date !== undefined ? 1 : 0, ed: b.end_date || null,
+            sort: b.sort_order ?? null, id: parseInt(id, 10) });
+        return ok({ id });
+      }
       if (isCategory) {
         await mssql(
           `UPDATE dbo.Project_Categories SET title=COALESCE(@title,title), goal=@goal,
@@ -176,6 +219,16 @@ exports.handler = async function (event) {
 
     if (event.httpMethod === 'DELETE') {
       if (!id) return badRequest('id required');
+      if (isProject) {
+        await mssql(
+          `DELETE FROM dbo.Project_Task_Attachments WHERE task_id IN
+             (SELECT id FROM dbo.Project_Tasks WHERE category_id IN (SELECT id FROM dbo.Project_Categories WHERE project_id=@id));
+           DELETE FROM dbo.Project_Tasks WHERE category_id IN (SELECT id FROM dbo.Project_Categories WHERE project_id=@id);
+           DELETE FROM dbo.Project_Categories WHERE project_id=@id;
+           DELETE FROM dbo.Projects WHERE id=@id`,
+          { id: parseInt(id, 10) });
+        return ok({ id });
+      }
       if (resource === 'attachment') {
         await mssql('DELETE FROM dbo.Project_Task_Attachments WHERE id=@id', { id: parseInt(id, 10) });
         return ok({ id });
