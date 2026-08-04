@@ -109,6 +109,11 @@ const NAV_ITEMS = [
   { section: 'PBM Tracking' },
   { href: '/pbms/', icon: 'fa-building-shield', label: 'PBM', key: 'pbms' },
   { href: '/pbms/intake/', icon: 'fa-inbox', label: 'Member Submissions', key: 'pbm-intake' },
+  { section: 'Project Management' },
+  { href: '/project-management/', icon: 'fa-gauge-high',    label: 'Dashboard',    key: 'pm-dashboard' },
+  { href: 'https://claude.ai/code/artifact/751d6e4f-d8e4-47a4-ab83-44d367d28fd9', icon: 'fa-map', label: 'Roadmap', key: 'pm-roadmap', external: true },
+  { href: '/project-plan/', icon: 'fa-diagram-project',    label: 'Project Plan', key: 'project-plan' },
+  { href: '/project-management/bugs/', icon: 'fa-bug',      label: 'Bugs/Changes', key: 'pm-bugs' },
   { section: 'Admin' },
   { href: '/brokers/',   icon: 'fa-handshake',         label: 'Brokers',     key: 'brokers' },
   { section: 'Settings', adminOnly: true },
@@ -138,7 +143,8 @@ function initNav(activeKey) {
       return visibleSection ? `<div class="nav-section">${item.section}</div>` : '';
     }
     if (!visibleSection) return '';
-    return `<a class="nav-link${item.key === activeKey ? ' active' : ''}" href="${item.href}">
+    const ext = item.external ? ' target="_blank" rel="noopener"' : '';
+    return `<a class="nav-link${item.key === activeKey ? ' active' : ''}" href="${item.href}"${ext}>
       <i class="fa-solid ${item.icon}"></i>
       <span class="nav-label">${item.label}</span>
     </a>`;
@@ -178,6 +184,7 @@ function initNav(activeKey) {
     liviniti: 'Liviniti Feed — RxCompass Eligibility',
     pbms: 'PBM Tracking', 'pbm-record': 'PBM Record', 'pbm-intake': 'PBM Tracking — Member Submissions',
     companies: 'Companies', brokers: 'Brokers', 'user-management': 'User Management',
+    'pm-dashboard': 'Project Management — Dashboard', 'pm-bugs': 'Project Management — Bugs / Changes',
     'project-plan': 'Project Plan', 'release-notes': 'Release Notes',
   };
   const userName = (user && (user.firstname + ' ' + user.lastname).trim()) || user?.email || '';
@@ -189,8 +196,6 @@ function initNav(activeKey) {
         <i class="fa-solid fa-chevron-down chev"></i>
       </button>
       <div class="user-menu hidden" id="user-menu">
-        <a href="https://claude.ai/code/artifact/751d6e4f-d8e4-47a4-ab83-44d367d28fd9" target="_blank" rel="noopener"><i class="fa-solid fa-map"></i> Roadmap</a>
-        <a href="/project-plan/"><i class="fa-solid fa-diagram-project"></i> Project Plan</a>
         <a href="/release-notes/"><i class="fa-solid fa-rocket"></i> Release Notes</a>
         <div class="user-menu-sep"></div>
         <a onclick="logout()" style="cursor:pointer"><i class="fa-solid fa-right-from-bracket"></i> Logout</a>

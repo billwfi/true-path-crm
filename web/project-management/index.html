@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Project Management — Dashboard — True Path CRM</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+  <link rel="stylesheet" href="/assets/css/app.css">
+  <style>
+    .pm-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 14px; margin-bottom: 22px; }
+    .pm-card { background: #fff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 16px 18px; }
+    .pm-card .n { font-size: 26px; font-weight: 700; color: #1e293b; line-height: 1.1; }
+    .pm-card .l { font-size: 12px; color: #64748b; margin-top: 4px; display: flex; align-items: center; gap: 6px; }
+    .pm-card .l .dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
+    .pm-grid { display: grid; grid-template-columns: 1.3fr 1fr; gap: 18px; align-items: start; }
+    @media (max-width: 900px) { .pm-grid { grid-template-columns: 1fr; } }
+    .pm-panel { background: #fff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 16px 18px; }
+    .pm-panel h2 { font-size: 15px; font-weight: 650; color: #1e293b; margin-bottom: 12px; display: flex; align-items: center; gap: 8px; }
+    .pm-panel h2 .see { margin-left: auto; font-size: 12px; font-weight: 500; }
+    .cat-row { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-top: 1px solid #f1f5f9; }
+    .cat-row:first-of-type { border-top: 0; }
+    .cat-code { font: 700 11px/1 ui-monospace,Consolas,monospace; color: #fff; background: #0d7d74; width: 26px; height: 26px;
+      display: grid; place-items: center; border-radius: 7px; flex: none; }
+    .cat-name { flex: 1; min-width: 0; font-size: 13.5px; color: #334155; font-weight: 550; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .cat-bar { width: 120px; height: 7px; border-radius: 4px; background: #e2e8f0; overflow: hidden; flex: none; }
+    .cat-bar i { display: block; height: 100%; background: #15803d; }
+    .cat-num { font-size: 12px; color: #64748b; white-space: nowrap; width: 52px; text-align: right; flex: none; }
+    .bug-row { display: flex; gap: 10px; padding: 10px 0; border-top: 1px solid #f1f5f9; }
+    .bug-row:first-of-type { border-top: 0; }
+    .bug-main { flex: 1; min-width: 0; }
+    .bug-title { font-size: 13px; color: #1e293b; font-weight: 550; }
+    .bug-meta { font-size: 11.5px; color: #94a3b8; margin-top: 2px; }
+  </style>
+</head>
+<body class="bg-slate-100 text-slate-700">
+<div id="app" class="flex h-screen overflow-hidden">
+  <div id="nav-placeholder"></div>
+  <div class="flex-1 flex flex-col overflow-hidden">
+    <div id="topbar"></div>
+    <main class="flex-1 overflow-y-auto p-6">
+      <div class="search-bar">
+        <span id="pm-summary" class="text-sm text-slate-500"></span>
+        <button class="btn btn-outline btn-sm" onclick="loadDash()"><i class="fa-solid fa-rotate"></i> Refresh</button>
+      </div>
+      <div id="pm-cards" class="pm-cards"></div>
+      <div class="pm-grid">
+        <div class="pm-panel">
+          <h2><i class="fa-solid fa-diagram-project text-slate-400"></i> Progress by area
+            <a class="see text-sky-600" href="/project-plan/">Project Plan →</a></h2>
+          <div id="pm-cats"></div>
+        </div>
+        <div class="pm-panel">
+          <h2><i class="fa-solid fa-bug text-slate-400"></i> Recent bugs / changes
+            <a class="see text-sky-600" href="/project-management/bugs/">View all →</a></h2>
+          <div id="pm-bugs"></div>
+        </div>
+      </div>
+    </main>
+  </div>
+</div>
+
+<script src="/assets/js/app.js"></script>
+<script>
+  const S_COLORS = { 'Not Started':'#94a3b8', 'In Progress':'#2563eb', 'Testing':'#a16207', 'Blocked':'#b91c1c', 'Done':'#15803d' };
+
+  async function loadDash() {
+    const data = await apiGet('/project-plan');
+    if (!data) return;
+    const cats = data.categories || [];
+    const tasks = cats.flatMap(c => c.tasks);
+    const total = tasks.length;
+    const by = s => tasks.filter(t => t.status === s).length;
+    const bugs = tasks.filter(t => t.source === 'feedback');
+    const openBugs = bugs.filter(t => t.status !== 'Done').length;
+
+    document.getElementById('pm-summary').textContent =
+      `${total} item${total===1?'':'s'} across ${cats.length} area${cats.length===1?'':'s'}`;
+
+    // Stat cards
+    const card = (n, label, color) => `<div class="pm-card"><div class="n">${n}</div>
+      <div class="l">${color?`<span class="dot" style="background:${color}"></span>`:''}${label}</div></div>`;
+    document.getElementById('pm-cards').innerHTML =
+      card(total, 'Total items', '#0d7d74') +
+      card(by('Not Started'), 'Not Started', S_COLORS['Not Started']) +
+      card(by('In Progress'), 'In Progress', S_COLORS['In Progress']) +
+      card(by('Testing'), 'Testing', S_COLORS['Testing']) +
+      card(by('Blocked'), 'Blocked', S_COLORS['Blocked']) +
+      card(by('Done'), 'Done', S_COLORS['Done']) +
+      card(openBugs, 'Open bugs / changes', '#b91c1c');
+
+    // Progress by category
+    document.getElementById('pm-cats').innerHTML = cats.length ? cats.map(c => {
+      const done = c.tasks.filter(t => t.status === 'Done').length;
+      const pct = c.tasks.length ? Math.round(done / c.tasks.length * 100) : 0;
+      return `<div class="cat-row">
+        <span class="cat-code">${esc(c.code || '–')}</span>
+        <span class="cat-name" title="${esc(c.title)}">${esc(c.title)}</span>
+        <span class="cat-bar"><i style="width:${pct}%"></i></span>
+        <span class="cat-num">${done}/${c.tasks.length}</span>
+      </div>`;
+    }).join('') : '<div class="text-sm text-slate-400 py-4 text-center">No areas yet.</div>';
+
+    // Recent bugs / changes (newest first)
+    const recent = bugs.slice().sort((a,b) => new Date(b.created_at) - new Date(a.created_at)).slice(0, 6);
+    document.getElementById('pm-bugs').innerHTML = recent.length ? recent.map(t => `
+      <div class="bug-row">
+        <span class="dot" style="width:9px;height:9px;border-radius:50%;margin-top:5px;flex:none;background:${S_COLORS[t.status]||'#94a3b8'}"></span>
+        <div class="bug-main">
+          <div class="bug-title">${esc(t.title)}</div>
+          <div class="bug-meta">${esc(t.status)} · ${esc(t.updated_by_name||'')} · ${fmtDate(t.created_at)}</div>
+        </div>
+      </div>`).join('') : '<div class="text-sm text-slate-400 py-4 text-center">No bugs or change requests yet.</div>';
+  }
+
+  initNav('pm-dashboard');
+  loadDash();
+</script>
+</body>
+</html>

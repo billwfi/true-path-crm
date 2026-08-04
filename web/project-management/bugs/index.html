@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Bugs / Changes — True Path CRM</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+  <link rel="stylesheet" href="/assets/css/app.css">
+  <style>
+    .bc-tabs { display: flex; gap: 6px; flex-wrap: wrap; }
+    .bc-tab { font-size: 12.5px; padding: 6px 12px; border: 1px solid #cbd5e1; border-radius: 999px; background: #fff;
+      color: #475569; cursor: pointer; white-space: nowrap; }
+    .bc-tab.active { background: #0d7d74; border-color: #0d7d74; color: #fff; }
+    .bc-tab .c { opacity: .7; margin-left: 4px; }
+    .bc-item { border: 1px solid #e2e8f0; border-radius: 10px; background: #fff; padding: 12px 14px; margin-bottom: 8px; }
+    .bc-row { display: flex; align-items: flex-start; gap: 12px; }
+    .bc-main { flex: 1; min-width: 0; }
+    .bc-title { font-weight: 600; color: #1e293b; font-size: 14.5px; }
+    .bc-desc { font-size: 12.5px; color: #64748b; margin-top: 3px; white-space: pre-wrap; }
+    .bc-tools { display: flex; gap: 10px; margin-top: 8px; flex-wrap: wrap; align-items: center; }
+    .bc-link { font-size: 12px; color: #0a5e57; cursor: pointer; background: none; border: 0; padding: 0; }
+    .bc-link:hover { text-decoration: underline; }
+    .bc-meta { font-size: 11.5px; color: #94a3b8; }
+    .bc-status select { font-size: 12.5px; padding: 5px 8px; border: 1px solid #cbd5e1; border-radius: 7px; background: #fff; cursor: pointer; }
+    .bc-notes { margin-top: 10px; display: none; }
+    .bc-notes.open { display: block; }
+    .bc-notes textarea { width: 100%; }
+    .s-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; vertical-align: middle; }
+    .shot-modal img { max-width: 100%; max-height: 78vh; display: block; margin: 0 auto; border-radius: 8px; }
+  </style>
+</head>
+<body class="bg-slate-100 text-slate-700">
+<div id="app" class="flex h-screen overflow-hidden">
+  <div id="nav-placeholder"></div>
+  <div class="flex-1 flex flex-col overflow-hidden">
+    <div id="topbar"></div>
+    <main class="flex-1 overflow-y-auto p-6">
+      <div class="search-bar" style="align-items:center">
+        <div id="bc-tabs" class="bc-tabs"></div>
+        <input id="bc-search" class="form-control" style="max-width:240px;margin-left:auto" placeholder="Search…" oninput="render()">
+        <button class="btn btn-outline btn-sm" onclick="loadBugs()"><i class="fa-solid fa-rotate"></i> Refresh</button>
+      </div>
+      <p class="text-xs text-slate-400 mb-3">Items submitted from the <b>Feedback</b> button on any page — bugs and change requests. Update status as they're worked.</p>
+      <div id="bc-body"></div>
+      <div id="bc-empty" class="empty-state" style="display:none"><i class="fa-solid fa-bug"></i><p>No bugs or change requests here.</p></div>
+    </main>
+  </div>
+</div>
+
+<!-- screenshot viewer -->
+<div id="shot-modal" class="modal-backdrop hidden">
+  <div class="modal shot-modal" style="max-width:900px">
+    <div class="modal-header"><span>Feedback screenshot</span>
+      <button onclick="closeModal('shot-modal')" class="text-slate-400 hover:text-slate-600"><i class="fa-solid fa-xmark"></i></button></div>
+    <div class="modal-body"><img id="shot-img" alt="Screenshot"></div>
+  </div>
+</div>
+
+<script src="/assets/js/app.js"></script>
+<script>
+  const S_COLORS = { 'Not Started':'#94a3b8', 'In Progress':'#2563eb', 'Testing':'#a16207', 'Blocked':'#b91c1c', 'Done':'#15803d' };
+  let STATUSES = ['Not Started','In Progress','Testing','Blocked','Done'];
+  let ITEMS = [];         // feedback-sourced tasks
+  let FILTER = 'open';    // open | Not Started | In Progress | Testing | Blocked | Done | all
+
+  async function loadBugs() {
+    const data = await apiGet('/project-plan');
+    if (!data) return;
+    STATUSES = data.statuses || STATUSES;
+    ITEMS = (data.categories || [])
+      .flatMap(c => c.tasks)
+      .filter(t => t.source === 'feedback')
+      .sort((a,b) => new Date(b.created_at) - new Date(a.created_at));
+    render();
+  }
+
+  function counts() {
+    const c = { all: ITEMS.length, open: ITEMS.filter(t => t.status !== 'Done').length };
+    STATUSES.forEach(s => c[s] = ITEMS.filter(t => t.status === s).length);
+    return c;
+  }
+
+  function render() {
+    const c = counts();
+    const tabs = [['open','Open'], ['all','All'], ...STATUSES.map(s => [s, s])];
+    document.getElementById('bc-tabs').innerHTML = tabs.map(([k, label]) =>
+      `<button class="bc-tab ${FILTER===k?'active':''}" onclick="setFilter('${k}')">${label}<span class="c">${c[k]||0}</span></button>`).join('');
+
+    const q = document.getElementById('bc-search').value.toLowerCase();
+    let view = ITEMS;
+    if (FILTER === 'open') view = view.filter(t => t.status !== 'Done');
+    else if (FILTER !== 'all') view = view.filter(t => t.status === FILTER);
+    if (q) view = view.filter(t => (t.title+' '+(t.description||'')+' '+(t.page_url||'')).toLowerCase().includes(q));
+
+    document.getElementById('bc-empty').style.display = view.length ? 'none' : '';
+    document.getElementById('bc-body').innerHTML = view.map(renderItem).join('');
+  }
+
+  function setFilter(k) { FILTER = k; render(); }
+
+  function renderItem(t) {
+    return `<div class="bc-item" id="bug-${t.id}">
+      <div class="bc-row">
+        <div class="bc-main">
+          <div class="bc-title"><span class="s-dot" style="background:${S_COLORS[t.status]||'#94a3b8'}"></span>${esc(t.title)}</div>
+          ${t.description && t.description !== t.title ? `<div class="bc-desc">${esc(t.description)}</div>` : ''}
+          <div class="bc-tools">
+            <button class="bc-link" onclick="toggleNotes(${t.id})"><i class="fa-regular fa-note-sticky"></i> Dev notes${t.dev_notes?' •':''}</button>
+            ${t.has_screenshot ? `<button class="bc-link" onclick="viewShot(${t.id})"><i class="fa-regular fa-image"></i> Screenshot</button>` : ''}
+            ${t.page_url ? `<a class="bc-link" href="${esc(t.page_url)}" target="_blank" rel="noopener"><i class="fa-solid fa-arrow-up-right-from-square"></i> Page</a>` : ''}
+            <span class="bc-meta">${esc(t.updated_by_name||'')} · ${fmtDate(t.created_at)}</span>
+            <button class="bc-link" style="color:#b91c1c;margin-left:auto" onclick="delItem(${t.id})"><i class="fa-regular fa-trash-can"></i></button>
+          </div>
+          <div class="bc-notes" id="notes-${t.id}">
+            <textarea class="form-control" id="notes-ta-${t.id}" rows="3" placeholder="Dev notes…">${esc(t.dev_notes||'')}</textarea>
+            <div style="margin-top:6px"><button class="btn btn-primary btn-sm" onclick="saveNotes(${t.id})">Save notes</button></div>
+          </div>
+        </div>
+        <div class="bc-status">
+          <select onchange="changeStatus(${t.id}, this.value)">
+            ${STATUSES.map(s => `<option ${s===t.status?'selected':''}>${s}</option>`).join('')}
+          </select>
+        </div>
+      </div>
+    </div>`;
+  }
+
+  async function changeStatus(id, status) {
+    const res = await apiPatch(`/project-plan?id=${id}`, { status });
+    if (res && res.ok) { const t = ITEMS.find(x => x.id === id); if (t) t.status = status; render(); showToast('Status updated', 'success'); }
+    else showToast('Could not update', 'error');
+  }
+  function toggleNotes(id) { document.getElementById('notes-'+id).classList.toggle('open'); }
+  async function saveNotes(id) {
+    const dev_notes = document.getElementById('notes-ta-'+id).value;
+    const res = await apiPatch(`/project-plan?id=${id}`, { dev_notes });
+    if (res && res.ok) { const t = ITEMS.find(x => x.id === id); if (t) t.dev_notes = dev_notes; showToast('Notes saved', 'success'); }
+    else showToast('Could not save', 'error');
+  }
+  async function viewShot(id) {
+    const d = await apiGet(`/project-plan?resource=screenshot&id=${id}`);
+    if (d && d.screenshot) { document.getElementById('shot-img').src = d.screenshot; openModal('shot-modal'); }
+    else showToast('No screenshot', 'error');
+  }
+  async function delItem(id) {
+    if (!confirm2('Delete this item?')) return;
+    const res = await apiDelete(`/project-plan?id=${id}`);
+    if (res && res.ok) { ITEMS = ITEMS.filter(x => x.id !== id); render(); } else showToast('Could not delete', 'error');
+  }
+
+  initNav('pm-bugs');
+  loadBugs();
+</script>
+</body>
+</html>
