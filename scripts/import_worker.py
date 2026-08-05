@@ -376,10 +376,6 @@ def run_config(cn, cfg):
                 "SELECT stage_column, eligibility_column FROM dbo.Import_Reconcile_Maps WHERE config_id=? ORDER BY ordinal, id",
                 cfg["id"])
             recon_maps = rows_as_dicts(cur)
-            if not recon_maps:
-                sftp.close(); transport.close()
-                finish("Error", message="No reconcile mapping (staging column -> eligibility column) defined")
-                return
 
             # Stage 1: raw-load every new file into the staging table (full refresh).
             staged = 0
@@ -400,6 +396,16 @@ def run_config(cn, cfg):
                     except IOError:
                         pass
             sftp.close(); transport.close()
+
+            # Staging-only: no reconcile map means we deliberately stop after loading
+            # the staging table (the canonical eligibility reconcile is set up later,
+            # per client, once member-ID keying is verified). This is SAFE — it never
+            # touches dbo.eligibility.
+            if not recon_maps:
+                finish("Success", file_name=(todo[0] if len(todo) == 1 else f"{len(todo)} files"),
+                       rows=staged,
+                       message=f"Staged {staged} rows -> {cfg['target_table']} (staging only, no reconcile)")
+                return
 
             # Stage 2: reconcile staging -> canonical eligibility.
             rows, target_cols = read_stage(cur, cfg["target_table"], recon_maps)
