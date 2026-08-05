@@ -358,11 +358,14 @@ def run_config(cn, cfg):
         finally:
             pass
 
-        names = [a.filename for a in listing
-                 if fnmatch.fnmatch(a.filename, cfg["file_pattern"] or "*")]
-        cur.execute("SELECT file_name FROM dbo.Import_Processed_Files WHERE config_id=?", cfg["id"])
-        done = {r[0] for r in cur.fetchall()}
-        todo = sorted(n for n in names if n not in done)
+        # filename -> server mtime; a fixed-name feed (same file overwritten weekly)
+        # is re-processed when its mtime advances past what we last recorded.
+        listed = {a.filename: datetime.utcfromtimestamp(a.st_mtime) for a in listing
+                  if fnmatch.fnmatch(a.filename, cfg["file_pattern"] or "*")}
+        cur.execute("SELECT file_name, file_modified FROM dbo.Import_Processed_Files WHERE config_id=?", cfg["id"])
+        done = {r[0]: r[1] for r in cur.fetchall()}
+        todo = sorted(n for n, mt in listed.items()
+                      if n not in done or (done[n] is not None and mt > done[n]))
 
         if not todo:
             sftp.close(); transport.close()
@@ -385,9 +388,10 @@ def run_config(cn, cfg):
                     data = fh.read()
                 header, body = parse_file(data, cfg)
                 staged += import_rows(cur, cfg["target_table"], maps, header, body, truncate=(i == 0))
+                cur.execute("DELETE FROM dbo.Import_Processed_Files WHERE config_id=? AND file_name=?", cfg["id"], name)
                 cur.execute(
-                    "INSERT INTO dbo.Import_Processed_Files (config_id, file_name, rows_imported) VALUES (?,?,?)",
-                    cfg["id"], name, staged if i == len(todo) - 1 else 0)
+                    "INSERT INTO dbo.Import_Processed_Files (config_id, file_name, rows_imported, file_modified) VALUES (?,?,?,?)",
+                    cfg["id"], name, staged if i == len(todo) - 1 else 0, listed.get(name))
                 if cfg["after_import"] == "delete":
                     sftp.remove(remote_path)
                 elif cfg["after_import"] == "archive" and cfg.get("archive_dir"):
@@ -428,9 +432,10 @@ def run_config(cn, cfg):
             header, body = parse_file(data, cfg)
             n = import_rows(cur, cfg["target_table"], maps, header, body,
                             cfg["truncate_before"] and name == todo[0])
+            cur.execute("DELETE FROM dbo.Import_Processed_Files WHERE config_id=? AND file_name=?", cfg["id"], name)
             cur.execute(
-                "INSERT INTO dbo.Import_Processed_Files (config_id, file_name, rows_imported) VALUES (?,?,?)",
-                cfg["id"], name, n)
+                "INSERT INTO dbo.Import_Processed_Files (config_id, file_name, rows_imported, file_modified) VALUES (?,?,?,?)",
+                cfg["id"], name, n, listed.get(name))
             total += n
             last_file = name
             # after-import disposition
