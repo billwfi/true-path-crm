@@ -324,8 +324,8 @@
     document.querySelectorAll('.tab-panel').forEach(p => p.style.display = p.dataset.panel === name ? '' : 'none');
     if (name === 'eligibility' && !eligLoaded) loadEligibility();
     if (name === 'invoices') invDefaults();
-    if (name === 'claims' && !claimsLoaded) { claimsDefaults(); loadClaims(); }
-    if (name === 'reporting' && !reportingLoaded) { reportDefaults(); loadReporting(); }
+    if (name === 'claims' && !claimsLoaded) { claimsDefaults().then(loadClaims); }
+    if (name === 'reporting' && !reportingLoaded) { reportDefaults().then(loadReporting); }
     if (name === 'imports' && !importsLoaded) loadImports();
   }
 
@@ -701,8 +701,32 @@
     if (!f.value) f.value = r.from;
     if (!t.value) t.value = r.to;
   }
-  function claimsDefaults() { setRangeDefaults('cl-from', 'cl-to'); }
-  function reportDefaults() { setRangeDefaults('rp-from', 'rp-to'); }
+  // Default the claims range to the month of this client's most recent claim
+  // (feeds lag, so "previous calendar month" is often empty). Falls back to the
+  // previous month when the client has no claims yet.
+  async function monthOfLatestClaim() {
+    if (!clientIrxId) return null;
+    const d = await apiGet(`/claims?latest=1&carrier=${encodeURIComponent(clientIrxId)}`);
+    if (!d || !d.latest) return null;
+    const [y, m] = String(d.latest).slice(0, 10).split('-').map(Number);
+    const lastDay = new Date(y, m, 0).getDate();
+    const mm = String(m).padStart(2, '0');
+    return { from: `${y}-${mm}-01`, to: `${y}-${mm}-${String(lastDay).padStart(2, '0')}` };
+  }
+  async function claimsDefaults() {
+    const f = document.getElementById('cl-from'), t = document.getElementById('cl-to');
+    if (f.value && t.value) return;                       // respect a range the user already set
+    const r = (await monthOfLatestClaim()) || prevMonthRange();
+    if (!f.value) f.value = r.from;
+    if (!t.value) t.value = r.to;
+  }
+  async function reportDefaults() {
+    const f = document.getElementById('rp-from'), t = document.getElementById('rp-to');
+    if (f.value && t.value) return;
+    const r = (await monthOfLatestClaim()) || prevMonthRange();
+    if (!f.value) f.value = r.from;
+    if (!t.value) t.value = r.to;
+  }
   function debounceClaims() { clearTimeout(claimsDebounce); claimsDebounce = setTimeout(loadClaims, 400); }
 
   async function loadClaims() {

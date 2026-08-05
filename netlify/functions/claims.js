@@ -78,6 +78,19 @@ exports.handler = async function (event) {
   const src = resolveSource(q.carrier);
 
   try {
+    // Latest claim date for this carrier — lets the UI open on the month that
+    // actually has data (feeds often lag, so "previous calendar month" is empty).
+    if (q.latest) {
+      const isProd = src.layout === 'prod';
+      const D   = isProd ? `COALESCE(TRY_CONVERT(date, dateofservice, 101), TRY_CONVERT(date, dateofservice, 23))` : dateExpr(src.dates);
+      const idc = isProd ? 'clientid' : `[${src.idCol}]`;
+      const T   = isProd ? 'dbo.ClaimsData_Prod' : `dbo.[${src.table}]`;
+      const r = await mssql(
+        `SELECT MAX(${D}) AS latest FROM ${T} WHERE REPLACE(LTRIM(RTRIM(${idc})), '''', '') = @carrier`,
+        { carrier: q.carrier });
+      return ok({ latest: r.recordset[0] && r.recordset[0].latest });
+    }
+
     // ClaimsData_Prod-backed clients (e.g. MCR Hotels): different schema, keyed on
     // clientid, with no cost columns (Plan Paid / Gross Cost / Copay unavailable).
     if (src.layout === 'prod') return await claimsProd(q);
