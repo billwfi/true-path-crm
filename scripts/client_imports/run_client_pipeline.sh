@@ -21,6 +21,15 @@ fi
 if [ "$PIPELINE" = "liviniti" ]; then
   exec python scripts/liviniti_import.py
 fi
+# Monday orchestrator: run every due Import_Configs loader, then email a summary
+# report (per-loader results + folders/files with no loader). REPORT_ONLY=1 skips
+# the loading and just scans + emails.
+if [ "$PIPELINE" = "monday" ]; then
+  if [ "$REPORT_ONLY" = "1" ]; then
+    exec python scripts/import_monday.py --report-only
+  fi
+  exec python scripts/import_monday.py
+fi
 
 CLIENT="${CLIENT:-mcrhotels}"
 
