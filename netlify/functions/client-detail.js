@@ -32,7 +32,7 @@ exports.handler = async function (event) {
         const r = await mssql(
           `SELECT TOP 1000 MEMBER_ID, LAST_NAME, FIRST_NAME, DATE_OF_BIRTH, SEX,
                   RELATIONSHIP_CODE, MEMBER_TYPE, CARRIER, ACCOUNT, [GROUP] AS GRP, GroupName,
-                  MEMBER_FROM_DATE, MEMBER_THRU_DATE, CITY, STATE, ZIP, PHONE, EMail_Address,
+                  MEMBER_FROM_DATE, MEMBER_THRU_DATE, ADDRESS_1, ADDRESS_2, CITY, STATE, ZIP, PHONE, EMail_Address,
                   AccountStatus
            FROM dbo.eligibility
            WHERE CARRIER = @carrier

@@ -112,10 +112,16 @@ def parse_834(path, cfg):
                 m["Last_Name"], m["First_Name"], m["Middle_Name"] = g(s, 3), g(s, 4), g(s, 5)
                 if g(s, 8) == "34":
                     m["Person_Ssn"] = g(s, 9)
-            elif t == "EM":
-                m["Email"] = g(s, 1)
-            elif t == "HP":
-                m["Phone"] = g(s, 1)
+            elif t == "PER":
+                # Communication numbers are qualifier/value pairs from element 3 on:
+                # PER*IP**EM*email*CP*cellphone. EM=email; HP/CP/TE/WP are all phones
+                # (home/cell/telephone/work) — most members list only a cell (CP).
+                for i in range(3, len(s) - 1, 2):
+                    q, v = g(s, i), g(s, i + 1)
+                    if q == "EM" and not m["Email"]:
+                        m["Email"] = v
+                    elif q in ("HP", "CP", "TE", "WP") and not m["Phone"]:
+                        m["Phone"] = v
             elif t == "N3":
                 m["Address1"], m["Address2"] = g(s, 1), g(s, 2)
             elif t == "N4":

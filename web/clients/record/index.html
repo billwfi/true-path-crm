@@ -107,7 +107,8 @@
               <table class="data-table">
                 <thead><tr>
                   <th>Member ID</th><th>Name</th><th>DOB</th><th>Sex</th><th>Rel</th><th>Type</th>
-                  <th>Group</th><th>Effective</th><th>Term</th><th>Status</th><th>City</th><th>State</th>
+                  <th>Group</th><th>Effective</th><th>Term</th><th>Status</th>
+                  <th>Address 1</th><th>Address 2</th><th>City</th><th>State</th>
                   <th>Phone</th><th>Email</th>
                 </tr></thead>
                 <tbody id="elig-body"></tbody>
@@ -467,6 +468,8 @@
       <td class="text-xs">${esc(r.MEMBER_FROM_DATE) || '—'}</td>
       <td class="text-xs">${esc(r.MEMBER_THRU_DATE) || '—'}</td>
       <td>${eligStatusBadge(r.AccountStatus)}</td>
+      <td class="text-xs">${esc(r.ADDRESS_1) || '—'}</td>
+      <td class="text-xs">${esc(r.ADDRESS_2) || '—'}</td>
       <td>${esc(r.CITY) || '—'}</td>
       <td>${esc(r.STATE) || '—'}</td>
       <td class="text-xs">${esc(r.PHONE) || '—'}</td>
@@ -487,7 +490,8 @@
       'Member ID': r.MEMBER_ID || '', 'Last Name': r.LAST_NAME || '', 'First Name': r.FIRST_NAME || '',
       'DOB': r.DATE_OF_BIRTH || '', 'Sex': r.SEX || '', 'Relationship': r.RELATIONSHIP_CODE || '',
       'Type': r.MEMBER_TYPE || '', 'Group': r.GroupName || r.GRP || '', 'Effective': r.MEMBER_FROM_DATE || '',
-      'Term': r.MEMBER_THRU_DATE || '', 'Status': r.AccountStatus || '', 'City': r.CITY || '',
+      'Term': r.MEMBER_THRU_DATE || '', 'Status': r.AccountStatus || '',
+      'Address 1': r.ADDRESS_1 || '', 'Address 2': r.ADDRESS_2 || '', 'City': r.CITY || '',
       'State': r.STATE || '', 'Zip': r.ZIP || '', 'Phone': r.PHONE || '', 'Email': r.EMail_Address || '',
     }));
     const ws = XLSX.utils.json_to_sheet(data);
