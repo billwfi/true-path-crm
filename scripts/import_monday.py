@@ -38,6 +38,14 @@ ADHOC = {"DHR", "CityOfBonham"}
 # covered in the coverage scan (they DO have a loader, just not a config-driven one).
 REGISTRY_CLIENTS = ["mcrhotels"]
 REGISTRY_FOLDERS = ["/InternationalRx/MCRHotels"]
+# Folders whose files are superseded/stale — excluded from the coverage gap list.
+# Any */Archive holds rotated-out files; Ridgecrest/incoming (lowercase) is a stale
+# duplicate of the live Ridgecrest/Incoming/incoming loader.
+
+
+def is_ignored(folder):
+    fl = folder.lower().rstrip("/")
+    return "/archive" in fl or fl.endswith("/ridgecrest/incoming")
 
 
 def db():
@@ -123,6 +131,8 @@ def build_report(configs, files, processed, run_started):
                 covered_new.append((c["name"], folder, name, mt))  # loader exists, file not yet loaded
         elif any(folder.rstrip("/").lower().startswith(rf.lower()) for rf in REGISTRY_FOLDERS):
             pass  # covered by a registry-pipeline loader (e.g. MCR Hotels)
+        elif is_ignored(folder):
+            pass  # superseded/stale (Archive, stale dup folders)
         elif any(a.lower() in folder.lower() for a in ADHOC):
             adhoc.append((folder, name, mt))
         else:
