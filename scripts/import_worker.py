@@ -401,6 +401,12 @@ def run_config(cn, cfg):
                         pass
             sftp.close(); transport.close()
 
+            # Optional post-stage SQL: derive a keying column that a plain computed
+            # column can't (e.g. a windowed sequence). Runs against the staging table
+            # before reconcile. Trusted config value, never user input.
+            if cfg.get("stage_post_sql"):
+                cur.execute(cfg["stage_post_sql"])
+
             # Staging-only: no reconcile map means we deliberately stop after loading
             # the staging table (the canonical eligibility reconcile is set up later,
             # per client, once member-ID keying is verified). This is SAFE — it never
@@ -472,7 +478,7 @@ def main():
         "sftp_password_enc, sftp_key_enc, remote_dir, file_pattern, file_format, delimiter, "
         "has_header, header_row, stop_on_blank, stop_marker, footer_skip, sheet_name, "
         "target_table, reconcile_table, truncate_before, after_import, archive_dir, "
-        "schedule_frequency, schedule_time, schedule_dow, active, run_requested, last_run_at "
+        "schedule_frequency, schedule_time, schedule_dow, active, run_requested, last_run_at, stage_post_sql "
         f"FROM dbo.Import_Configs {where}", *params)
     cfgs = rows_as_dicts(cur)
 
