@@ -206,7 +206,7 @@ def main():
 
     html = "<div style='max-width:900px'>" + "".join(H) + "</div>"
 
-    to = os.environ.get("REPORT_TO", "bill@workflowinnovators.com,onbasesupport@truepathsourcing.com")
+    to = os.environ.get("REPORT_TO", "amtfileloads@truepathsourcing.com")
     msg = MIMEText(html, "html")
     msg["Subject"] = f"True Path — Weekly Import Report ({run_started:%Y-%m-%d})"
     msg["From"] = os.environ["MAIL_FROM"]
