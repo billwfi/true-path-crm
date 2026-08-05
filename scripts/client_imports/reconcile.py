@@ -357,7 +357,10 @@ def _elig_reconcile_namedob(cur, cfg, commit):
         # Refresh fields but DON'T touch LoadUpdateDate — that date drives the AMT
         # "Adds" report, so only genuine adds/terms should carry today's date.
         refresh = [c for c in e["map"] if c not in ("MEMBER_ID", "MEMBER_FROM_DATE")]
-        setcl = ", ".join(f"[{c}]=?" for c in refresh) + ", AccountStatus='Active'"
+        # Never overwrite a populated field with a blank: a sparse feed (e.g. the 834,
+        # which rarely carries phone) must not wipe existing values like the phones
+        # merged from the payroll roster. Overwrite only when the incoming value is non-empty.
+        setcl = ", ".join(f"[{c}]=COALESCE(NULLIF(?, ''), [{c}])" for c in refresh) + ", AccountStatus='Active'"
         upd = []
         for k in matched:
             row = file_members[k]
