@@ -33,6 +33,11 @@ import pyodbc
 SFTP_HOST, SFTP_USER, SFTP_ROOT = "us-east-1.sftpcloud.io", "MANAGER", "/InternationalRx"
 # Folders that are one-off / ad-hoc drops — listed for manual review, never auto-loaded.
 ADHOC = {"DHR", "CityOfBonham"}
+# Registry-pipeline clients (sftp_import.py + reconcile.py) folded into the Monday
+# run so they share the unified schedule + report. Their SFTP folders count as
+# covered in the coverage scan (they DO have a loader, just not a config-driven one).
+REGISTRY_CLIENTS = ["mcrhotels"]
+REGISTRY_FOLDERS = ["/InternationalRx/MCRHotels"]
 
 
 def db():
@@ -116,6 +121,8 @@ def build_report(configs, files, processed, run_started):
         if c:
             if name not in processed.get(c["id"], set()):
                 covered_new.append((c["name"], folder, name, mt))  # loader exists, file not yet loaded
+        elif any(folder.rstrip("/").lower().startswith(rf.lower()) for rf in REGISTRY_FOLDERS):
+            pass  # covered by a registry-pipeline loader (e.g. MCR Hotels)
         elif any(a.lower() in folder.lower() for a in ADHOC):
             adhoc.append((folder, name, mt))
         else:
@@ -155,6 +162,18 @@ def main():
         worker_out = (p.stdout or "") + (p.stderr or "")
         print(worker_out)
 
+        # Registry-pipeline clients (MCR Hotels): SFTP import -> reconcile to prod.
+        here = os.path.dirname(__file__)
+        for client in REGISTRY_CLIENTS:
+            print(f"Running registry pipeline: {client}…")
+            try:
+                subprocess.run([sys.executable, os.path.join(here, "client_imports", "sftp_import.py"), client],
+                               capture_output=True, text=True, timeout=1800)
+                subprocess.run([sys.executable, os.path.join(here, "client_imports", "reconcile.py"), client, "--commit"],
+                               capture_output=True, text=True, timeout=1800)
+            except Exception as e:  # noqa: BLE001 - never let one client fail the whole run
+                print(f"  registry {client} error: {e}")
+
     cn = db(); cur = cn.cursor()
     configs = load_configs(cur)
     cur.execute("SELECT config_id, file_name FROM dbo.Import_Processed_Files")
@@ -177,6 +196,19 @@ def main():
             H.append(table(rows, ["Loader", "Status", "File", "Rows", "Add/Upd/Inact", "Message"]))
         else:
             H.append("<p style='font:13px Segoe UI;color:#64748b'>No loaders were due to run.</p>")
+
+    # Section 1b — registry-pipeline loaders (MCR Hotels): from Client_Import_Log
+    ph = ",".join("?" * len(REGISTRY_CLIENTS))
+    cur.execute(f"""SELECT TOP 8 client_key, feed_name, status, rows_loaded, file_name,
+                           CONVERT(varchar,finished_at,120)
+                    FROM dbo.Client_Import_Log WHERE client_key IN ({ph})
+                    ORDER BY id DESC""", *REGISTRY_CLIENTS)
+    reg_log = cur.fetchall()
+    if reg_log:
+        H.append("<h3 style='font:600 15px Segoe UI;color:#1e293b'>Registry-pipeline loaders (MCR Hotels)</h3>")
+        H.append(table([(esc(r[0]), esc(r[1]), esc(r[2]), "" if r[3] is None else f"{r[3]:,}",
+                         esc((r[4] or "")[:40]), esc(r[5])) for r in reg_log],
+                       ["Client", "Feed", "Status", "Rows", "File", "Finished"]))
 
     # Section 2 — active loader roster
     H.append("<h3 style='font:600 15px Segoe UI;color:#1e293b'>Active loaders</h3>")
