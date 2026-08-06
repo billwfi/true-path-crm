@@ -184,6 +184,15 @@ def main():
             except Exception as e:  # noqa: BLE001 - never let one client fail the whole run
                 print(f"  registry {client} error: {e}")
 
+        # Claims loaders — add-only append into the per-client claims tables the app reads.
+        print("Running claims loaders…")
+        try:
+            cp = subprocess.run([sys.executable, os.path.join(here, "client_imports", "claims_loader.py")],
+                                capture_output=True, text=True, timeout=1800)
+            print((cp.stdout or "") + (cp.stderr or ""))
+        except Exception as e:  # noqa: BLE001
+            print(f"  claims_loader error: {e}")
+
     cn = db(); cur = cn.cursor()
     configs = load_configs(cur)
     cur.execute("SELECT config_id, file_name FROM dbo.Import_Processed_Files")

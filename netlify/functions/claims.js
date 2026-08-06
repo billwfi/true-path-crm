@@ -28,6 +28,8 @@ const PROFILES = {
 // use the 'us' date mode. McAllen/RHA stay on the shared table (clean real-date data).
 const SOURCES = {
   '020373':{ table: 'ClaimsData_CSEAmericas',   idCol: 'Client ID', profile: 'paren', dates: 'us' },
+  '077803':{ table: 'ClaimsData_CityofMission', idCol: 'Client ID', profile: 'paren', dates: 'us' },
+  'PSI1022':{ table: 'ClaimsData_SmithCounty',  idCol: 'Client ID', profile: 'paren', dates: 'us' },
   '10116': { table: 'ClaimsData_Caregiver',     idCol: 'Client ID', profile: 'paren', dates: 'us' },
   '909765':{ table: 'ClaimsData_FSG',           idCol: 'Client ID', profile: 'paren', dates: 'us' },
   '366696':{ table: 'ClaimsData_GreggCounty',   idCol: 'Client ID', profile: 'paren', dates: 'us' },
