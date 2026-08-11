@@ -86,26 +86,41 @@ def build_html(rows, subtitle, test):
     td = "padding:13px 14px;font-size:14px;color:#0f172a;border-bottom:1px solid #eef2f6;vertical-align:top"
     head = "".join(f'<th style="{th}">{h}</th>' for h in
                    ["When", "Company", "Name", "DOB", "Phone", "Email", "Booked"])
-    body = []
+
+    # Group registrants under their scheduler, preserving first-seen order.
+    groups = {}
     for r in rows:
+        key = r[9] or "(no scheduler)"
+        groups.setdefault(key, []).append(r)
+
+    def row_html(r):
         slot, company, fn, ln, name, dob, phone, email, booked, sched = r
         nm = (f"{(fn or '').strip()} {(ln or '').strip()}".strip()) or (name or "")
         em = (f'<a href="mailto:{esc(email)}" style="color:#2563eb;text-decoration:none">{esc(email)}</a>'
               if email else '<span style="color:#94a3b8">—</span>')
-        body.append(
-            f'<tr>'
-            f'<td style="{td}">{when(slot)}</td>'
-            f'<td style="{td}">{esc(company) or "—"}</td>'
-            f'<td style="{td};font-weight:600">{esc(nm)}</td>'
-            f'<td style="{td}">{mdY(dob)}</td>'
-            f'<td style="{td};font-variant-numeric:tabular-nums">{esc(phone) or "—"}</td>'
-            f'<td style="{td}">{em}</td>'
-            f'<td style="{td};color:#475569">{mdY(booked)}</td>'
-            f'</tr>')
+        return (f'<tr>'
+                f'<td style="{td}">{when(slot)}</td>'
+                f'<td style="{td}">{esc(company) or "—"}</td>'
+                f'<td style="{td};font-weight:600">{esc(nm)}</td>'
+                f'<td style="{td}">{mdY(dob)}</td>'
+                f'<td style="{td};font-variant-numeric:tabular-nums">{esc(phone) or "—"}</td>'
+                f'<td style="{td}">{em}</td>'
+                f'<td style="{td};color:#475569">{mdY(booked)}</td>'
+                f'</tr>')
+
     if rows:
-        table = (f'<table style="border-collapse:collapse;width:100%;background:#fff;'
-                 f'border:1px solid #e2e8f0;border-radius:10px;overflow:hidden">'
-                 f'<thead><tr>{head}</tr></thead><tbody>{"".join(body)}</tbody></table>')
+        sections = []
+        for sched, grp in groups.items():
+            body = "".join(row_html(r) for r in grp)
+            sections.append(
+                f'<div style="margin:0 0 22px">'
+                f'<div style="display:flex;align-items:baseline;gap:10px;margin:0 2px 8px">'
+                f'<h2 style="font-size:15px;margin:0;color:#0f172a">{esc(sched)}</h2>'
+                f'<span style="font-size:12px;color:#64748b">{len(grp)} new registrant(s)</span></div>'
+                f'<table style="border-collapse:collapse;width:100%;background:#fff;'
+                f'border:1px solid #e2e8f0;border-radius:10px;overflow:hidden">'
+                f'<thead><tr>{head}</tr></thead><tbody>{body}</tbody></table></div>')
+        table = "".join(sections)
     else:
         table = ('<div style="padding:26px;background:#fff;border:1px solid #e2e8f0;border-radius:10px;'
                  'color:#64748b;font-size:14px">No new registrations for this period.</div>')
