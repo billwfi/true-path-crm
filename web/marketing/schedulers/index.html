@@ -49,8 +49,16 @@
         <input type="text" id="f-name" class="form-control" placeholder="e.g. Free Wellness Consultation">
       </div>
       <div class="form-group">
+        <label class="form-label">Name (Spanish)</label>
+        <input type="text" id="f-name-es" class="form-control" placeholder="Shown when the visitor picks Español (optional)">
+      </div>
+      <div class="form-group">
         <label class="form-label">Description</label>
         <textarea id="f-desc" class="form-control" rows="2" placeholder="Shown on the public booking page"></textarea>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Description (Spanish)</label>
+        <textarea id="f-desc-es" class="form-control" rows="2" placeholder="Shown when the visitor picks Español (optional)"></textarea>
       </div>
       <div class="form-group">
         <label class="form-label">Location</label>
@@ -291,7 +299,9 @@
     document.getElementById('editTitle').textContent = s ? 'Edit Scheduler' : 'New Scheduler';
     document.getElementById('f-id').value = s ? s.id : '';
     document.getElementById('f-name').value = s ? s.name : '';
+    document.getElementById('f-name-es').value = s ? (s.name_es || '') : '';
     document.getElementById('f-desc').value = s ? (s.description || '') : '';
+    document.getElementById('f-desc-es').value = s ? (s.description_es || '') : '';
     document.getElementById('f-loc').value = s ? (s.location || '') : '';
     document.getElementById('f-client').value = s && s.client_id ? String(s.client_id) : '';
     document.getElementById('f-logo').value = '';
@@ -315,7 +325,9 @@
     const client = clientSel.value ? clients.find(c => String(c.id) === clientSel.value) : null;
     const body = {
       name: document.getElementById('f-name').value.trim(),
+      name_es: document.getElementById('f-name-es').value.trim(),
       description: document.getElementById('f-desc').value.trim(),
+      description_es: document.getElementById('f-desc-es').value.trim(),
       location: document.getElementById('f-loc').value.trim(),
       client_id: client ? client.id : null,
       client_name: client ? client.name : null,

@@ -16,7 +16,7 @@ const { verifyToken, unauthorized, ok, created, badRequest, notFound, serverErro
 //   GET    ?s=<public_id>  -> scheduler (safe fields) + available slots w/ remaining capacity
 //   POST   ?s=<public_id>  -> create a booking (body: { slot_start, name, email, phone, notes })
 
-const SAFE_FIELDS = `id, public_id, name, description, location, client_id, client_name, client_company,
+const SAFE_FIELDS = `id, public_id, name, name_es, description, description_es, location, client_id, client_name, client_company,
   start_date, end_date, day_start_time, day_end_time, interval_minutes,
   capacity_per_slot, days_of_week, active`;
 
@@ -183,13 +183,14 @@ exports.handler = async function (event) {
       if (!b.start_date || !b.end_date) return badRequest('start_date and end_date are required');
       const r = await mssql(
         `INSERT INTO dbo.Booking_Schedulers
-           (public_id, name, description, location, client_id, client_name, client_company, logo_data,
+           (public_id, name, name_es, description, description_es, location, client_id, client_name, client_company, logo_data,
             start_date, end_date, day_start_time, day_end_time, interval_minutes,
             capacity_per_slot, days_of_week, active, created_by)
          OUTPUT INSERTED.*
-         VALUES (@pub, @name, @desc, @loc, @clientId, @clientName, @clientCompany, @logo,
+         VALUES (@pub, @name, @nameEs, @desc, @descEs, @loc, @clientId, @clientName, @clientCompany, @logo,
             @start, @end, @dstart, @dend, @interval, @capacity, @dows, @active, @by)`,
-        { pub: randomToken(), name: b.name, desc: b.description || null, loc: b.location || null,
+        { pub: randomToken(), name: b.name, nameEs: b.name_es || null,
+          desc: b.description || null, descEs: b.description_es || null, loc: b.location || null,
           clientId: parseInt(b.client_id, 10) || null, clientName: b.client_name || null,
           clientCompany: b.client_company || null,
           logo: b.logo_data || null,
@@ -225,14 +226,16 @@ exports.handler = async function (event) {
       const setLogo = Object.prototype.hasOwnProperty.call(b, 'logo_data');
       const r = await mssql(
         `UPDATE dbo.Booking_Schedulers
-         SET name=@name, description=@desc, location=@loc, client_id=@clientId, client_name=@clientName,
+         SET name=@name, name_es=@nameEs, description=@desc, description_es=@descEs,
+             location=@loc, client_id=@clientId, client_name=@clientName,
              client_company=@clientCompany,
              ${setLogo ? 'logo_data=@logo,' : ''}
              start_date=@start, end_date=@end,
              day_start_time=@dstart, day_end_time=@dend, interval_minutes=@interval,
              capacity_per_slot=@capacity, days_of_week=@dows, active=@active, updated_at=GETDATE()
          OUTPUT INSERTED.* WHERE id=@sid`,
-        { sid, name: b.name, desc: b.description || null, loc: b.location || null,
+        { sid, name: b.name, nameEs: b.name_es || null,
+          desc: b.description || null, descEs: b.description_es || null, loc: b.location || null,
           clientId: parseInt(b.client_id, 10) || null, clientName: b.client_name || null,
           clientCompany: b.client_company || null,
           ...(setLogo ? { logo: b.logo_data || null } : {}),
