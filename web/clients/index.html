@@ -4,6 +4,7 @@
   <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Clients — True Path CRM</title>
   <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
   <link rel="stylesheet" href="/assets/css/app.css">
 </head>
@@ -16,7 +17,10 @@
 
       <div class="search-bar">
         <input type="text" id="search" class="form-control" placeholder="Search clients…" oninput="debounceLoad()">
-        <a class="btn btn-primary" href="/clients/record/"><i class="fa-solid fa-plus"></i> New Client</a>
+        <div class="flex items-center gap-2">
+          <button class="btn btn-outline" onclick="exportClients()"><i class="fa-solid fa-file-excel"></i> Export to XLSX</button>
+          <a class="btn btn-primary" href="/clients/record/"><i class="fa-solid fa-plus"></i> New Client</a>
+        </div>
       </div>
 
       <div class="card">
@@ -38,10 +42,13 @@
   function debounceLoad() { clearTimeout(debounce); debounce = setTimeout(load, 300); }
   function openClient(id) { location.href = `/clients/record/?id=${id}`; }
 
+  let clientsCache = [];
+
   async function load() {
     const search = document.getElementById('search').value;
     const data = await apiGet(`/clients${search ? '?search=' + encodeURIComponent(search) : ''}`);
     if (!data) return;
+    clientsCache = data;
     document.getElementById('tbl-body').innerHTML = data.length
       ? data.map(c => `<tr class="clickable" onclick="openClient(${c.id})">
           <td class="text-slate-400 font-mono text-xs">#${c.id}</td>
@@ -55,6 +62,22 @@
           <td><button class="btn btn-outline btn-sm" onclick="event.stopPropagation();openClient(${c.id})"><i class="fa-solid fa-folder-open"></i> Open</button></td>
         </tr>`).join('')
       : '<tr><td colspan="9" class="text-center py-10 text-slate-400">No clients found</td></tr>';
+  }
+
+  // Export the currently-shown (filtered) clients to an .xlsx workbook.
+  function exportClients() {
+    const rows = clientsCache || [];
+    if (!rows.length) { showToast('Nothing to export', 'error'); return; }
+    const header = ['#', 'Client Name', 'iRx Client ID', 'Email', 'Phone', 'Broker', 'Active', 'Created'];
+    const body = rows.map(c => [
+      c.id, c.name || '', c.irx_client_id || '', c.email || '', c.phone || '',
+      c.broker || '', c.active ? 'Active' : 'Inactive', fmtDate(c.created_at),
+    ]);
+    const ws = XLSX.utils.aoa_to_sheet([header, ...body]);
+    ws['!cols'] = [{wch:6},{wch:30},{wch:14},{wch:26},{wch:16},{wch:16},{wch:9},{wch:12}];
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Clients');
+    XLSX.writeFile(wb, `clients-${new Date().toISOString().slice(0, 10)}.xlsx`);
   }
 
   load();
