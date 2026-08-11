@@ -4,6 +4,7 @@
   <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>PBM Record — True Path CRM</title>
   <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
   <link rel="stylesheet" href="/assets/css/app.css">
 </head>
@@ -82,7 +83,10 @@
       <div class="tab-panel" data-panel="groups" style="display:none">
         <div class="flex items-center justify-between mb-3">
           <input id="group-search" class="form-control" style="max-width:280px" placeholder="Filter groups…" oninput="debounceGroups()">
-          <button class="btn btn-primary btn-sm" onclick="openGroup()"><i class="fa-solid fa-plus"></i> Add Group</button>
+          <div class="flex items-center gap-2">
+            <button class="btn btn-outline btn-sm" onclick="exportGroups()"><i class="fa-solid fa-file-excel"></i> Export to XLSX</button>
+            <button class="btn btn-primary btn-sm" onclick="openGroup()"><i class="fa-solid fa-plus"></i> Add Group</button>
+          </div>
         </div>
         <div class="card"><div class="card-body"><table class="data-table">
           <thead><tr><th>TP Group ID</th><th>Group ID</th><th>Group Name</th><th>Company</th><th style="text-align:right">Members</th><th>Status</th><th></th></tr></thead>
@@ -266,6 +270,23 @@
 
   // ── Groups ──
   function debounceGroups(){ clearTimeout(gDebounce); gDebounce=setTimeout(loadGroups,300); }
+  // Export the currently-loaded (filtered) groups to an .xlsx workbook.
+  function exportGroups(){
+    const rows = groupsCache || [];
+    if(!rows.length){ showToast('Nothing to export','error'); return; }
+    const header = ['TP Group ID','Group ID','Group Name','Company','Members','Status'];
+    const body = rows.map(g => [
+      g.tp_group_id || '', g.group_code || '', g.group_name || '',
+      g.company_name || '', g.members || 0, g.status || '',
+    ]);
+    const ws = XLSX.utils.aoa_to_sheet([header, ...body]);
+    ws['!cols'] = [{wch:12},{wch:10},{wch:34},{wch:26},{wch:10},{wch:10}];
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Groups');
+    const pbm = (document.getElementById('pbm-title').textContent || 'pbm')
+      .replace(/[^\w]+/g,'-').replace(/^-+|-+$/g,'').toLowerCase() || 'pbm';
+    XLSX.writeFile(wb, `${pbm}-groups-${new Date().toISOString().slice(0,10)}.xlsx`);
+  }
   async function loadGroups(){ if(!pbmId)return;
     const s=document.getElementById('group-search').value;
     const data=await apiGet(`/pbm-detail?resource=groups&pbm_id=${pbmId}${s?'&search='+encodeURIComponent(s):''}`);
