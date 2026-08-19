@@ -31,7 +31,7 @@ from email.mime.text import MIMEText
 
 import pyodbc
 
-AMT_RECIPIENTS = ["bwalker@truepathsourcing.com"]
+AMT_RECIPIENTS = ["bwalker@truepathsourcing.com", "amtfileloads@truepathsourcing.com"]
 GLP1_LIKE = ["ozemp", "wegov", "mounjaro", "zepbound", "semaglu", "tirze"]
 
 
