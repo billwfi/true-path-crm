@@ -25,12 +25,22 @@ CLAIMS = {
     "smithcounty": {"label": "Smith County", "client_id": 28,
         "folder": "/InternationalRx/SmithCounty", "pattern": "HRx_*SmithCounty_Claims_*.xls*",
         "fmt": "xlsx", "header_row": 1, "target": "ClaimsData_SmithCounty", "clientid": "PSI1022"},
+    # Anders ships a narrow Rx extract ("Rx Claim Details ... Upload into OnBase.xlsx")
+    # with no Client ID column of its own and a per-line unique Claim ID, so it needs
+    # a constant Client ID injected and Claim ID as the dedupe key. See migration 033.
+    "anders": {"label": "Anders Group", "client_id": 6,
+        "folder": "/InternationalRx/Anders", "pattern": "Rx Claim Details*ANDERS*.xls*",
+        "fmt": "xlsx", "header_row": 1, "target": "ClaimsData_Anders", "clientid": "000239911",
+        "dedupe": ["Claim ID"], "constants": {"Client ID": "000239911"}},
 }
 
 
 def db():
+    # Deployment ships ODBC Driver 17; allow an override so the loader also runs
+    # on boxes that only have 18 (e.g. a dev machine) without a code change.
+    driver = os.environ.get("SQLSERVER_ODBC_DRIVER", "ODBC Driver 17 for SQL Server")
     return pyodbc.connect(
-        "DRIVER={ODBC Driver 17 for SQL Server};SERVER=tcp:74.117.224.152,1433;DATABASE=iRx;"
+        f"DRIVER={{{driver}}};SERVER=tcp:74.117.224.152,1433;DATABASE=iRx;"
         f"UID=claudeservices;PWD={os.environ['IRX_DB_PWD']};Encrypt=yes;TrustServerCertificate=yes;Connection Timeout=30",
         autocommit=True)
 
@@ -81,8 +91,9 @@ def load_client(cn, key, cfg):
             cur.execute("UPDATE dbo.Client_Import_Log SET status='NoFile', finished_at=GETDATE() WHERE id=?", log)
             return f"[{key}] no files matching {cfg['pattern']}"
 
-        # existing dedupe keys already loaded for this client
-        keycols = [c for c in DEDUPE if c.lower() in tset]
+        # existing dedupe keys already loaded for this client (a feed may override
+        # the default key set, e.g. Anders dedupes on its unique Claim ID)
+        keycols = [c for c in cfg.get("dedupe", DEDUPE) if c.lower() in tset]
         ksel = ", ".join(f"[{tset[c.lower()]}]" for c in keycols)
         cur.execute(f"SELECT {ksel} FROM dbo.[{cfg['target']}] WHERE [Client ID]=?", cfg["clientid"])
         seen = {tuple(norm(v) for v in r) for r in cur.fetchall()}
@@ -94,11 +105,16 @@ def load_client(cn, key, cfg):
             header, body = parse(data, cfg["fmt"], cfg["header_row"])
             # map file header -> target columns present (exact name match)
             cols = [(i, tset[h.lower()]) for i, h in enumerate(header) if h.lower() in tset]
-            target_cols = [c for _, c in cols]
+            # constant columns not present in the file (e.g. a Client ID the file
+            # does not carry), appended to every row
+            const_cols = [(tset[k.lower()], v) for k, v in cfg.get("constants", {}).items()
+                          if k.lower() in tset]
+            target_cols = [c for _, c in cols] + [c for c, _ in const_cols]
             kpos = [target_cols.index(tset[c.lower()]) for c in keycols]
             batch = []
             for r in body:
                 vals = [(norm(r[i]) if i < len(r) else "")[:maxlen.get(c, 100000)] for i, c in cols]
+                vals += [norm(v)[:maxlen.get(c, 100000)] for c, v in const_cols]
                 kv = tuple(vals[p] for p in kpos)
                 if kv in seen:
                     continue
