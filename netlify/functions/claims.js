@@ -37,6 +37,9 @@ const SOURCES = {
   // MCR Hotels: claims live in the normalized dbo.ClaimsData_Prod (keyed on clientid,
   // lowercase columns, NO cost columns). Uses the dedicated 'prod' layout below.
   '76416172':{ table: 'ClaimsData_Prod', idCol: 'clientid', layout: 'prod', dates: 'us' },
+  // Anders Group: the Rx extract is raw-loaded into ClaimsData_Anders, then
+  // normalized into ClaimsData_Prod (see reconcile.py). App reads prod.
+  '000239911':{ table: 'ClaimsData_Prod', idCol: 'clientid', layout: 'prod', dates: 'us' },
 };
 const DEFAULT_SOURCE = { table: 'ClaimsData', idCol: 'Client ID', profile: 'std', dates: 'native' };
 const resolveSource = (carrier) => SOURCES[carrier] || DEFAULT_SOURCE;

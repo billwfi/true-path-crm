@@ -131,14 +131,44 @@ RECON = {
             },
             "report_join": ("Carrier", "Person_Ssn"),
         },
-        # eligibility-only feed (no claims)
+        # Claims: the narrow Rx extract raw-loaded into ClaimsData_Anders by
+        # claims_loader.py, normalized add-only into the standardized
+        # ClaimsData_Prod (which the app reads for this carrier). Cost columns
+        # have no home in prod and are intentionally dropped here.
+        "claims": {
+            "stage_table": "ClaimsData_Anders",
+            "target": "ClaimsData_Prod",
+            "clientid": "000239911",
+            "clientname": "Anders Group",
+            "map": {  # prod_col -> stage_col (columns that line up; rest NULL)
+                "groupid": "Account ID",
+                "dateofservice": "Date of Service",
+                "pharmacyrxnumber": "Rx Number",
+                "ndc": "NDC",
+                "drugname": "Drug Name and Strength",
+                "channelpbm": "Distribution Channel",
+                "quantitydispensed": "Quantity Dispensed",
+                "dayssupply": "Days Supply",
+                "formularyflag": "Formulary Indicator",
+                "drugtype": "Drug Type",
+                "pharmacyclaimid": "Claim ID",
+                "pharmacyname": "Pharmacy Name",
+                "patientid": "Member ID",
+                "patientlastname": "Member Last Name",
+                "patientfirstname": "Member First Name",
+                "patientdateofbirth": "Date of Birth",
+            },
+            # add-only dedupe: a claim already present for this client
+            "key": ["patientid", "dateofservice", "ndc", "pharmacyrxnumber", "dayssupply"],
+        },
     },
 }
 
 
 def db_connect(autocommit=False):
+    driver = os.environ.get("SQLSERVER_ODBC_DRIVER", "ODBC Driver 17 for SQL Server")
     conn = (
-        "DRIVER={ODBC Driver 17 for SQL Server};"
+        "DRIVER={" + driver + "};"
         f"SERVER={os.environ.get('SQLSERVER_HOST', '74.117.224.152')};"
         f"DATABASE={os.environ.get('SQLSERVER_DB', 'irx')};"
         f"UID={os.environ.get('SQLSERVER_USER', 'claudeservices')};"
@@ -406,6 +436,17 @@ def claims_reconcile(cur, cfg, commit):
     collist = ", ".join(f"[{p}]" for p in prod_cols)
     ph = ", ".join("?" for _ in prod_cols)
 
+    # trim a mapped value to the prod column's width so a longer vendor value is
+    # truncated instead of failing the whole insert (mirrors claims_loader.py)
+    meta = cur.execute(
+        "SELECT COLUMN_NAME, CHARACTER_MAXIMUM_LENGTH FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME=?",
+        c["target"]).fetchall()
+    maxlen = {m[0]: m[1] for m in meta if m[1] and m[1] > 0}
+
+    def fit(prod_col, v):
+        m = maxlen.get(prod_col)
+        return v[:m] if m and isinstance(v, str) and len(v) > m else v
+
     new_rows, dups, local = [], 0, set()
     for r in rows:
         key = tuple(norm(prod_val(r, k)) for k in keycols)
@@ -413,8 +454,9 @@ def claims_reconcile(cur, cfg, commit):
             dups += 1
             continue
         local.add(key)
-        vals = [prod_val(r, p) for p in c["map"].keys()]
-        new_rows.append(tuple([c["clientid"], c["clientname"]] + vals + [today]))
+        vals = [fit(p, prod_val(r, p)) for p in c["map"].keys()]
+        new_rows.append(tuple([fit("clientid", c["clientid"]),
+                               fit("clientname", c["clientname"])] + vals + [today]))
 
     print(f"  Claims: {len(rows)} in file | {len(new_rows)} new, {dups} already present "
           f"({len(seen)} existing for client)")
@@ -491,6 +533,9 @@ def main():
     ap.add_argument("client")
     ap.add_argument("--commit", action="store_true", help="write to prod (default: dry run)")
     ap.add_argument("--send", action="store_true", help="email the AMT report")
+    ap.add_argument("--claims-only", action="store_true",
+                    help="only reconcile claims into prod; skip eligibility + AMT report "
+                         "(used by the Monday run, which loads claims separately from the 834 job)")
     args = ap.parse_args()
 
     cfg = RECON.get(args.client)
@@ -503,22 +548,24 @@ def main():
     cur = cn.cursor()
     print(f"== {cfg['group_name']} reconcile ({'COMMIT' if args.commit else 'DRY RUN'}) ==")
     try:
-        eligibility_reconcile(cur, cfg, args.commit)
+        if not args.claims_only:
+            eligibility_reconcile(cur, cfg, args.commit)
         if cfg.get("claims"):
             claims_reconcile(cur, cfg, args.commit)
         if args.commit:
             cn.commit()
             print("  committed.")
-        rows = build_report(cur, cfg)
-        print(f"  AMT report rows (loaded today): {len(rows)}")
-        html = report_html(cfg, rows)
-        if args.send:
-            send_email(cfg, html)
-        else:
-            out = os.path.join(os.path.dirname(__file__), f"reconcile_{args.client}_preview.html")
-            with open(out, "w", encoding="utf-8") as f:
-                f.write(html)
-            print(f"  report preview written: {out}")
+        if not args.claims_only:
+            rows = build_report(cur, cfg)
+            print(f"  AMT report rows (loaded today): {len(rows)}")
+            html = report_html(cfg, rows)
+            if args.send:
+                send_email(cfg, html)
+            else:
+                out = os.path.join(os.path.dirname(__file__), f"reconcile_{args.client}_preview.html")
+                with open(out, "w", encoding="utf-8") as f:
+                    f.write(html)
+                print(f"  report preview written: {out}")
     except Exception:
         cn.rollback()
         raise
