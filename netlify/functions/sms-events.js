@@ -32,12 +32,18 @@ exports.handler = async function (event) {
     if (ev.eventType === 'Microsoft.Communication.SMSDeliveryReportReceived') {
       const d = ev.data || {};
       if (!d.messageId) continue;
+      // Bind delivered_at as a real Date, not a string: ACS sends a
+      // high-precision offset timestamp (e.g. ...:02.5661148+00:00) that fails
+      // implicit conversion to the datetime column. new Date() normalises it to
+      // millisecond precision the driver can bind directly.
+      let at = new Date(d.receivedTimestamp);
+      if (isNaN(at)) at = new Date();
       await mssql(
         `UPDATE dbo.SMS_Log SET delivery_status=@st, delivery_detail=@dt, delivered_at=@at
          WHERE message_id=@mid`,
         { st: (d.deliveryStatus || '').slice(0, 30),
           dt: (d.deliveryStatusDetails || '').slice(0, 200),
-          at: d.receivedTimestamp || new Date().toISOString(),
+          at,
           mid: d.messageId });
     }
   }
