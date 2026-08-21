@@ -25,6 +25,9 @@ CLAIMS = {
     "smithcounty": {"label": "Smith County", "client_id": 28,
         "folder": "/InternationalRx/SmithCounty", "pattern": "HRx_*SmithCounty_Claims_*.xls*",
         "fmt": "xlsx", "header_row": 1, "target": "ClaimsData_SmithCounty", "clientid": "PSI1022"},
+    "greggcounty": {"label": "Gregg County", "client_id": 14,
+        "folder": "/InternationalRx/GreggCounty", "pattern": "HRx_*GreggCounty_Claims_*.xls*",
+        "fmt": "xlsx", "header_row": 1, "target": "ClaimsData_GreggCounty", "clientid": "366696"},
     # Anders ships a narrow Rx extract ("Rx Claim Details ... Upload into OnBase.xlsx")
     # with no Client ID column of its own and a per-line unique Claim ID, so it needs
     # a constant Client ID injected and Claim ID as the dedupe key. See migration 033.
