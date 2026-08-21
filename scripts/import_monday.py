@@ -193,18 +193,19 @@ def main():
         except Exception as e:  # noqa: BLE001
             print(f"  claims_loader error: {e}")
 
-        # Anders claims are read by the app from the standardized ClaimsData_Prod,
-        # so the rows just raw-loaded into ClaimsData_Anders are normalized into
-        # prod here. --claims-only keeps this off the separate weekly 834
-        # eligibility job (and its AMT email).
-        print("Reconciling Anders claims -> prod…")
-        try:
-            rp = subprocess.run([sys.executable, os.path.join(here, "client_imports", "reconcile.py"),
-                                 "anders", "--claims-only", "--commit"],
-                                capture_output=True, text=True, timeout=1800)
-            print((rp.stdout or "") + (rp.stderr or ""))
-        except Exception as e:  # noqa: BLE001
-            print(f"  anders claims reconcile error: {e}")
+        # Clients whose claims the app reads from the standardized ClaimsData_Prod:
+        # the rows just raw-loaded into their per-client table are normalized into
+        # prod here. --claims-only keeps this off any separate eligibility job
+        # (e.g. the weekly 834) and its AMT email.
+        for client in ("anders", "rha"):
+            print(f"Reconciling {client} claims -> prod…")
+            try:
+                rp = subprocess.run([sys.executable, os.path.join(here, "client_imports", "reconcile.py"),
+                                     client, "--claims-only", "--commit"],
+                                    capture_output=True, text=True, timeout=1800)
+                print((rp.stdout or "") + (rp.stderr or ""))
+            except Exception as e:  # noqa: BLE001
+                print(f"  {client} claims reconcile error: {e}")
 
     cn = db(); cur = cn.cursor()
     configs = load_configs(cur)

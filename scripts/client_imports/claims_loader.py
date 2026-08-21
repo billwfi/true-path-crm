@@ -35,6 +35,13 @@ CLAIMS = {
         "folder": "/InternationalRx/Anders", "pattern": "Rx Claim Details*ANDERS*.xls*",
         "fmt": "xlsx", "header_row": 1, "target": "ClaimsData_Anders", "clientid": "000239911",
         "dedupe": ["Claim ID"], "constants": {"Client ID": "000239911"}},
+    # RHA ships an RxCLAIM/PBM export ("RHA Claims <range>.xlsx", 79 cols) with no
+    # Client ID column and a unique RxCLAIM Number + Sequence per line. See migration 034.
+    "rha": {"label": "RHA Health Services", "client_id": 20,
+        "folder": "/InternationalRx/RHA", "pattern": "RHA Claims*.xls*",
+        "fmt": "xlsx", "header_row": 1, "target": "ClaimsData_RHA", "clientid": "PSI4105",
+        "dedupe": ["RxCLAIM Number", "RxCLAIM Sequence Number"],
+        "constants": {"Client ID": "PSI4105"}},
 }
 
 

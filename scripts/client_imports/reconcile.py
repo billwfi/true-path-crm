@@ -162,6 +162,43 @@ RECON = {
             "key": ["patientid", "dateofservice", "ndc", "pharmacyrxnumber", "dayssupply"],
         },
     },
+    "rha": {
+        "group_name": "RHA Health Services",
+        # Claims-only entry (RHA eligibility is a separate staging feed). The
+        # RxCLAIM export raw-loaded into ClaimsData_RHA is normalized add-only
+        # into ClaimsData_Prod, which the app now reads for carrier PSI4105.
+        "claims": {
+            "stage_table": "ClaimsData_RHA",
+            "target": "ClaimsData_Prod",
+            "clientid": "PSI4105",
+            "clientname": "RHA",
+            "map": {  # prod_col -> stage_col (columns that line up; rest NULL)
+                "groupid": "Group ID",
+                "dateofservice": "Date Filled",
+                "pharmacyrxnumber": "Rx Number",
+                "fillnumber": "Refill Number",
+                "ndc": "Drug NDC",
+                "drugname": "Drug Name and Strength",
+                "channelpbm": "Mail / Retail Code",
+                "quantitydispensed": "Total Quantity",
+                "dayssupply": "Total Days Supply",
+                "maintenancedrugflag": "Drug Maintenance Code",
+                "specialty": "Specialty / Non-Specialty Code",
+                "drugtype": "Brand / Generic Code",
+                "pharmacyclaimid": "RxCLAIM Number",
+                "pharmacynpi": "Pharmacy NPI",
+                "pharmacyname": "Pharmacy Name",
+                "pharmacystate": "Pharmacy State",
+                "patientid": "Member ID",
+                "patientlastname": "Member Last Name",
+                "patientfirstname": "Member First Name",
+                "patientdateofbirth": "Member Date of Birth",
+                "gpi02": "Drug GPI",
+            },
+            "key": ["patientid", "dateofservice", "ndc", "pharmacyrxnumber",
+                    "dayssupply", "quantitydispensed"],
+        },
+    },
 }
 
 

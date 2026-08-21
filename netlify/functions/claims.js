@@ -25,7 +25,7 @@ const PROFILES = {
 // irx_client_id (CARRIER) -> dedicated per-client claims table, for carriers NOT present
 // in the shared dbo.ClaimsData. These tables use the "(parens)" layout, key on [Client
 // ID], and store Date Of Service as varchar (US m/d/yyyy, or an Excel serial), so they
-// use the 'us' date mode. McAllen/RHA stay on the shared table (clean real-date data).
+// use the 'us' date mode. McAllen stays on the shared table (clean real-date data).
 const SOURCES = {
   '020373':{ table: 'ClaimsData_CSEAmericas',   idCol: 'Client ID', profile: 'paren', dates: 'us' },
   '077803':{ table: 'ClaimsData_CityofMission', idCol: 'Client ID', profile: 'paren', dates: 'us' },
@@ -40,6 +40,9 @@ const SOURCES = {
   // Anders Group: the Rx extract is raw-loaded into ClaimsData_Anders, then
   // normalized into ClaimsData_Prod (see reconcile.py). App reads prod.
   '000239911':{ table: 'ClaimsData_Prod', idCol: 'clientid', layout: 'prod', dates: 'us' },
+  // RHA Health Services: switched to an RxCLAIM export, raw-loaded into
+  // ClaimsData_RHA and normalized into ClaimsData_Prod (see migration 034).
+  'PSI4105':{ table: 'ClaimsData_Prod', idCol: 'clientid', layout: 'prod', dates: 'us' },
 };
 const DEFAULT_SOURCE = { table: 'ClaimsData', idCol: 'Client ID', profile: 'std', dates: 'native' };
 const resolveSource = (carrier) => SOURCES[carrier] || DEFAULT_SOURCE;
