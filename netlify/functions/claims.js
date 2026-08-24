@@ -43,6 +43,9 @@ const SOURCES = {
   // RHA Health Services: switched to an RxCLAIM export, raw-loaded into
   // ClaimsData_RHA and normalized into ClaimsData_Prod (see migration 034).
   'PSI4105':{ table: 'ClaimsData_Prod', idCol: 'clientid', layout: 'prod', dates: 'us' },
+  // Harrison Beverage: Millennium "Claims Detail Report" loaded straight into
+  // ClaimsData_Prod (no cost columns) via the claims_loader alias map.
+  '2871':{ table: 'ClaimsData_Prod', idCol: 'clientid', layout: 'prod', dates: 'us' },
 };
 const DEFAULT_SOURCE = { table: 'ClaimsData', idCol: 'Client ID', profile: 'std', dates: 'native' };
 const resolveSource = (carrier) => SOURCES[carrier] || DEFAULT_SOURCE;

@@ -50,6 +50,33 @@ CLAIMS = {
     "cityofmcallen": {"label": "City of McAllen", "client_id": 10,
         "folder": "/InternationalRx/CityOfMcAllen", "pattern": "HRx_*CityOfMcAllen_Claims_*.xls*",
         "fmt": "xlsx", "header_row": 1, "target": "ClaimsData", "clientid": "PSI3604"},
+    # Harrison Beverage ships a Millennium "Claims Detail Report" (title rows, then a
+    # header on row 3) with its own field names and no cost columns, so it normalizes
+    # straight into the shared ClaimsData_Prod (all varchar, no costs) that MCR/Anders/
+    # RHA use, via an explicit alias map. Client ID/name are injected as constants.
+    "harrisonbeverage": {"label": "Harrison Beverage", "client_id": 15,
+        "folder": "/InternationalRx/HarrisonBeverage", "pattern": "Claims Detail Report*HBC*.xls*",
+        "fmt": "xlsx", "header_row": 3, "target": "ClaimsData_Prod", "clientid": "2871",
+        "id_col": "clientid", "dedupe": ["pharmacyclaimid"], "date_cols": ["dateofservice"],
+        "constants": {"clientid": "2871", "clientname": "Harrison Beverage Company"},
+        "alias": {
+            "Group": "groupid",
+            "Member Account ID": "patientid",
+            "Member First Name": "patientfirstname",
+            "Member Last Name": "patientlastname",
+            "Claim Fill Date": "dateofservice",
+            "Pharmacy Name": "pharmacyname",
+            "Pharmacy NPI": "pharmacynpi",
+            "Rx Number": "pharmacyrxnumber",
+            "Drug ID (NDC)": "ndc",
+            "Product/Drug Label Name": "drugname",
+            "Retail/Mail": "channelpbm",
+            "Specialty Drug Indicator": "specialty",
+            "Formulary Code - Claim": "formularyflag",
+            "Claim Number": "pharmacyclaimid",
+            "Total Dispensed Unit Quantity": "quantitydispensed",
+            "Total Days Supply": "dayssupply",
+        }},
 }
 
 
@@ -127,6 +154,12 @@ def load_client(cn, key, cfg):
         char_cols = {m[0] for m in meta if (m[1] or "").lower() in CHARTYPES}
         # per-column max length so a longer vendor value is trimmed instead of failing the insert
         maxlen = {m[0]: m[2] for m in meta if m[2] and m[2] > 0}
+        # target columns whose value should be stored as a canonical 'YYYY-MM-DD' (so a
+        # varchar date column parses under the app's date expression)
+        canon_cols = {tset[c.lower()] for c in cfg.get("date_cols", []) if c.lower() in tset}
+        # the client-id column varies by target (per-client tables use "Client ID";
+        # the normalized ClaimsData_Prod uses "clientid")
+        id_col = cfg.get("id_col", "Client ID")
         s, transport = sftp()
         try:
             files = sorted(a.filename for a in s.listdir_attr(cfg["folder"])
@@ -148,7 +181,7 @@ def load_client(cn, key, cfg):
             return canon_date(v) if isdate else norm(v)
 
         ksel = ", ".join(f"[{tset[c.lower()]}]" for c in keycols)
-        cur.execute(f"SELECT {ksel} FROM dbo.[{cfg['target']}] WHERE [Client ID]=?", cfg["clientid"])
+        cur.execute(f"SELECT {ksel} FROM dbo.[{cfg['target']}] WHERE [{id_col}]=?", cfg["clientid"])
         seen = {tuple(keyval(v, d) for v, d in zip(r, keyisdate)) for r in cur.fetchall()}
 
         added = 0
@@ -158,9 +191,13 @@ def load_client(cn, key, cfg):
             header, body = parse(data, cfg["fmt"], cfg["header_row"])
             # map file header -> target columns: exact name first, then paren-normalized
             # fallback; skip a target column already claimed by an earlier header.
+            # explicit per-feed header->column overrides (for vendor formats whose
+            # names don't resemble the target's, e.g. Millennium "Member Account ID")
+            alias = {k.lower(): v for k, v in cfg.get("alias", {}).items()}
             cols, used = [], set()
             for i, h in enumerate(header):
-                tc = tset.get(h.lower()) or tnorm.get(norm2(h))
+                tc = (tset.get(alias[h.lower()].lower()) if h.lower() in alias else None) \
+                    or tset.get(h.lower()) or tnorm.get(norm2(h))
                 if tc and tc not in used:
                     used.add(tc); cols.append((i, tc))
             # constant columns not present in the file (e.g. a Client ID the file
@@ -174,6 +211,8 @@ def load_client(cn, key, cfg):
             kpos = [name_pos.get(tset[c.lower()]) for c in keycols]
 
             def cell(raw, c):
+                if c in canon_cols:                  # store a canonical date string
+                    d = canon_date(raw); return d if d else None
                 v = norm(raw)
                 if c not in char_cols:               # typed col: blank -> NULL, else let SQL convert
                     return v if v != "" else None
