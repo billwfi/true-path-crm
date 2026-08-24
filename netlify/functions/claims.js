@@ -47,11 +47,14 @@ const SOURCES = {
 const DEFAULT_SOURCE = { table: 'ClaimsData', idCol: 'Client ID', profile: 'std', dates: 'native' };
 const resolveSource = (carrier) => SOURCES[carrier] || DEFAULT_SOURCE;
 
-// A real DATE expression for [Date Of Service]. Per-client tables store it as a US-format
-// varchar or (e.g. RHA) an Excel serial number; the shared table is already a date.
+// A real DATE expression for [Date Of Service]. Per-client claims tables store it in
+// whatever format the vendor's Excel used, and it varies BY FILE: US 'm/d/yyyy' text
+// (CSE, Gregg older files), ISO 'yyyy-mm-dd hh:mm:ss' when the cell was a real Excel date
+// (Mission, Smith, and the newer CSE/Gregg files), or an Excel serial number (RHA). Try
+// each so recent claims never fall out of the app just because the vendor changed types.
 function dateExpr(mode) {
   return mode === 'us'
-    ? `COALESCE(TRY_CONVERT(date, [Date Of Service], 101), DATEADD(day, TRY_CONVERT(int, [Date Of Service]) - 2, '1900-01-01'))`
+    ? `COALESCE(TRY_CONVERT(date, [Date Of Service], 101), TRY_CONVERT(date, LEFT([Date Of Service], 10), 23), DATEADD(day, TRY_CONVERT(int, [Date Of Service]) - 2, '1900-01-01'))`
     : '[Date Of Service]';
 }
 
