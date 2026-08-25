@@ -198,7 +198,7 @@ def main():
         # prod here. --claims-only keeps this off any separate eligibility job
         # (e.g. the weekly 834) and its AMT email.
         for client in ("anders", "rha", "cseamericas", "cityofmission", "smithcounty",
-                       "greggcounty", "caregiver", "fsg", "mcallen"):
+                       "greggcounty", "caregiver", "fsg", "mcallen", "harrison"):
             print(f"Reconciling {client} claims -> prod…")
             try:
                 rp = subprocess.run([sys.executable, os.path.join(here, "client_imports", "reconcile.py"),

@@ -34,7 +34,17 @@ import pyodbc
 AMT_RECIPIENTS = [a.strip() for a in os.environ.get(
     "RECON_RECIPIENTS", "bwalker@truepathsourcing.com,amtfileloads@truepathsourcing.com").split(",")
     if a.strip()]
-GLP1_LIKE = ["ozemp", "wegov", "mounjaro", "zepbound", "semaglu", "tirze"]
+# GLP-1 (and GLP-1/GIP + GLP-1/insulin combo) drugs, brand + generic, for outreach
+# identification. Matched case-insensitively against the claim's drug name.
+GLP1_LIKE = [
+    "ozemp", "wegov", "rybelsus", "semaglu",      # semaglutide (Ozempic/Wegovy/Rybelsus)
+    "mounjaro", "zepbound", "tirze",              # tirzepatide (Mounjaro/Zepbound)
+    "trulicity", "dulaglutide",                   # dulaglutide (Trulicity)
+    "victoza", "saxenda", "liraglutide",          # liraglutide (Victoza/Saxenda)
+    "byetta", "bydureon", "exenatide",            # exenatide (Byetta/Bydureon)
+    "adlyxin", "lixisenatide",                    # lixisenatide (Adlyxin)
+    "soliqua", "xultophy",                        # GLP-1 + insulin combos
+]
 
 
 # ── Standard HRx claims map (client-specific ClaimsData_<Client> -> ClaimsData_Prod)
@@ -243,6 +253,16 @@ RECON = {
     "caregiver":     {"group_name": "CareGiver",                  "claims": hrx_claims("ClaimsData_Caregiver",     "10116",   "CareGiver")},
     "fsg":           {"group_name": "Facilities Solutions Group", "claims": hrx_claims("ClaimsData_FSG",           "909765",  "Facilities Solutions Group")},
     "mcallen":       {"group_name": "City of McAllen",            "claims": hrx_claims("ClaimsData_McAllen",       "PSI3604", "City of McAllen")},
+    # Harrison ships a Millennium format that claims_loader already normalizes (alias
+    # map) into the prod-layout ClaimsData_Harrison, so the reconcile map is identity.
+    "harrison": {"group_name": "Harrison Beverage", "claims": {
+        "stage_table": "ClaimsData_Harrison", "target": "ClaimsData_Prod",
+        "clientid": "2871", "clientname": "Harrison Beverage Company",
+        "map": {c: c for c in ("groupid", "dateofservice", "pharmacyrxnumber", "ndc", "drugname",
+                                "channelpbm", "quantitydispensed", "dayssupply", "formularyflag",
+                                "specialty", "pharmacyclaimid", "pharmacynpi", "pharmacyname",
+                                "patientid", "patientlastname", "patientfirstname")},
+        "key": ["pharmacyclaimid"], "date_key_cols": ["dateofservice"]}},
 }
 
 

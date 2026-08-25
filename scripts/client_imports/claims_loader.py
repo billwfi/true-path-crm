@@ -53,7 +53,7 @@ CLAIMS = {
     # RHA use, via an explicit alias map. Client ID/name are injected as constants.
     "harrisonbeverage": {"label": "Harrison Beverage", "client_id": 15,
         "folder": "/InternationalRx/HarrisonBeverage", "pattern": "Claims Detail Report*HBC*.xls*",
-        "fmt": "xlsx", "header_row": 3, "target": "ClaimsData_Prod", "clientid": "2871",
+        "fmt": "xlsx", "header_row": 3, "target": "ClaimsData_Harrison", "clientid": "2871",
         "id_col": "clientid", "dedupe": ["pharmacyclaimid"], "date_cols": ["dateofservice"],
         "constants": {"clientid": "2871", "clientname": "Harrison Beverage Company"},
         "alias": {
