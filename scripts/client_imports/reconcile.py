@@ -31,7 +31,9 @@ from email.mime.text import MIMEText
 
 import pyodbc
 
-AMT_RECIPIENTS = ["bwalker@truepathsourcing.com", "amtfileloads@truepathsourcing.com"]
+AMT_RECIPIENTS = [a.strip() for a in os.environ.get(
+    "RECON_RECIPIENTS", "bwalker@truepathsourcing.com,amtfileloads@truepathsourcing.com").split(",")
+    if a.strip()]
 GLP1_LIKE = ["ozemp", "wegov", "mounjaro", "zepbound", "semaglu", "tirze"]
 
 
@@ -569,35 +571,39 @@ def claims_reconcile(cur, cfg, commit):
 
 # ── AMT reconciliation report (adapted from the Gregg County query) ──────────
 def build_report(cur, cfg):
-    e = cfg["eligibility"]
-    ca, mi = e["report_join"]
-    parts = [
-        f"""SELECT DISTINCT 'Eligibility - Adds' AS loadcategory, a.GroupName AS grp, a.LAST_NAME AS last_name, a.FIRST_NAME AS first_name, a.LoadUpdateDate AS d
+    parts, params = [], []
+    if cfg.get("eligibility"):
+        e = cfg["eligibility"]
+        ca, mi = e["report_join"]
+        parts.append(f"""SELECT DISTINCT 'Eligibility - Adds' AS loadcategory, a.GroupName AS grp, a.LAST_NAME AS last_name, a.FIRST_NAME AS first_name, a.LoadUpdateDate AS d
     FROM dbo.eligibility a
       JOIN dbo.[{e['stage_table']}] x ON x.[{ca}] = a.CARRIER AND x.[{mi}] = a.MEMBER_ID
-    WHERE CONVERT(date, a.LoadUpdateDate, 101) = CONVERT(date, GETDATE(), 101) AND a.AccountStatus = 'Active'""",
-        """SELECT DISTINCT 'Eligibility - Terms', a.GroupName, a.LAST_NAME, a.FIRST_NAME, a.LoadUpdateDate
+    WHERE CONVERT(date, a.LoadUpdateDate, 101) = CONVERT(date, GETDATE(), 101) AND a.AccountStatus = 'Active'""")
+        parts.append("""SELECT DISTINCT 'Eligibility - Terms', a.GroupName, a.LAST_NAME, a.FIRST_NAME, a.LoadUpdateDate
     FROM dbo.eligibility a
-    WHERE a.CARRIER = ? AND a.AccountStatus = 'Inactive' AND CONVERT(date, a.LoadUpdateDate, 101) = CONVERT(date, GETDATE(), 101)""",
-    ]
-    params = [cfg["carrier"]]
+    WHERE a.CARRIER = ? AND a.AccountStatus = 'Inactive' AND CONVERT(date, a.LoadUpdateDate, 101) = CONVERT(date, GETDATE(), 101)""")
+        params.append(cfg["carrier"])
     if cfg.get("claims"):
         c = cfg["claims"]
         glp1 = " OR ".join(f"a.drugname LIKE '%{k}%'" for k in GLP1_LIKE)
-        parts.append(f"""SELECT DISTINCT 'Claims - GLP1 - Adds', a.clientname, a.patientlastname, a.patientfirstname, a.LoadUpdateDate
+        parts.append(f"""SELECT DISTINCT 'Claims - GLP1 - Adds' AS loadcategory, a.clientname AS grp, a.patientlastname AS last_name, a.patientfirstname AS first_name, a.LoadUpdateDate AS d
     FROM dbo.[{c['target']}] a
     WHERE a.clientid = ? AND CONVERT(date, a.LoadUpdateDate, 101) = CONVERT(date, GETDATE(), 101)
       AND ({glp1})""")
         params.append(c["clientid"])
+    if not parts:
+        return []
     sql = "\n    UNION\n    ".join(parts) + "\n    ORDER BY loadcategory, last_name, first_name"
     return cur.execute(sql, *params).fetchall()
 
 
-def report_html(cfg, rows):
+def report_html(cfg, rows, summary=""):
     groups = {}
     for r in rows:
         groups.setdefault(r.loadcategory, []).append(r)
     parts = [f"<h2>{cfg['group_name']} — Import Reconciliation ({date.today():%m/%d/%Y})</h2>"]
+    if summary:
+        parts.append(f"<p style='font:15px Segoe UI;color:#334155'>{summary}</p>")
     order = ["Eligibility - Adds", "Eligibility - Terms", "Claims - GLP1 - Adds"]
     for cat in order:
         items = groups.get(cat, [])
@@ -648,24 +654,42 @@ def main():
     cur = cn.cursor()
     print(f"== {cfg['group_name']} reconcile ({'COMMIT' if args.commit else 'DRY RUN'}) ==")
     try:
+        elig_res = None
         if not args.claims_only and cfg.get("eligibility"):
-            eligibility_reconcile(cur, cfg, args.commit)
+            elig_res = eligibility_reconcile(cur, cfg, args.commit)
+        claims_res = None
         if cfg.get("claims"):
-            claims_reconcile(cur, cfg, args.commit)
+            claims_res = claims_reconcile(cur, cfg, args.commit)
         if args.commit:
             cn.commit()
             print("  committed.")
-        if not args.claims_only and cfg.get("eligibility"):
-            rows = build_report(cur, cfg)
-            print(f"  AMT report rows (loaded today): {len(rows)}")
-            html = report_html(cfg, rows)
-            if args.send:
+
+        # One reconciliation email PER client (the canonical flow). Only send when there
+        # was activity, so a client with no new file/claims doesn't generate noise.
+        bits = []
+        if elig_res:
+            if "inserted" in elig_res:
+                bits.append(f"Eligibility (reload): {elig_res['inserted']} loaded")
+            else:
+                bits.append(f"Eligibility: {elig_res.get('adds', 0)} added, "
+                            f"{elig_res.get('matched', 0)} updated, {elig_res.get('terms', 0)} termed")
+        if claims_res:
+            bits.append(f"Claims: {claims_res.get('new', 0)} new added to prod")
+        summary = " &nbsp;&bull;&nbsp; ".join(bits)
+        rows = build_report(cur, cfg)
+        html = report_html(cfg, rows, summary)
+        activity = bool((claims_res and claims_res.get("new")) or
+                        (elig_res and (elig_res.get("adds") or elig_res.get("terms") or elig_res.get("inserted"))))
+        if args.send:
+            if activity or rows:
                 send_email(cfg, html)
             else:
-                out = os.path.join(os.path.dirname(__file__), f"reconcile_{args.client}_preview.html")
-                with open(out, "w", encoding="utf-8") as f:
-                    f.write(html)
-                print(f"  report preview written: {out}")
+                print("  no activity — no email sent")
+        else:
+            out = os.path.join(os.path.dirname(__file__), f"reconcile_{args.client}_preview.html")
+            with open(out, "w", encoding="utf-8") as f:
+                f.write(html)
+            print(f"  report preview written: {out}")
     except Exception:
         cn.rollback()
         raise

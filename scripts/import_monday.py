@@ -179,7 +179,7 @@ def main():
             try:
                 subprocess.run([sys.executable, os.path.join(here, "client_imports", "sftp_import.py"), client],
                                capture_output=True, text=True, timeout=1800)
-                subprocess.run([sys.executable, os.path.join(here, "client_imports", "reconcile.py"), client, "--commit"],
+                subprocess.run([sys.executable, os.path.join(here, "client_imports", "reconcile.py"), client, "--commit", "--send"],
                                capture_output=True, text=True, timeout=1800)
             except Exception as e:  # noqa: BLE001 - never let one client fail the whole run
                 print(f"  registry {client} error: {e}")
@@ -202,7 +202,7 @@ def main():
             print(f"Reconciling {client} claims -> prod…")
             try:
                 rp = subprocess.run([sys.executable, os.path.join(here, "client_imports", "reconcile.py"),
-                                     client, "--claims-only", "--commit"],
+                                     client, "--claims-only", "--commit", "--send"],
                                     capture_output=True, text=True, timeout=1800)
                 print((rp.stdout or "") + (rp.stderr or ""))
             except Exception as e:  # noqa: BLE001
