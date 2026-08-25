@@ -684,8 +684,16 @@ def main():
             cn.commit()
             print("  committed.")
 
-        # One reconciliation email PER client (the canonical flow). Only send when there
-        # was activity, so a client with no new file/claims doesn't generate noise.
+        # One reconciliation email PER client (the canonical flow). Summary reflects
+        # TODAY's actual loads (LoadUpdateDate = today), so it's accurate whether this is
+        # a fresh Monday run or a same-day re-send. Only email when there was activity.
+        today_claims = 0
+        if cfg.get("claims"):
+            c = cfg["claims"]
+            today_claims = cur.execute(
+                f"SELECT COUNT(*) FROM dbo.[{c['target']}] WHERE clientid=? "
+                "AND CONVERT(date, LoadUpdateDate, 101) = CONVERT(date, GETDATE(), 101)",
+                c["clientid"]).fetchone()[0]
         bits = []
         if elig_res:
             if "inserted" in elig_res:
@@ -693,12 +701,12 @@ def main():
             else:
                 bits.append(f"Eligibility: {elig_res.get('adds', 0)} added, "
                             f"{elig_res.get('matched', 0)} updated, {elig_res.get('terms', 0)} termed")
-        if claims_res:
-            bits.append(f"Claims: {claims_res.get('new', 0)} new added to prod")
+        if cfg.get("claims"):
+            bits.append(f"Claims: {today_claims:,} added to prod today")
         summary = " &nbsp;&bull;&nbsp; ".join(bits)
         rows = build_report(cur, cfg)
         html = report_html(cfg, rows, summary)
-        activity = bool((claims_res and claims_res.get("new")) or
+        activity = bool(today_claims or rows or
                         (elig_res and (elig_res.get("adds") or elig_res.get("terms") or elig_res.get("inserted"))))
         if args.send:
             if activity or rows:
