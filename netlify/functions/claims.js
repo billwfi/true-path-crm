@@ -27,12 +27,15 @@ const PROFILES = {
 // ID], and store Date Of Service as varchar (US m/d/yyyy, or an Excel serial), so they
 // use the 'us' date mode. McAllen stays on the shared table (clean real-date data).
 const SOURCES = {
-  '020373':{ table: 'ClaimsData_CSEAmericas',   idCol: 'Client ID', profile: 'paren', dates: 'us' },
-  '077803':{ table: 'ClaimsData_CityofMission', idCol: 'Client ID', profile: 'paren', dates: 'us' },
-  'PSI1022':{ table: 'ClaimsData_SmithCounty',  idCol: 'Client ID', profile: 'paren', dates: 'us' },
-  '10116': { table: 'ClaimsData_Caregiver',     idCol: 'Client ID', profile: 'paren', dates: 'us' },
-  '909765':{ table: 'ClaimsData_FSG',           idCol: 'Client ID', profile: 'paren', dates: 'us' },
-  '366696':{ table: 'ClaimsData_GreggCounty',   idCol: 'Client ID', profile: 'paren', dates: 'us' },
+  // HRx clients: client-specific ClaimsData_<Client> tables -> reconcile -> ClaimsData_Prod
+  // (the canonical table the app reads). See scripts/client_imports/PIPELINE.md.
+  '020373':{ table: 'ClaimsData_Prod', idCol: 'clientid', layout: 'prod', dates: 'us' },  // CSE Americas
+  '077803':{ table: 'ClaimsData_Prod', idCol: 'clientid', layout: 'prod', dates: 'us' },  // City of Mission
+  'PSI1022':{ table: 'ClaimsData_Prod', idCol: 'clientid', layout: 'prod', dates: 'us' },  // Smith County
+  '10116': { table: 'ClaimsData_Prod', idCol: 'clientid', layout: 'prod', dates: 'us' },  // CareGiver
+  '909765':{ table: 'ClaimsData_Prod', idCol: 'clientid', layout: 'prod', dates: 'us' },  // FSG
+  '366696':{ table: 'ClaimsData_Prod', idCol: 'clientid', layout: 'prod', dates: 'us' },  // Gregg County
+  'PSI3604':{ table: 'ClaimsData_Prod', idCol: 'clientid', layout: 'prod', dates: 'us' },  // City of McAllen
   IRX2026: { table: 'ClaimsData_iRx',           idCol: 'Client ID', profile: 'paren', dates: 'us' },
   // MCR Hotels: claims live in the normalized dbo.ClaimsData_Prod (keyed on clientid,
   // lowercase columns, NO cost columns). Uses the dedicated 'prod' layout below.
@@ -204,12 +207,13 @@ exports.handler = async function (event) {
 };
 
 // ClaimsData_Prod layout: normalized utilization schema keyed on `clientid`, with
-// lowercase column names and NO cost columns — Plan Paid / Gross Cost / Copay come
-// back NULL, and there's no brand/generic (Name_Type) source. Drug group falls back
-// to the GPI-02 code. Date Of Service is a US m/d/yyyy (or ISO) varchar.
+// lowercase column names. Cost columns (planpaid / grosscost / copay) are populated
+// for HRx-sourced clients and NULL for feeds that don't carry cost (MCR/Anders/RHA).
+// There's no brand/generic (Name_Type) source; drug group falls back to the GPI-02
+// code. Date Of Service is a US m/d/yyyy, ISO date, or ISO datetime varchar.
 async function claimsProd(q) {
   const T = 'dbo.ClaimsData_Prod';
-  const D = `COALESCE(TRY_CONVERT(date, dateofservice, 101), TRY_CONVERT(date, dateofservice, 23))`;
+  const D = `COALESCE(TRY_CONVERT(date, dateofservice, 101), TRY_CONVERT(date, LEFT(dateofservice, 10), 23), TRY_CONVERT(date, dateofservice))`;
   const conds = [`REPLACE(LTRIM(RTRIM(clientid)), '''', '') = @carrier`];
   const params = { carrier: q.carrier };
   if (q.from) { conds.push(`${D} >= @from`); params.from = q.from; }
@@ -219,28 +223,34 @@ async function claimsProd(q) {
 
   const SUMMARY = `SELECT COUNT(*) AS claim_count,
     COUNT(DISTINCT NULLIF(LTRIM(RTRIM(patientid)), '')) AS members,
-    NULL AS plan_paid, NULL AS gross_cost, NULL AS copay,
+    SUM(TRY_CONVERT(decimal(18,2), planpaid))  AS plan_paid,
+    SUM(TRY_CONVERT(decimal(18,2), grosscost)) AS gross_cost,
+    SUM(TRY_CONVERT(decimal(18,2), copay))     AS copay,
     AVG(TRY_CONVERT(decimal(18,2), dayssupply)) AS avg_days_supply`;
 
   if (q.report) {
     const [summary, byMonth, topDrugs, byGroup, topPharmacies] = await Promise.all([
       mssql(`${SUMMARY} FROM ${T} WHERE ${where}`, params),
-      mssql(`SELECT CONVERT(varchar(7), ${D}, 120) AS ym, COUNT(*) AS claim_count, NULL AS plan_paid
+      mssql(`SELECT CONVERT(varchar(7), ${D}, 120) AS ym, COUNT(*) AS claim_count,
+                    SUM(TRY_CONVERT(decimal(18,2), planpaid)) AS plan_paid
              FROM ${T} WHERE ${where} AND ${D} IS NOT NULL
              GROUP BY CONVERT(varchar(7), ${D}, 120) ORDER BY ym`, params),
       mssql(`SELECT TOP 10 LTRIM(RTRIM(drugname)) AS drug, COUNT(*) AS claim_count,
-                    NULL AS plan_paid, NULL AS gross_cost
+                    SUM(TRY_CONVERT(decimal(18,2), planpaid))  AS plan_paid,
+                    SUM(TRY_CONVERT(decimal(18,2), grosscost)) AS gross_cost
              FROM ${T} WHERE ${where} AND NULLIF(LTRIM(RTRIM(drugname)), '') IS NOT NULL
              GROUP BY LTRIM(RTRIM(drugname)) ORDER BY claim_count DESC`, params),
-      mssql(`SELECT TOP 12 LTRIM(RTRIM(gpi02)) AS grp, COUNT(*) AS claim_count, NULL AS plan_paid
+      mssql(`SELECT TOP 12 LTRIM(RTRIM(gpi02)) AS grp, COUNT(*) AS claim_count,
+                    SUM(TRY_CONVERT(decimal(18,2), planpaid)) AS plan_paid
              FROM ${T} WHERE ${where} AND NULLIF(LTRIM(RTRIM(gpi02)), '') IS NOT NULL
              GROUP BY LTRIM(RTRIM(gpi02)) ORDER BY claim_count DESC`, params),
-      mssql(`SELECT TOP 8 LTRIM(RTRIM(pharmacyname)) AS pharmacy, COUNT(*) AS claim_count, NULL AS plan_paid
+      mssql(`SELECT TOP 8 LTRIM(RTRIM(pharmacyname)) AS pharmacy, COUNT(*) AS claim_count,
+                    SUM(TRY_CONVERT(decimal(18,2), planpaid)) AS plan_paid
              FROM ${T} WHERE ${where} AND NULLIF(LTRIM(RTRIM(pharmacyname)), '') IS NOT NULL
              GROUP BY LTRIM(RTRIM(pharmacyname)) ORDER BY claim_count DESC`, params),
     ]);
     return ok({
-      source: 'ClaimsData_Prod', hasCost: false,
+      source: 'ClaimsData_Prod', hasCost: true,
       summary: summary.recordset[0],
       byMonth: byMonth.recordset,
       topDrugs: topDrugs.recordset,
@@ -260,12 +270,14 @@ async function claimsProd(q) {
               TRY_CONVERT(int, dayssupply) AS days_supply,
               LTRIM(RTRIM(pharmacyname)) AS pharmacy,
               LTRIM(RTRIM(gpi02)) AS drug_group,
-              NULL AS gross_cost, NULL AS plan_paid, NULL AS copay
+              TRY_CONVERT(decimal(18,2), grosscost) AS gross_cost,
+              TRY_CONVERT(decimal(18,2), planpaid)  AS plan_paid,
+              TRY_CONVERT(decimal(18,2), copay)     AS copay
        FROM ${T} WHERE ${where} ORDER BY ${D} DESC`, params),
     mssql(`${SUMMARY} FROM ${T} WHERE ${where}`, params),
   ]);
   return ok({
-    source: 'ClaimsData_Prod', hasCost: false,
+    source: 'ClaimsData_Prod', hasCost: true,
     rows: rows.recordset, summary: summary.recordset[0],
     truncated: rows.recordset.length === ROW_LIMIT,
   });

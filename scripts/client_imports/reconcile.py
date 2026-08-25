@@ -35,6 +35,38 @@ AMT_RECIPIENTS = ["bwalker@truepathsourcing.com", "amtfileloads@truepathsourcing
 GLP1_LIKE = ["ozemp", "wegov", "mounjaro", "zepbound", "semaglu", "tirze"]
 
 
+# ── Standard HRx claims map (client-specific ClaimsData_<Client> -> ClaimsData_Prod)
+# Every HRx client-specific table shares the same 64-column layout, so one map + one
+# key serves them all. prod_col -> client_table_col. See scripts/client_imports/PIPELINE.md.
+HRX_CLAIMS_MAP = {
+    "groupid": "Group ID", "dateofservice": "Date Of Service", "invoicedate": "Invoice Date",
+    "dateprescriptionwritten": "Date Prescription Written", "adjudicationdate": "Adjudication Date",
+    "paiddate": "Paid Date", "pharmacyrxnumber": "Pharmacy Rx Number", "fillnumber": "Fill Number",
+    "ndc": "NDC", "drugname": "Drug Name", "channelpbm": "Channel PBM (HRx)",
+    "quantitydispensed": "Quantity Dispensed", "dayssupply": "Days Supply",
+    "formularyflag": "Formulary Flag", "compound": "Compound (HRx)",
+    "maintenancedrugflag": "Maintenance Drug Flag", "specialty": "Specialty (HRx)",
+    "drugtype": "Drug Type (HRx)", "pharmacyclaimid": "Pharmacy Claim ID",
+    "pharmacynpi": "Pharmacy NPI", "pharmacyname": "Pharmacy Name", "pharmacystate": "Pharmacy State",
+    "patientid": "Patient ID", "patientrelationshipcode": "Patient Relationship Code",
+    "patientlastname": "Patient Last Name", "patientfirstname": "Patient First Name",
+    "patientdateofbirth": "Patient Date of Birth", "age": "Age",
+    "gpi02": "GPI_02 (MS)", "gpi04": "GPI_04 (MS)",
+    "planpaid": "Plan Paid", "grosscost": "Gross Cost", "copay": "Copay",
+    "ingredientcost": "Ingredient Cost", "patientpaidamount": "Patient Paid Amount",
+    "usualcustomary": "Usual & Customary",
+}
+HRX_CLAIMS_KEY = ["patientid", "dateofservice", "ndc", "pharmacyrxnumber", "fillnumber"]
+
+
+def hrx_claims(stage_table, clientid, clientname):
+    """claims config for a standard HRx client-specific table -> ClaimsData_Prod (add-only)."""
+    return {"stage_table": stage_table, "target": "ClaimsData_Prod",
+            "clientid": clientid, "clientname": clientname,
+            "map": dict(HRX_CLAIMS_MAP), "key": list(HRX_CLAIMS_KEY),
+            "date_key_cols": ["dateofservice"]}
+
+
 # ── Per-client reconcile config ──────────────────────────────────────────────
 # eligibility.map: eligibility_col -> stage_col, or ("left1", stage_col) / ("const", value)
 # claims.map:      prod_col -> stage_col (rest of prod stays NULL). "map what you can."
@@ -199,6 +231,16 @@ RECON = {
                     "dayssupply", "quantitydispensed"],
         },
     },
+    # HRx claims-only clients: claims_loader loads the file into ClaimsData_<Client>,
+    # then these reconcile add-only into ClaimsData_Prod (which the app reads). Their
+    # eligibility is handled by separate config feeds; run these with --claims-only.
+    "cseamericas":   {"group_name": "CSE Americas",               "claims": hrx_claims("ClaimsData_CSEAmericas",   "020373",  "CSE Americas")},
+    "cityofmission": {"group_name": "City of Mission",            "claims": hrx_claims("ClaimsData_CityofMission", "077803",  "City of Mission")},
+    "smithcounty":   {"group_name": "Smith County",               "claims": hrx_claims("ClaimsData_SmithCounty",   "PSI1022", "Smith County")},
+    "greggcounty":   {"group_name": "Gregg County",               "claims": hrx_claims("ClaimsData_GreggCounty",   "366696",  "Gregg County")},
+    "caregiver":     {"group_name": "CareGiver",                  "claims": hrx_claims("ClaimsData_Caregiver",     "10116",   "CareGiver")},
+    "fsg":           {"group_name": "Facilities Solutions Group", "claims": hrx_claims("ClaimsData_FSG",           "909765",  "Facilities Solutions Group")},
+    "mcallen":       {"group_name": "City of McAllen",            "claims": hrx_claims("ClaimsData_McAllen",       "PSI3604", "City of McAllen")},
 }
 
 
@@ -217,6 +259,21 @@ def db_connect(autocommit=False):
 
 def norm(v):
     return "" if v is None else str(v).strip()
+
+
+def canon_date(v):
+    """Canonical 'YYYY-MM-DD' for a date used in a dedupe key, so the same claim
+    dedupes regardless of the source format (ISO w/ time, US m/d/yyyy, a real date)."""
+    from datetime import datetime as _dt
+    v = norm(v)
+    if not v:
+        return ""
+    for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d", "%m/%d/%Y", "%m/%d/%y"):
+        try:
+            return _dt.strptime(v, fmt).strftime("%Y-%m-%d")
+        except ValueError:
+            pass
+    return v[:10]
 
 
 # ── Eligibility reconcile ─────────────────────────────────────────────────────
@@ -462,12 +519,18 @@ def claims_reconcile(cur, cfg, commit):
         src = c["map"].get(prod_col)
         return norm(row[sidx[src]]) if src else None
 
-    # existing keys for this client only
+    # existing keys for this client only. A date key column is compared as a canonical
+    # date so the same claim dedupes across source formats (ISO/US/real-date).
     keycols = c["key"]
+    datekeys = set(c.get("date_key_cols", []))
+
+    def keyval(k, v):
+        return canon_date(v) if k in datekeys else norm(v)
+
     ksel = ", ".join(f"[{k}]" for k in keycols)
     ex = cur.execute(
         f"SELECT {ksel} FROM dbo.[{c['target']}] WHERE clientid=?", c["clientid"]).fetchall()
-    seen = {tuple(norm(v) for v in r) for r in ex}
+    seen = {tuple(keyval(k, v) for k, v in zip(keycols, r)) for r in ex}
 
     prod_cols = ["clientid", "clientname"] + list(c["map"].keys()) + ["LoadUpdateDate"]
     collist = ", ".join(f"[{p}]" for p in prod_cols)
@@ -486,7 +549,7 @@ def claims_reconcile(cur, cfg, commit):
 
     new_rows, dups, local = [], 0, set()
     for r in rows:
-        key = tuple(norm(prod_val(r, k)) for k in keycols)
+        key = tuple(keyval(k, prod_val(r, k)) for k in keycols)
         if key in seen or key in local:
             dups += 1
             continue
@@ -585,14 +648,14 @@ def main():
     cur = cn.cursor()
     print(f"== {cfg['group_name']} reconcile ({'COMMIT' if args.commit else 'DRY RUN'}) ==")
     try:
-        if not args.claims_only:
+        if not args.claims_only and cfg.get("eligibility"):
             eligibility_reconcile(cur, cfg, args.commit)
         if cfg.get("claims"):
             claims_reconcile(cur, cfg, args.commit)
         if args.commit:
             cn.commit()
             print("  committed.")
-        if not args.claims_only:
+        if not args.claims_only and cfg.get("eligibility"):
             rows = build_report(cur, cfg)
             print(f"  AMT report rows (loaded today): {len(rows)}")
             html = report_html(cfg, rows)

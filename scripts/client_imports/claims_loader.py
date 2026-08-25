@@ -42,14 +42,11 @@ CLAIMS = {
         "fmt": "xlsx", "header_row": 1, "target": "ClaimsData_RHA", "clientid": "PSI4105",
         "dedupe": ["RxCLAIM Number", "RxCLAIM Sequence Number"],
         "constants": {"Client ID": "PSI4105"}},
-    # City of McAllen ships the standard HRx claims layout and its history already
-    # lives in the SHARED dbo.ClaimsData (keyed [Client ID]=PSI3604), so it appends
-    # there rather than a per-client table — no claims.js SOURCES change needed. The
-    # file's "(MS)"/"(HRx)" columns map to ClaimsData's un-parenthesized names via
-    # the normalized column match below.
+    # City of McAllen: standard HRx layout -> client-specific ClaimsData_McAllen, then
+    # reconcile.py normalizes it add-only into ClaimsData_Prod (the app reads prod).
     "cityofmcallen": {"label": "City of McAllen", "client_id": 10,
         "folder": "/InternationalRx/CityOfMcAllen", "pattern": "HRx_*CityOfMcAllen_Claims_*.xls*",
-        "fmt": "xlsx", "header_row": 1, "target": "ClaimsData", "clientid": "PSI3604"},
+        "fmt": "xlsx", "header_row": 1, "target": "ClaimsData_McAllen", "clientid": "PSI3604"},
     # Harrison Beverage ships a Millennium "Claims Detail Report" (title rows, then a
     # header on row 3) with its own field names and no cost columns, so it normalizes
     # straight into the shared ClaimsData_Prod (all varchar, no costs) that MCR/Anders/
