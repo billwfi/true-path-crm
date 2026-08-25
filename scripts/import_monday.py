@@ -208,6 +208,16 @@ def main():
             except Exception as e:  # noqa: BLE001
                 print(f"  {client} claims reconcile error: {e}")
 
+        # GLP-1 -> OnBase export (BRIDGE until full cutover): email the OnBase load
+        # team (techsupport@) a CSV of new GLP-1 members not yet in OnBase.
+        print("Running GLP-1 OnBase export…")
+        try:
+            gp = subprocess.run([sys.executable, os.path.join(here, "client_imports", "glp1_onbase_export.py")],
+                                capture_output=True, text=True, timeout=1800)
+            print((gp.stdout or "") + (gp.stderr or ""))
+        except Exception as e:  # noqa: BLE001
+            print(f"  glp1_onbase_export error: {e}")
+
     cn = db(); cur = cn.cursor()
     configs = load_configs(cur)
     cur.execute("SELECT config_id, file_name FROM dbo.Import_Processed_Files")
