@@ -23,6 +23,15 @@ from email.mime.text import MIMEText
 import pyodbc
 
 REPORT_TO = os.environ.get("REPORT_TO", "scheduler@truepathsourcing.com")
+# The OnBase team always receives the daily recap too (in addition to REPORT_TO).
+ALWAYS_TO = "onbasesupport@internationalrx.com"
+
+
+def recipients():
+    r = [a.strip() for a in REPORT_TO.split(",") if a.strip()]
+    if ALWAYS_TO not in r:
+        r.append(ALWAYS_TO)
+    return r
 
 # created_at is Eastern-local; shift Eastern -> Central so the day window and the
 # BOOKED column line up with a Central-time reader.
@@ -142,15 +151,16 @@ def build_html(rows, subtitle, test):
 
 
 def send(html, subject):
+    to = recipients()
     msg = MIMEText(html, "html")
     msg["Subject"] = subject
     msg["From"] = os.environ["MAIL_FROM"]
-    msg["To"] = REPORT_TO
+    msg["To"] = ", ".join(to)
     with smtplib.SMTP(os.environ.get("SMTP_HOST", "smtp.office365.com"),
                       int(os.environ.get("SMTP_PORT", "587"))) as s:
         s.starttls()
         s.login(os.environ["SMTP_USER"], os.environ["SMTP_PASS"])
-        s.sendmail(msg["From"], [a.strip() for a in REPORT_TO.split(",")], msg.as_string())
+        s.sendmail(msg["From"], to, msg.as_string())
 
 
 def main():
@@ -166,7 +176,7 @@ def main():
         subject = f"New Scheduler Registrations — {mdY(day)} ({len(rows)})"
     html = build_html(rows, subtitle, test)
     send(html, subject)
-    print(f"Sent '{subject}' to {REPORT_TO} ({len(rows)} rows)")
+    print(f"Sent '{subject}' to {', '.join(recipients())} ({len(rows)} rows)")
 
 
 if __name__ == "__main__":

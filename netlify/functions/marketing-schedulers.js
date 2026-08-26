@@ -1,5 +1,9 @@
 const { mssql } = require('./_mssql');
 const { verifyToken, unauthorized, ok, created, badRequest, notFound, serverError, options, CORS } = require('./_auth');
+const { sendEmail } = require('./_email');
+
+// Real-time registration notifications go here (in addition to the daily recap).
+const SCHEDULER_NOTIFY_TO = process.env.SCHEDULER_NOTIFY_TO || 'onbasesupport@internationalrx.com';
 
 // Marketing › Schedulers — MS Bookings-style appointment tools.
 //
@@ -123,6 +127,26 @@ exports.handler = async function (event) {
           { sid: sched.id, slot: b.slot_start, name: `${first} ${last}`,
             company, first, last, dob: b.dob,
             email: (b.email || '').trim() || null, phone, notes: (b.notes || '').trim() || null });
+
+        // Notify the OnBase team the moment a registration comes in (fire-and-forget —
+        // never block or fail the booker's confirmation on the email).
+        const esc = (s) => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        const when = String(b.slot_start).replace('T', ' ').slice(0, 16);
+        const row = (k, v) => `<tr><td style="padding:3px 14px 3px 0;color:#64748b">${k}</td><td>${v}</td></tr>`;
+        const html = `<div style="font-family:Segoe UI,Arial,sans-serif;color:#0f172a">
+          <h2 style="color:#0d7d74;margin:0 0 10px">New scheduler registration</h2>
+          <table style="border-collapse:collapse;font-size:14px">
+            ${row('Scheduler', `<b>${esc(sched.name)}</b>`)}
+            ${row('Appointment', esc(when))}
+            ${row('Name', `${esc(first)} ${esc(last)}`)}
+            ${row('Company', esc(company))}
+            ${row('Date of Birth', esc(b.dob))}
+            ${row('Phone', esc(phone))}
+            ${row('Email', esc(b.email) || '&mdash;')}
+          </table></div>`;
+        sendEmail({ to: SCHEDULER_NOTIFY_TO, subject: `New registration: ${first} ${last} — ${sched.name}`, html })
+          .catch(() => { /* notification best-effort; booking already saved */ });
+
         return created(r.recordset[0]);
       }
 
