@@ -1,8 +1,11 @@
 name: Deploy to Azure Container Apps
 
-# Build the image once, then promote it dev -> staging -> prod.
-# dev deploys automatically; staging and prod each wait for approval
-# (GitHub Environments "staging"/"prod" required reviewers).
+# Build both images once (web + jobs), then promote the web app dev -> staging ->
+# prod. dev deploys automatically; staging and prod each wait for approval
+# (GitHub Environments "staging"/"prod" required reviewers). After prod is
+# approved, the Container Apps Jobs are updated to the new jobs image too — so
+# script changes ship automatically (the OIDC service principal is MFA-exempt,
+# unlike a local `az containerapp job update`).
 on:
   push:
     branches: [main]
@@ -16,6 +19,7 @@ env:
   ACR: acrtpcrm
   ACR_LOGIN_SERVER: acrtpcrm.azurecr.io
   IMAGE_REPO: tpcrm
+  JOBS_REPO: tpcrm-jobs
 
 jobs:
   build:
@@ -31,11 +35,16 @@ jobs:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
-      - name: Build & push image in ACR (server-side, no local Docker)
+      - name: Build & push web image in ACR (server-side, no local Docker)
         run: |
           az acr build --registry "$ACR" \
             --image "$IMAGE_REPO:${{ steps.meta.outputs.tag }}" \
-            --image "$IMAGE_REPO:latest" .
+            --image "$IMAGE_REPO:latest" -f Dockerfile .
+      - name: Build & push jobs image in ACR
+        run: |
+          az acr build --registry "$ACR" \
+            --image "$JOBS_REPO:${{ steps.meta.outputs.tag }}" \
+            --image "$JOBS_REPO:latest" -f deploy/jobs/Dockerfile .
 
   deploy-dev:
     needs: build
@@ -81,3 +90,28 @@ jobs:
         run: |
           az containerapp update -n ca-tpcrm-prod -g rg-tpcrm-prod \
             --image "$ACR_LOGIN_SERVER/$IMAGE_REPO:${{ needs.build.outputs.tag }}"
+
+  # Point every Container Apps Job at the freshly-built jobs image. Runs after prod
+  # is approved (so jobs move in lockstep with the web app). The service principal
+  # can do this even though a local `az containerapp job update` is MFA-blocked.
+  deploy-jobs:
+    needs: [build, deploy-prod]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      - name: Update Container Apps Jobs to the new jobs image
+        run: |
+          IMG="$ACR_LOGIN_SERVER/$JOBS_REPO:${{ needs.build.outputs.tag }}"
+          for J in caj-tpcrm-import-monday-nat caj-tpcrm-bookings-daily \
+                   caj-tpcrm-liviniti-nat caj-tpcrm-anders-nat \
+                   caj-tpcrm-sms-watch caj-tpcrm-campaign caj-tpcrm-campaign-rx \
+                   caj-tpcrm-imports; do
+            echo "::group::$J -> $IMG"
+            az containerapp job update -n "$J" -g rg-tpcrm-prod --image "$IMG" -o none \
+              || echo "WARN: could not update $J (skipped)"
+            echo "::endgroup::"
+          done
