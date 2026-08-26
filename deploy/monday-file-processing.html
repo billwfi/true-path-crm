@@ -1,0 +1,272 @@
+<title>Monday File Processing</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<style>
+  :root{
+    --bg:#F1F5F4; --surface:#FFFFFF; --surface-2:#F7FAF9;
+    --ink:#142320; --muted:#566A66; --faint:#8A9B97;
+    --border:#DCE6E3; --accent:#0F766E; --accent-deep:#0B5A54; --accent-soft:#E6F1EF;
+    --good:#15803D; --good-soft:#E4F3E9; --warn:#B45309; --warn-soft:#FBF0E2; --crit:#B91C1C; --crit-soft:#FBE9E9;
+  }
+  @media (prefers-color-scheme:dark){
+    :root:not([data-theme="light"]){
+      --bg:#0C1514; --surface:#14201E; --surface-2:#0F1917;
+      --ink:#E8F0EE; --muted:#9DB2AD; --faint:#6E827E;
+      --border:#26332F; --accent:#2DD4BF; --accent-deep:#5EEAD4; --accent-soft:#132523;
+      --good:#4ADE80; --good-soft:#12251A; --warn:#FBBF24; --warn-soft:#271C0C; --crit:#F87171; --crit-soft:#2A1414;
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg:#0C1514; --surface:#14201E; --surface-2:#0F1917;
+    --ink:#E8F0EE; --muted:#9DB2AD; --faint:#6E827E;
+    --border:#26332F; --accent:#2DD4BF; --accent-deep:#5EEAD4; --accent-soft:#132523;
+    --good:#4ADE80; --good-soft:#12251A; --warn:#FBBF24; --warn-soft:#271C0C; --crit:#F87171; --crit-soft:#2A1414;
+  }
+
+  *{box-sizing:border-box}
+  body{
+    margin:0; background:var(--bg); color:var(--ink);
+    font-family:"IBM Plex Sans",-apple-system,Segoe UI,Roboto,sans-serif;
+    line-height:1.6; -webkit-font-smoothing:antialiased;
+    padding:40px 20px 72px;
+  }
+  .wrap{max-width:860px; margin:0 auto}
+  code,.mono{font-family:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,monospace}
+
+  /* header */
+  header{margin-bottom:38px}
+  .eyebrow{font-size:12px; font-weight:600; letter-spacing:.16em; text-transform:uppercase; color:var(--accent-deep)}
+  h1{font-size:clamp(30px,5vw,42px); line-height:1.08; letter-spacing:-.02em; margin:10px 0 10px; text-wrap:balance}
+  .lede{font-size:17px; color:var(--muted); margin:0; max-width:60ch}
+  .facts{display:flex; flex-wrap:wrap; gap:10px; margin-top:24px}
+  .fact{background:var(--surface); border:1px solid var(--border); border-radius:11px; padding:11px 15px; min-width:150px}
+  .fact .k{font-size:10.5px; font-weight:600; letter-spacing:.1em; text-transform:uppercase; color:var(--faint)}
+  .fact .v{font-size:14px; font-weight:600; margin-top:3px}
+  .fact .v.mono{font-size:13px; font-weight:500; color:var(--accent-deep)}
+
+  h2{font-size:13px; font-weight:600; letter-spacing:.13em; text-transform:uppercase; color:var(--muted);
+     margin:44px 0 18px; padding-bottom:9px; border-bottom:1px solid var(--border)}
+
+  /* pipeline timeline */
+  .flow{display:flex; flex-direction:column; gap:0}
+  .step{display:grid; grid-template-columns:44px 1fr; gap:18px; position:relative}
+  .rail{display:flex; flex-direction:column; align-items:center}
+  .node{width:36px; height:36px; border-radius:50%; flex:none; display:grid; place-items:center;
+        background:var(--accent); color:#fff; font-family:"IBM Plex Mono",monospace; font-weight:600; font-size:15px;
+        box-shadow:0 3px 10px -3px var(--accent); z-index:1}
+  .line{width:2px; flex:1; background:linear-gradient(var(--border),var(--border)); margin:4px 0}
+  .step:last-child .line{display:none}
+  .card{background:var(--surface); border:1px solid var(--border); border-radius:13px; padding:17px 20px; margin-bottom:16px}
+  .step:last-child .card{margin-bottom:0}
+  .card h3{margin:0 0 6px; font-size:17px; letter-spacing:-.01em}
+  .card p{margin:0 0 12px; font-size:14.5px; color:var(--muted)}
+  .io{display:flex; flex-wrap:wrap; gap:8px 14px; align-items:center; font-size:13px}
+  .io .arrow{color:var(--faint)}
+  .pill{display:inline-flex; align-items:center; gap:6px; font-family:"IBM Plex Mono",monospace; font-size:12.5px;
+        background:var(--surface-2); border:1px solid var(--border); border-radius:7px; padding:3px 9px; color:var(--ink)}
+  .pill.out{background:var(--accent-soft); border-color:color-mix(in srgb,var(--accent) 30%,var(--border)); color:var(--accent-deep)}
+
+  .tag{display:inline-block; font-size:10.5px; font-weight:700; letter-spacing:.05em; text-transform:uppercase;
+       padding:2px 8px; border-radius:20px; vertical-align:middle; margin-left:8px}
+  .tag.mail{background:var(--good-soft); color:var(--good); border:1px solid color-mix(in srgb,var(--good) 30%,transparent)}
+  .tag.bridge{background:var(--warn-soft); color:var(--warn); border:1px solid color-mix(in srgb,var(--warn) 30%,transparent)}
+
+  /* tables */
+  .scroll{overflow-x:auto; border:1px solid var(--border); border-radius:12px; background:var(--surface)}
+  table{border-collapse:collapse; width:100%; font-size:14px}
+  th{text-align:left; font-size:11px; font-weight:600; letter-spacing:.06em; text-transform:uppercase; color:var(--faint);
+     padding:12px 15px; border-bottom:1px solid var(--border); white-space:nowrap}
+  td{padding:11px 15px; border-bottom:1px solid var(--border); vertical-align:top}
+  tr:last-child td{border-bottom:none}
+  td .mono{font-size:13px; color:var(--accent-deep)}
+  .who{font-weight:600}
+
+  .grid2{display:grid; grid-template-columns:1fr 1fr; gap:16px}
+  @media (max-width:640px){.grid2{grid-template-columns:1fr}}
+  .rule{background:var(--surface); border:1px solid var(--border); border-radius:13px; padding:16px 19px}
+  .rule h3{margin:0 0 10px; font-size:15px}
+  .rule ul{margin:0; padding-left:0; list-style:none; display:flex; flex-direction:column; gap:9px}
+  .rule li{font-size:13.5px; color:var(--muted); padding-left:20px; position:relative}
+  .rule li::before{content:""; position:absolute; left:2px; top:8px; width:7px; height:7px; border-radius:2px; background:var(--accent)}
+  .rule li b{color:var(--ink); font-weight:600}
+  .rule li.add::before{background:var(--good)} .rule li.upd::before{background:var(--accent)} .rule li.term::before{background:var(--crit)}
+
+  .note{background:var(--warn-soft); border:1px solid color-mix(in srgb,var(--warn) 32%,var(--border));
+        border-radius:13px; padding:17px 20px}
+  .note h3{margin:0 0 7px; font-size:15px; color:var(--warn)}
+  .note p{margin:0; font-size:14px; color:var(--ink)}
+  .clients{display:flex; flex-wrap:wrap; gap:8px}
+  .client{font-family:"IBM Plex Mono",monospace; font-size:12.5px; background:var(--surface); border:1px solid var(--border);
+          border-radius:8px; padding:5px 11px}
+  .client b{color:var(--accent-deep)}
+  footer{margin-top:44px; padding-top:20px; border-top:1px solid var(--border); font-size:12.5px; color:var(--faint)}
+  footer code{color:var(--muted)}
+  a{color:var(--accent-deep)}
+</style>
+
+<div class="wrap">
+  <header>
+    <div class="eyebrow">True Path Sourcing &middot; Operations Runbook</div>
+    <h1>Monday File Processing</h1>
+    <p class="lede">The automated weekly pipeline that loads every client's claims and eligibility
+      files, reconciles them into the tables the app reads, and sends the reconciliation and outreach
+      emails — start to finish, in order.</p>
+    <div class="facts">
+      <div class="fact"><div class="k">Runs</div><div class="v">Mondays, 7:00 AM Central</div></div>
+      <div class="fact"><div class="k">Schedule</div><div class="v mono">0 12 * * 1 (UTC)</div></div>
+      <div class="fact"><div class="k">Job</div><div class="v mono">caj-tpcrm-import-monday-nat</div></div>
+      <div class="fact"><div class="k">SFTP egress IP</div><div class="v mono">104.46.113.57</div></div>
+    </div>
+  </header>
+
+  <h2>The run, step by step</h2>
+  <div class="flow">
+
+    <div class="step">
+      <div class="rail"><div class="node">1</div><div class="line"></div></div>
+      <div class="card">
+        <h3>Eligibility feeds</h3>
+        <p>Every due config-driven eligibility feed is pulled from SFTP into its client staging table,
+          then reconciled into the canonical <code>dbo.eligibility</code> — adding new members, updating
+          existing ones, and terminating members who dropped off the file.</p>
+        <div class="io"><span class="pill">SFTP roster</span><span class="arrow">&rarr;</span>
+          <span class="pill">Eligibility_&lt;Client&gt;</span><span class="arrow">&rarr;</span>
+          <span class="pill out">dbo.eligibility</span></div>
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="rail"><div class="node">2</div><div class="line"></div></div>
+      <div class="card">
+        <h3>MCR Hotels registry pipeline<span class="tag mail">emails</span></h3>
+        <p>MCR Hotels' roster and claims are imported and reconciled (eligibility + claims), then its
+          reconciliation report is emailed to the AMT distribution list.</p>
+        <div class="io"><span class="pill">SFTP files</span><span class="arrow">&rarr;</span>
+          <span class="pill">staging</span><span class="arrow">&rarr;</span>
+          <span class="pill out">dbo.eligibility</span><span class="pill out">ClaimsData_Prod</span></div>
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="rail"><div class="node">3</div><div class="line"></div></div>
+      <div class="card">
+        <h3>Claims loaders</h3>
+        <p>Each client's monthly claims file is appended (add-only, so re-runs are safe) into its own
+          <code>ClaimsData_&lt;Client&gt;</code> table — the raw, per-client record of every claim line.</p>
+        <div class="io"><span class="pill">claims file (.xlsx)</span><span class="arrow">&rarr;</span>
+          <span class="pill out">ClaimsData_&lt;Client&gt;</span></div>
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="rail"><div class="node">4</div><div class="line"></div></div>
+      <div class="card">
+        <h3>Reconcile claims to production<span class="tag mail">emails</span></h3>
+        <p>The new claim lines from each client table are normalized <b>add-only</b> into
+          <code>ClaimsData_Prod</code> — the single table the app reads. Each client that had activity
+          gets its own reconciliation email (claims added + eligibility adds / updates / terms).</p>
+        <div class="io"><span class="pill">ClaimsData_&lt;Client&gt;</span><span class="arrow">&rarr;</span>
+          <span class="pill out">ClaimsData_Prod</span></div>
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="rail"><div class="node">5</div><div class="line"></div></div>
+      <div class="card">
+        <h3>GLP-1 &rarr; OnBase export<span class="tag mail">emails</span><span class="tag bridge">bridge</span></h3>
+        <p>Identifies GLP-1 members across all clients (full drug list, matched to eligibility for the
+          Member ID) that are <b>not already in OnBase</b>, and emails the CSV to the OnBase load team as
+          an action alert. Sends only when there are new records.</p>
+        <div class="io"><span class="pill">ClaimsData_Prod</span><span class="arrow">&rarr;</span>
+          <span class="pill">GLP-1, not in OnBase</span><span class="arrow">&rarr;</span>
+          <span class="pill out">CSV &rarr; techsupport@</span></div>
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="rail"><div class="node">6</div><div class="line"></div></div>
+      <div class="card">
+        <h3>Coverage report<span class="tag mail">emails</span></h3>
+        <p>Sweeps the entire SFTP tree and cross-references it against the active loaders and the
+          processed-file log, so any folder or file <b>without a working loader</b> — or a new file not
+          yet loaded — is surfaced. The summary is emailed to the distribution list.</p>
+        <div class="io"><span class="pill">SFTP tree scan</span><span class="arrow">&rarr;</span>
+          <span class="pill out">weekly report email</span></div>
+      </div>
+    </div>
+
+  </div>
+
+  <h2>Emails sent each run</h2>
+  <div class="scroll">
+    <table>
+      <thead><tr><th>Email</th><th>Goes to</th><th>When</th></tr></thead>
+      <tbody>
+        <tr><td class="who">Per-client reconciliation<br><span style="font-weight:400;color:var(--muted);font-size:13px">adds / updates / terms + claims</span></td>
+            <td class="mono">bwalker@truepathsourcing.com<br>amtfileloads@truepathsourcing.com</td>
+            <td>Once per client, only when that client had activity</td></tr>
+        <tr><td class="who">GLP-1 &rarr; OnBase load alert<br><span style="font-weight:400;color:var(--muted);font-size:13px">CSV attached</span></td>
+            <td class="mono">techsupport@workflowinnovators.com</td>
+            <td>Only when there are new GLP-1 records to load</td></tr>
+        <tr><td class="who">Weekly coverage report</td>
+            <td class="mono">amtfileloads@truepathsourcing.com</td>
+            <td>Every run</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h2>Reconcile rules &amp; what the app reads</h2>
+  <div class="grid2">
+    <div class="rule">
+      <h3>Eligibility &rarr; <code>dbo.eligibility</code></h3>
+      <ul>
+        <li class="add">In file, not in eligibility &rarr; <b>add</b> (Active)</li>
+        <li class="upd">In both &rarr; <b>update</b> fields, keep Active (blanks never overwrite existing values)</li>
+        <li class="term">In eligibility, not in file &rarr; <b>terminate</b> — set thru-date to the file date, mark Inactive</li>
+      </ul>
+    </div>
+    <div class="rule">
+      <h3>Claims &rarr; <code>ClaimsData_Prod</code></h3>
+      <ul>
+        <li>Keyed on client + claim line (patient, service date, NDC, Rx, fill)</li>
+        <li><b>Add new only</b> — existing prod rows are never changed or deleted</li>
+        <li>Cost columns carried through (Plan Paid / Gross Cost / Copay)</li>
+      </ul>
+    </div>
+  </div>
+  <p style="font-size:13.5px;color:var(--muted);margin:16px 2px 0">The app reads
+    <code>ClaimsData_Prod</code> and <code>dbo.eligibility</code> — never the per-client tables. Every
+    client flows the same way: <b>client file &rarr; client table &rarr; reconcile &rarr; production</b>.</p>
+
+  <h2>Clients in the claims pipeline</h2>
+  <div class="clients">
+    <span class="client">CSE Americas <b>020373</b></span>
+    <span class="client">City of Mission <b>077803</b></span>
+    <span class="client">Smith County <b>PSI1022</b></span>
+    <span class="client">Gregg County <b>366696</b></span>
+    <span class="client">CareGiver <b>10116</b></span>
+    <span class="client">FSG <b>909765</b></span>
+    <span class="client">City of McAllen <b>PSI3604</b></span>
+    <span class="client">Harrison Beverage <b>2871</b></span>
+    <span class="client">MCR Hotels <b>76416172</b></span>
+    <span class="client">Anders Group <b>000239911</b></span>
+    <span class="client">RHA <b>PSI4105</b></span>
+  </div>
+
+  <h2>The GLP-1 &rarr; OnBase step is temporary</h2>
+  <div class="note">
+    <h3>Bridge until full app cutover</h3>
+    <p>Step 5 exists only to keep OnBase fed with new GLP-1 outreach records while the old system is still
+      in use. Once client <b>contract &amp; benefit setup</b> lands in the new app — so any client configured
+      for GLP-1 outreach gets the logic automatically — this weekly export to OnBase can be retired.</p>
+  </div>
+
+  <footer>
+    Orchestrated by <code>scripts/import_monday.py</code>; design &amp; per-client rules in
+    <code>scripts/client_imports/PIPELINE.md</code>. Runs on the VNet/NAT jobs environment
+    (<code>cae-tpcrm-jobs</code>) so it exits from a fixed IP the SFTP hosts allow. To change a recipient,
+    an added client, or the schedule, edit the orchestrator and its config — this page reflects the
+    current run.
+  </footer>
+</div>
