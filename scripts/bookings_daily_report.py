@@ -51,7 +51,7 @@ def fetch(cur, test):
     booked_central = f"CAST(b.created_at {CENTRAL} AS datetime)"
     sql = f"""
         SELECT b.slot_start, b.company_name, b.first_name, b.last_name, b.name,
-               b.dob, b.phone, b.email, {booked_central} AS booked_ct, s.name AS scheduler
+               b.dob, b.phone, b.email, b.lang, {booked_central} AS booked_ct, s.name AS scheduler
         FROM dbo.Bookings b
         LEFT JOIN dbo.Booking_Schedulers s ON s.id = b.scheduler_id
         {{where}}
@@ -94,19 +94,21 @@ def build_html(rows, subtitle, test):
           'text-transform:uppercase;color:#64748b;border-bottom:2px solid #e2e8f0')
     td = "padding:13px 14px;font-size:14px;color:#0f172a;border-bottom:1px solid #eef2f6;vertical-align:top"
     head = "".join(f'<th style="{th}">{h}</th>' for h in
-                   ["When", "Company", "Name", "DOB", "Phone", "Email", "Booked"])
+                   ["When", "Company", "Name", "DOB", "Phone", "Email", "Language", "Booked"])
 
     # Group registrants under their scheduler, preserving first-seen order.
     groups = {}
     for r in rows:
-        key = r[9] or "(no scheduler)"
+        key = r[10] or "(no scheduler)"
         groups.setdefault(key, []).append(r)
 
     def row_html(r):
-        slot, company, fn, ln, name, dob, phone, email, booked, sched = r
+        slot, company, fn, ln, name, dob, phone, email, lang, booked, sched = r
         nm = (f"{(fn or '').strip()} {(ln or '').strip()}".strip()) or (name or "")
         em = (f'<a href="mailto:{esc(email)}" style="color:#2563eb;text-decoration:none">{esc(email)}</a>'
               if email else '<span style="color:#94a3b8">—</span>')
+        lg = ('<b style="color:#b45309">Español</b>' if (lang or "").lower().startswith("es")
+              else '<span style="color:#64748b">English</span>')
         return (f'<tr>'
                 f'<td style="{td}">{when(slot)}</td>'
                 f'<td style="{td}">{esc(company) or "—"}</td>'
@@ -114,6 +116,7 @@ def build_html(rows, subtitle, test):
                 f'<td style="{td}">{mdY(dob)}</td>'
                 f'<td style="{td};font-variant-numeric:tabular-nums">{esc(phone) or "—"}</td>'
                 f'<td style="{td}">{em}</td>'
+                f'<td style="{td}">{lg}</td>'
                 f'<td style="{td};color:#475569">{mdY(booked)}</td>'
                 f'</tr>')
 

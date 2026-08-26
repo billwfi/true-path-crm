@@ -341,8 +341,10 @@
   // Group open slots by date and seed the calendar on the first available day.
   function buildSlotData(slots) {
     slotsByDate = {};
+    const cutoff = Date.now() + 2 * 60 * 60 * 1000;   // 2-hour advance-booking buffer
     slots.filter(s => s.remaining > 0).forEach(s => {
       s.date = centralToInstant(s.start);      // real instant for this Central slot
+      if (s.date.getTime() <= cutoff) return;  // too soon to book — hide it
       const day = localKey(s.date);            // group by the visitor's local date
       (slotsByDate[day] = slotsByDate[day] || []).push(s);
     });
@@ -450,6 +452,7 @@
       slot_start: selected,
       company_name: company, first_name: first, last_name: last, dob, phone,
       email: val('b-email'),
+      lang,   // which language the visitor booked in (so the team knows if Spanish-speaking)
     };
     const res = await fetch(`${API}/marketing-schedulers?s=${encodeURIComponent(slug)}`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),

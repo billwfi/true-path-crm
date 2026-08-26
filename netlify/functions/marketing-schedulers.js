@@ -68,6 +68,21 @@ function generateSlots(s) {
   return slots;
 }
 
+// Registrants must book at least this far ahead. Slots inside the window are hidden by
+// the booking page and rejected here. The cutoff is the current time PLUS the buffer,
+// expressed as a naive Central wall-clock string to match how slots are generated — so
+// a string compare (slot >= cutoff) is a correct "at least 2 hours out" test.
+const BOOKING_BUFFER_MS = 2 * 60 * 60 * 1000;
+function bookingCutoff() {
+  const p = {};
+  new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/Chicago', hour12: false,
+    year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit',
+  }).formatToParts(new Date(Date.now() + BOOKING_BUFFER_MS)).forEach((x) => { p[x.type] = x.value; });
+  const h = p.hour === '24' ? '00' : p.hour;
+  return `${p.year}-${p.month}-${p.day}T${h}:${p.minute}:${p.second}`;
+}
+
 exports.handler = async function (event) {
   if (event.httpMethod === 'OPTIONS') return options();
   const { id, s: slug, booking, concierges, appointments } = event.queryStringParameters || {};
@@ -88,9 +103,9 @@ exports.handler = async function (event) {
         const takenBy = {};
         counts.recordset.forEach(r => { takenBy[isoLocal(new Date(r.slot_start))] = r.taken; });
 
-        const now = new Date();
+        const cutoff = bookingCutoff();   // 2-hour advance-booking buffer
         const slots = generateSlots(sched)
-          .filter(iso => new Date(iso) > now)
+          .filter(iso => iso >= cutoff)
           .map(iso => ({ start: iso, remaining: Math.max(0, sched.capacity_per_slot - (takenBy[iso] || 0)) }));
         return ok({ scheduler: sched, slots });
       }
@@ -111,7 +126,7 @@ exports.handler = async function (event) {
         // Validate the requested slot is real and in the future.
         const valid = generateSlots(sched);
         if (!valid.includes(b.slot_start)) return badRequest('That time slot is not valid.');
-        if (new Date(b.slot_start) <= new Date()) return badRequest('That time slot has passed.');
+        if (b.slot_start < bookingCutoff()) return badRequest('That time is too soon — please choose a slot at least 2 hours from now.');
 
         // Enforce capacity.
         const c = await mssql(
@@ -119,14 +134,15 @@ exports.handler = async function (event) {
           { sid: sched.id, slot: b.slot_start });
         if (c.recordset[0].taken >= sched.capacity_per_slot) return badRequest('Sorry, that time slot is now full.');
 
+        const lang = b.lang === 'es' ? 'es' : 'en';   // which language the booking page was in
         const r = await mssql(
           `INSERT INTO dbo.Bookings
-             (scheduler_id, slot_start, name, company_name, first_name, last_name, dob, email, phone, notes)
+             (scheduler_id, slot_start, name, company_name, first_name, last_name, dob, email, phone, notes, lang)
            OUTPUT INSERTED.id, INSERTED.slot_start
-           VALUES (@sid, @slot, @name, @company, @first, @last, @dob, @email, @phone, @notes)`,
+           VALUES (@sid, @slot, @name, @company, @first, @last, @dob, @email, @phone, @notes, @lang)`,
           { sid: sched.id, slot: b.slot_start, name: `${first} ${last}`,
             company, first, last, dob: b.dob,
-            email: (b.email || '').trim() || null, phone, notes: (b.notes || '').trim() || null });
+            email: (b.email || '').trim() || null, phone, notes: (b.notes || '').trim() || null, lang });
 
         // Notify the OnBase team the moment a registration comes in (fire-and-forget —
         // never block or fail the booker's confirmation on the email).
@@ -143,6 +159,9 @@ exports.handler = async function (event) {
             ${row('Date of Birth', esc(b.dob))}
             ${row('Phone', esc(phone))}
             ${row('Email', esc(b.email) || '&mdash;')}
+            ${row('Language', lang === 'es'
+              ? '<b style="color:#b45309">Spanish (Español) &mdash; Spanish-speaking</b>'
+              : 'English')}
           </table></div>`;
         sendEmail({ to: SCHEDULER_NOTIFY_TO, subject: `New registration: ${first} ${last} — ${sched.name}`, html })
           .catch(() => { /* notification best-effort; booking already saved */ });
