@@ -139,40 +139,31 @@
     <div class="step">
       <div class="rail"><div class="node">2</div><div class="line"></div></div>
       <div class="card">
-        <h3>MCR Hotels registry pipeline<span class="tag mail">emails</span></h3>
-        <p>MCR Hotels' roster and claims are imported and reconciled (eligibility + claims), then its
-          reconciliation report is emailed to the AMT distribution list.</p>
-        <div class="io"><span class="pill">SFTP files</span><span class="arrow">&rarr;</span>
-          <span class="pill">staging</span><span class="arrow">&rarr;</span>
-          <span class="pill out">dbo.eligibility</span><span class="pill out">ClaimsData_Prod</span></div>
+        <h3>Load claims &amp; client files</h3>
+        <p>Each client's monthly claims file is appended (add-only, so re-runs are safe) into its own
+          <code>ClaimsData_&lt;Client&gt;</code> table. Clients with a bespoke file format — MCR Hotels'
+          roster/claims workbook, Anders' 834 — use their own loader into staging, but land in the same
+          per-client tables.</p>
+        <div class="io"><span class="pill">claims / roster file</span><span class="arrow">&rarr;</span>
+          <span class="pill out">ClaimsData_&lt;Client&gt;</span><span class="pill out">Eligibility_&lt;Client&gt;</span></div>
       </div>
     </div>
 
     <div class="step">
       <div class="rail"><div class="node">3</div><div class="line"></div></div>
       <div class="card">
-        <h3>Claims loaders</h3>
-        <p>Each client's monthly claims file is appended (add-only, so re-runs are safe) into its own
-          <code>ClaimsData_&lt;Client&gt;</code> table — the raw, per-client record of every claim line.</p>
-        <div class="io"><span class="pill">claims file (.xlsx)</span><span class="arrow">&rarr;</span>
-          <span class="pill out">ClaimsData_&lt;Client&gt;</span></div>
+        <h3>Reconcile to production<span class="tag mail">emails</span></h3>
+        <p>Every client is reconciled the same way: new claim lines go <b>add-only</b> into
+          <code>ClaimsData_Prod</code>, and any eligibility feed is add/update/terminated into
+          <code>dbo.eligibility</code> — the two tables the app reads. Each client that had activity gets
+          its own reconciliation email (claims added + eligibility adds / updates / terms).</p>
+        <div class="io"><span class="pill">ClaimsData_&lt;Client&gt;</span><span class="arrow">&rarr;</span>
+          <span class="pill out">ClaimsData_Prod</span><span class="pill out">dbo.eligibility</span></div>
       </div>
     </div>
 
     <div class="step">
       <div class="rail"><div class="node">4</div><div class="line"></div></div>
-      <div class="card">
-        <h3>Reconcile claims to production<span class="tag mail">emails</span></h3>
-        <p>The new claim lines from each client table are normalized <b>add-only</b> into
-          <code>ClaimsData_Prod</code> — the single table the app reads. Each client that had activity
-          gets its own reconciliation email (claims added + eligibility adds / updates / terms).</p>
-        <div class="io"><span class="pill">ClaimsData_&lt;Client&gt;</span><span class="arrow">&rarr;</span>
-          <span class="pill out">ClaimsData_Prod</span></div>
-      </div>
-    </div>
-
-    <div class="step">
-      <div class="rail"><div class="node">5</div><div class="line"></div></div>
       <div class="card">
         <h3>GLP-1 &rarr; OnBase export<span class="tag mail">emails</span><span class="tag bridge">bridge</span></h3>
         <p>Identifies GLP-1 members across all clients (full drug list, matched to eligibility for the
@@ -185,7 +176,7 @@
     </div>
 
     <div class="step">
-      <div class="rail"><div class="node">6</div><div class="line"></div></div>
+      <div class="rail"><div class="node">5</div><div class="line"></div></div>
       <div class="card">
         <h3>Coverage report<span class="tag mail">emails</span></h3>
         <p>Sweeps the entire SFTP tree and cross-references it against the active loaders and the
