@@ -172,17 +172,18 @@ def main():
         worker_out = (p.stdout or "") + (p.stderr or "")
         print(worker_out)
 
-        # Registry-pipeline clients (MCR Hotels): SFTP import -> reconcile to prod.
+        # Load registry-format client files into their staging tables. MCR Hotels ships a
+        # bespoke roster/claims format (a specific worksheet + a computed group id) that its
+        # own loader handles — the same way parse_834 handles Anders. It is then reconciled
+        # in the unified loop below, exactly like every other client.
         here = os.path.dirname(__file__)
         for client in REGISTRY_CLIENTS:
-            print(f"Running registry pipeline: {client}…")
+            print(f"Loading {client} files…")
             try:
                 subprocess.run([sys.executable, os.path.join(here, "client_imports", "sftp_import.py"), client],
                                capture_output=True, text=True, timeout=1800)
-                subprocess.run([sys.executable, os.path.join(here, "client_imports", "reconcile.py"), client, "--commit", "--send"],
-                               capture_output=True, text=True, timeout=1800)
             except Exception as e:  # noqa: BLE001 - never let one client fail the whole run
-                print(f"  registry {client} error: {e}")
+                print(f"  {client} load error: {e}")
 
         # Claims loaders — add-only append into the per-client claims tables the app reads.
         print("Running claims loaders…")
@@ -193,20 +194,24 @@ def main():
         except Exception as e:  # noqa: BLE001
             print(f"  claims_loader error: {e}")
 
-        # Clients whose claims the app reads from the standardized ClaimsData_Prod:
-        # the rows just raw-loaded into their per-client table are normalized into
-        # prod here. --claims-only keeps this off any separate eligibility job
-        # (e.g. the weekly 834) and its AMT email.
-        for client in ("anders", "rha", "cseamericas", "cityofmission", "smithcounty",
-                       "greggcounty", "caregiver", "fsg", "mcallen", "harrison"):
-            print(f"Reconciling {client} claims -> prod…")
+        # Reconcile every client into ClaimsData_Prod / dbo.eligibility, each with its own
+        # per-client reconciliation email. MCR Hotels runs the FULL reconcile (its eligibility
+        # feed was loaded above); the rest are claims-only — their eligibility is loaded by
+        # separate config feeds (import_worker) or the weekly 834 job.
+        reconcile_clients = [("mcrhotels", False)] + [
+            (c, True) for c in ("anders", "rha", "cseamericas", "cityofmission", "smithcounty",
+                                "greggcounty", "caregiver", "fsg", "mcallen", "harrison")]
+        for client, claims_only in reconcile_clients:
+            print(f"Reconciling {client}…")
             try:
-                rp = subprocess.run([sys.executable, os.path.join(here, "client_imports", "reconcile.py"),
-                                     client, "--claims-only", "--commit", "--send"],
-                                    capture_output=True, text=True, timeout=1800)
+                cmd = [sys.executable, os.path.join(here, "client_imports", "reconcile.py"),
+                       client, "--commit", "--send"]
+                if claims_only:
+                    cmd.append("--claims-only")
+                rp = subprocess.run(cmd, capture_output=True, text=True, timeout=1800)
                 print((rp.stdout or "") + (rp.stderr or ""))
             except Exception as e:  # noqa: BLE001
-                print(f"  {client} claims reconcile error: {e}")
+                print(f"  {client} reconcile error: {e}")
 
         # GLP-1 -> OnBase export (BRIDGE until full cutover): email the OnBase load
         # team (techsupport@) a CSV of new GLP-1 members not yet in OnBase.
