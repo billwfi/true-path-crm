@@ -1,0 +1,406 @@
+<title>Invoicing Build Backlog</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Serif:ital,wght@0,500;1,400&display=swap">
+<style>
+  :root{
+    --ground:#eef2f1; --surface:#ffffff; --surface-2:#f6f9f8;
+    --ink:#0f1e1c; --muted:#5a6b69; --faint:#8a9997;
+    --border:#dbe4e2; --border-strong:#c4d0ce;
+    --teal:#0f766e; --teal-deep:#0b4f49; --teal-soft:#e3f0ee;
+    --amber:#b45309; --amber-soft:#fbefdc;
+    --rose:#b23a48; --rose-soft:#f7e4e6;
+    --blue:#1f5f8b; --blue-soft:#e2edf4;
+    --shadow:0 1px 2px rgba(15,30,28,.04),0 4px 16px rgba(15,30,28,.05);
+  }
+  :root:not([data-theme="light"]){
+    @media (prefers-color-scheme: dark){
+      --ground:#0a1211; --surface:#101b19; --surface-2:#0d1615;
+      --ink:#e7efed; --muted:#93a4a1; --faint:#63736f;
+      --border:#1e2c2a; --border-strong:#2b3b39;
+      --teal:#4cbfb2; --teal-deep:#7fd6cb; --teal-soft:#12312d;
+      --amber:#e0a960; --amber-soft:#2e2415;
+      --rose:#e08b95; --rose-soft:#2e191c;
+      --blue:#7fb4d8; --blue-soft:#16242e;
+      --shadow:0 1px 2px rgba(0,0,0,.3),0 6px 20px rgba(0,0,0,.35);
+    }
+  }
+  :root[data-theme="dark"]{
+    --ground:#0a1211; --surface:#101b19; --surface-2:#0d1615;
+    --ink:#e7efed; --muted:#93a4a1; --faint:#63736f;
+    --border:#1e2c2a; --border-strong:#2b3b39;
+    --teal:#4cbfb2; --teal-deep:#7fd6cb; --teal-soft:#12312d;
+    --amber:#e0a960; --amber-soft:#2e2415;
+    --rose:#e08b95; --rose-soft:#2e191c;
+    --blue:#7fb4d8; --blue-soft:#16242e;
+    --shadow:0 1px 2px rgba(0,0,0,.3),0 6px 20px rgba(0,0,0,.35);
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0;background:var(--ground);color:var(--ink);
+    font-family:"IBM Plex Sans",system-ui,-apple-system,Segoe UI,Roboto,sans-serif;
+    line-height:1.55;-webkit-font-smoothing:antialiased;
+  }
+  .wrap{max-width:1000px;margin:0 auto;padding:clamp(20px,4vw,56px) clamp(16px,4vw,40px) 80px}
+  a{color:var(--teal)}
+
+  /* ── Masthead ─────────────────────────────────────── */
+  .eyebrow{font-family:"IBM Plex Mono",monospace;font-size:12px;letter-spacing:.16em;
+    text-transform:uppercase;color:var(--teal);font-weight:600;margin:0 0 14px}
+  h1{font-size:clamp(30px,5vw,46px);line-height:1.05;margin:0 0 16px;
+    font-weight:700;letter-spacing:-.02em;text-wrap:balance}
+  h1 em{font-family:"IBM Plex Serif",serif;font-style:italic;font-weight:400;color:var(--teal-deep)}
+  .lede{font-size:clamp(16px,2vw,18px);color:var(--muted);max-width:66ch;margin:0 0 24px}
+  .meta-row{display:flex;flex-wrap:wrap;gap:8px 10px;font-family:"IBM Plex Mono",monospace;font-size:12.5px}
+  .chip{display:inline-flex;align-items:center;gap:6px;padding:5px 11px;border-radius:999px;
+    background:var(--surface);border:1px solid var(--border);color:var(--muted)}
+  .chip b{color:var(--ink);font-weight:600}
+  .rule{height:1px;background:var(--border);margin:34px 0}
+
+  /* ── Two-process comparison ───────────────────────── */
+  .compare{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin:8px 0 4px}
+  @media(max-width:640px){.compare{grid-template-columns:1fr}}
+  .proc{background:var(--surface);border:1px solid var(--border);border-radius:14px;
+    padding:22px 22px 20px;box-shadow:var(--shadow);position:relative;overflow:hidden}
+  .proc::before{content:"";position:absolute;inset:0 auto 0 0;width:4px;background:var(--teal)}
+  .proc.b::before{background:var(--blue)}
+  .proc h3{margin:0 0 3px;font-size:18px;font-weight:700}
+  .proc .who{font-family:"IBM Plex Mono",monospace;font-size:12px;color:var(--faint);margin:0 0 14px}
+  .proc ul{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:9px}
+  .proc li{font-size:14px;color:var(--muted);padding-left:18px;position:relative}
+  .proc li::before{content:"";position:absolute;left:2px;top:8px;width:6px;height:6px;
+    border-radius:50%;background:var(--teal)}
+  .proc.b li::before{background:var(--blue)}
+  .proc li b{color:var(--ink);font-weight:600}
+
+  .callout{background:var(--amber-soft);border:1px solid color-mix(in srgb,var(--amber) 30%,transparent);
+    border-radius:12px;padding:16px 18px;margin:22px 0 0;font-size:14.5px;color:var(--ink)}
+  .callout b{color:var(--amber)}
+
+  /* ── Section ──────────────────────────────────────── */
+  section{margin-top:44px}
+  .sec-head{display:flex;align-items:baseline;gap:14px;margin:0 0 18px;
+    padding-bottom:12px;border-bottom:2px solid var(--border)}
+  .sec-num{font-family:"IBM Plex Mono",monospace;font-size:13px;font-weight:600;
+    color:var(--teal);letter-spacing:.05em}
+  .sec-head h2{margin:0;font-size:22px;font-weight:700;letter-spacing:-.01em}
+
+  /* ── Item cards ───────────────────────────────────── */
+  .items{display:flex;flex-direction:column;gap:12px}
+  .item{background:var(--surface);border:1px solid var(--border);border-radius:12px;
+    padding:16px 18px;box-shadow:var(--shadow);display:grid;
+    grid-template-columns:auto 1fr auto;gap:4px 16px;align-items:start}
+  @media(max-width:640px){.item{grid-template-columns:1fr;gap:8px}}
+  .id{font-family:"IBM Plex Mono",monospace;font-size:12px;font-weight:600;color:var(--faint);
+    padding-top:3px;white-space:nowrap}
+  .item h4{margin:0 0 5px;font-size:15.5px;font-weight:600;line-height:1.3}
+  .item p{margin:0;font-size:14px;color:var(--muted)}
+  .item .src{margin:8px 0 0;font-size:12.5px;color:var(--faint);
+    font-family:"IBM Plex Mono",monospace}
+  .item .src b{color:var(--muted);font-weight:500}
+  .tags{display:flex;flex-direction:column;gap:6px;align-items:flex-end}
+  @media(max-width:640px){.tags{flex-direction:row;align-items:center}}
+  .tag{font-family:"IBM Plex Mono",monospace;font-size:10.5px;font-weight:600;letter-spacing:.05em;
+    text-transform:uppercase;padding:3px 9px;border-radius:6px;white-space:nowrap}
+  .t-core{background:var(--teal-soft);color:var(--teal-deep)}
+  .t-high{background:var(--rose-soft);color:var(--rose)}
+  .t-med{background:var(--blue-soft);color:var(--blue)}
+  .t-phase{background:var(--surface-2);color:var(--faint);border:1px solid var(--border)}
+  .t-confirm{background:var(--amber-soft);color:var(--amber)}
+
+  .legend{display:flex;flex-wrap:wrap;gap:8px 16px;margin:18px 0 0;font-size:12.5px;color:var(--muted)}
+  .legend span{display:inline-flex;align-items:center;gap:7px}
+  .dot{width:10px;height:10px;border-radius:3px;display:inline-block}
+
+  footer{margin-top:52px;padding-top:22px;border-top:1px solid var(--border);
+    font-size:13px;color:var(--faint)}
+  footer b{color:var(--muted);font-weight:600}
+</style>
+
+<div class="wrap">
+
+  <p class="eyebrow">CRM Discovery · Billing &amp; Invoicing</p>
+  <h1>Invoicing in the new CRM: a <em>build backlog</em></h1>
+  <p class="lede">Development items pulled from the Aug&nbsp;24 billing discovery meeting. Two invoicing
+    processes run today — both almost entirely by hand in Excel and QuickBooks. This is the candidate list
+    of what the new CRM should absorb, for the group to review and prioritize.</p>
+  <div class="meta-row">
+    <span class="chip">Source&nbsp; <b>CRM Dev — Invoicing, 8.24.26</b></span>
+    <span class="chip">Attendees&nbsp; <b>Bill · Maria · Lili · Erika · Kirby</b></span>
+    <span class="chip">Status&nbsp; <b>For review</b></span>
+  </div>
+
+  <div class="rule"></div>
+
+  <div class="compare">
+    <div class="proc a">
+      <h3>Standard clients</h3>
+      <p class="who">owner: Maria · QuickBooks + Excel</p>
+      <ul>
+        <li><b>Weekly master order report</b> (Fri→Thu) reconciled against the <b>monthly client report</b>.</li>
+        <li>Bills off <b>"plan paid"</b>; a per-client <b>bank transfer every Friday</b>.</li>
+        <li>Month-end: weeklies + transfers must tie to the monthly invoice.</li>
+        <li>Discrepancies come from <b>cancellations, deletes, and silent price changes</b>.</li>
+      </ul>
+    </div>
+    <div class="proc b">
+      <h3>RxCompass</h3>
+      <p class="who">owner: Lili · Excel per Compass spec</p>
+      <ul>
+        <li><b>Biweekly</b> submission file, columns formatted to Compass's layout.</li>
+        <li>Compass pays <b>per prescription / per order</b>, not per invoice.</li>
+        <li>Reconciles <b>~40 payment emails</b> back to Rx numbers by hand.</li>
+        <li>Wrestles <b>unit-of-measure</b> (mL, auto-injectors), bad NDCs, 90-day insurance lag.</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="callout">
+    <b>The through-line:</b> get client <b>contracts + formulary</b> set up right, add a real
+    <b>audit trail</b> (no hard deletes), and most of this manual reconciliation disappears. Everything
+    below hangs off those two foundations.
+  </div>
+
+  <!-- 1 -->
+  <section>
+    <div class="sec-head"><span class="sec-num">01</span><h2>Core invoicing platform</h2></div>
+    <div class="items">
+      <div class="item">
+        <span class="id">INV-1</span>
+        <div><h4>Dedicated client invoicing area</h4>
+          <p>A first-class invoicing workspace in the CRM where billing data is visible and worked end-to-end,
+             seeded with old-system data through last week to compare old vs. new.</p>
+          <p class="src"><b>raised by</b> Bill — committed to stand this up</p></div>
+        <div class="tags"><span class="tag t-core">Core</span></div>
+      </div>
+      <div class="item">
+        <span class="id">INV-2</span>
+        <div><h4>Two configurable invoice models</h4>
+          <p>Support <b>monthly per-client</b> invoicing (standard) and <b>per-order / per-prescription</b>
+             invoicing (RxCompass) as selectable models on a client.</p>
+          <p class="src"><b>from</b> Maria &amp; Lili — the processes are structurally different</p></div>
+        <div class="tags"><span class="tag t-core">Core</span></div>
+      </div>
+      <div class="item">
+        <span class="id">INV-3</span>
+        <div><h4>Contract-driven billing logic</h4>
+          <p>The client contract holds the billing rules + formulary that drive invoicing — "set the contracts
+             and formulary right and this flows easily." Ties to the client/contract/benefit setup work.</p>
+          <p class="src"><b>theme</b> across the meeting — the foundation</p></div>
+        <div class="tags"><span class="tag t-core">Core</span></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 2 -->
+  <section>
+    <div class="sec-head"><span class="sec-num">02</span><h2>Reconciliation &amp; audit trail</h2></div>
+    <div class="items">
+      <div class="item">
+        <span class="id">REC-1</span>
+        <div><h4>No hard deletes — soft-cancel only</h4>
+          <p>Transactions can be <b>canceled</b> but never deleted. The current CRM lets anyone delete or
+             re-price with no restriction — the root cause of month-end discrepancies.</p>
+          <p class="src"><b>raised repeatedly</b> — top pain point</p></div>
+        <div class="tags"><span class="tag t-high">High</span></div>
+      </div>
+      <div class="item">
+        <span class="id">REC-2</span>
+        <div><h4>Full audit trail</h4>
+          <p>Who changed what and when on every transaction and price — so a discrepancy can be traced instead
+             of hunted.</p>
+          <p class="src"><b>from</b> Maria — "no way to see what changed"</p></div>
+        <div class="tags"><span class="tag t-high">High</span></div>
+      </div>
+      <div class="item">
+        <span class="id">REC-3</span>
+        <div><h4>Automated weekly ↔ monthly reconciliation</h4>
+          <p>Roll weeklies up to the monthly client report automatically and <b>flag each discrepancy with its
+             reason</b> (cancel vs. delete vs. price change) — ending the "$650 vs $625, go find the $25" hunt.</p>
+          <p class="src"><b>from</b> Maria — the recurring month-end effort</p></div>
+        <div class="tags"><span class="tag t-high">High</span></div>
+      </div>
+      <div class="item">
+        <span class="id">REC-4</span>
+        <div><h4>Week/month boundary handling</h4>
+          <p>Correctly split a Fri→Thu week that spans two calendar months across the right invoices.</p>
+          <p class="src"><b>from</b> Maria — a manual edge case today</p></div>
+        <div class="tags"><span class="tag t-med">Med</span></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 3 -->
+  <section>
+    <div class="sec-head"><span class="sec-num">03</span><h2>Weekly registry &amp; bank submission</h2></div>
+    <div class="items">
+      <div class="item">
+        <span class="id">BNK-1</span>
+        <div><h4>Auto-generated weekly registry</h4>
+          <p>Produce the per-client Fri→Thu registry Maria now builds by hand — "here's exactly what to submit
+             to the bank, by client" — straight from the CRM.</p>
+          <p class="src"><b>from</b> Maria — replaces weekly Excel</p></div>
+        <div class="tags"><span class="tag t-core">Core</span></div>
+      </div>
+      <div class="item">
+        <span class="id">BNK-2</span>
+        <div><h4>Bank payment push (API)</h4>
+          <p>Send the per-client transfer to the bank via secure API instead of manual submission.</p>
+          <p class="src"><b>from</b> Bill — later phase</p></div>
+        <div class="tags"><span class="tag t-phase">Phase 2</span></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 4 -->
+  <section>
+    <div class="sec-head"><span class="sec-num">04</span><h2>RxCompass per-order handling</h2></div>
+    <div class="items">
+      <div class="item">
+        <span class="id">CMP-1</span>
+        <div><h4>Per-prescription payment tracking</h4>
+          <p>Track paid/unpaid status per prescription inside the CRM instead of Lili's parallel spreadsheet.</p>
+          <p class="src"><b>from</b> Lili — Compass pays per order</p></div>
+        <div class="tags"><span class="tag t-high">High</span></div>
+      </div>
+      <div class="item">
+        <span class="id">CMP-2</span>
+        <div><h4>Match incoming payments to prescriptions</h4>
+          <p>Reconcile the ~40 payment emails per cycle to Rx numbers automatically, handling
+             <b>duplicate prescription numbers across companies</b> and the <b>90-day insurance lag</b>.</p>
+          <p class="src"><b>from</b> Lili — the heaviest manual step</p></div>
+        <div class="tags"><span class="tag t-high">High</span></div>
+      </div>
+      <div class="item">
+        <span class="id">CMP-3</span>
+        <div><h4>Generate the Compass-format submission file</h4>
+          <p>Output the biweekly file with columns arranged to Compass's spec, so no manual Excel reshaping.</p>
+          <p class="src"><b>from</b> Lili — needs her template + steps (see follow-ups)</p></div>
+        <div class="tags"><span class="tag t-med">Med</span></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 5 -->
+  <section>
+    <div class="sec-head"><span class="sec-num">05</span><h2>Product master &amp; pricing</h2></div>
+    <div class="items">
+      <div class="item">
+        <span class="id">PRD-1</span>
+        <div><h4>NDC-driven product master</h4>
+          <p>Product master keyed by NDC with correct pricing, so bad/missing Product IDs stop being fixed by
+             hand every cycle.</p>
+          <p class="src"><b>from</b> Lili — recurring data cleanup</p></div>
+        <div class="tags"><span class="tag t-high">High</span></div>
+      </div>
+      <div class="item">
+        <span class="id">PRD-2</span>
+        <div><h4>Unit-of-measure tracking</h4>
+          <p>Handle tablet/capsule vs. <b>mL / ounce / auto-injector</b> and per-unit vs. per-mL pricing
+             (e.g. Kesimpta qty 1.2 = 3 pens out the door).</p>
+          <p class="src"><b>from</b> Lili — liquids &amp; injectables mis-bill today</p></div>
+        <div class="tags"><span class="tag t-high">High</span></div>
+      </div>
+      <div class="item">
+        <span class="id">PRD-3</span>
+        <div><h4>Versioned price lists + change notifications</h4>
+          <p>Enforce the current price list, keep price history, and <b>notify on price changes</b> — silent
+             changes are a direct source of discrepancies.</p>
+          <p class="src"><b>from</b> Maria &amp; Lili</p></div>
+        <div class="tags"><span class="tag t-med">Med</span></div>
+      </div>
+      <div class="item">
+        <span class="id">PRD-4</span>
+        <div><h4>Pricing / quantity validation</h4>
+          <p>Catch wrong amounts or quantities before they reach an invoice.</p>
+          <p class="src"><b>from</b> Lili — manual review step today</p></div>
+        <div class="tags"><span class="tag t-med">Med</span></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 6 -->
+  <section>
+    <div class="sec-head"><span class="sec-num">06</span><h2>Integrations &amp; triggers</h2></div>
+    <div class="items">
+      <div class="item">
+        <span class="id">INT-1</span>
+        <div><h4>Pull invoice source data</h4>
+          <p>Feed the invoicing area from <b>Liviniti, Compass/Covidity, eligibility, and claims</b> instead of
+             manual exports.</p>
+          <p class="src"><b>theme</b> — the data already exists in the pipeline</p></div>
+        <div class="tags"><span class="tag t-med">Med</span></div>
+      </div>
+      <div class="item">
+        <span class="id">INT-2</span>
+        <div><h4>Push invoices to QuickBooks</h4>
+          <p>Send invoice records into QuickBooks (their accounting system); design for a Sage Intacct–class
+             system too.</p>
+          <p class="src"><b>from</b> Erika — accounting lives outside the CRM</p></div>
+        <div class="tags"><span class="tag t-med">Med</span></div>
+      </div>
+      <div class="item">
+        <span class="id">INT-3</span>
+        <div><h4>Triggers from procurement &amp; rebates</h4>
+          <p>Auto-trigger billing from procurement (order → billing) and from rebates, so records flow in
+             without re-keying.</p>
+          <p class="src"><b>from</b> Kirby / Erika — upstream of invoicing</p></div>
+        <div class="tags"><span class="tag t-med">Med</span></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 7 -->
+  <section>
+    <div class="sec-head"><span class="sec-num">07</span><h2>Open questions &amp; follow-ups</h2></div>
+    <div class="items">
+      <div class="item">
+        <span class="id">Q-1</span>
+        <div><h4>Retro add/term &amp; billing-ahead logic</h4>
+          <p>Confirm with Procurement whether billing-ahead + retro add/term (e.g. cancel-before-the-15th)
+             applies here — only shipped orders are billed, so it may not.</p>
+          <p class="src"><b>raised by</b> Bill — needs confirmation</p></div>
+        <div class="tags"><span class="tag t-confirm">Confirm</span></div>
+      </div>
+      <div class="item">
+        <span class="id">Q-2</span>
+        <div><h4>Collect Lili's Compass template &amp; steps</h4>
+          <p>Get the RxCompass Excel + step-by-step process and a sample weekly pricing file — the format
+             CMP-3 must reproduce.</p>
+          <p class="src"><b>action</b> Bill to collect from Lili</p></div>
+        <div class="tags"><span class="tag t-confirm">Confirm</span></div>
+      </div>
+      <div class="item">
+        <span class="id">Q-3</span>
+        <div><h4>Clarify MidOS / MCR Compass handling</h4>
+          <p>These sit in Maria's master report but are processed through Lili's separate procedure — decide
+             where they live in the new model.</p>
+          <p class="src"><b>action</b> Maria &amp; Lili to align</p></div>
+        <div class="tags"><span class="tag t-confirm">Confirm</span></div>
+      </div>
+      <div class="item">
+        <span class="id">Q-4</span>
+        <div><h4>Collect sample standard reports</h4>
+          <p>Grab the master + monthly client reports exported to Excel for field mapping.</p>
+          <p class="src"><b>action</b> Bill to collect from Maria</p></div>
+        <div class="tags"><span class="tag t-confirm">Confirm</span></div>
+      </div>
+    </div>
+  </section>
+
+  <div class="legend">
+    <span><span class="dot" style="background:var(--teal)"></span> Core — foundational</span>
+    <span><span class="dot" style="background:var(--rose)"></span> High — heaviest manual pain</span>
+    <span><span class="dot" style="background:var(--blue)"></span> Med — clear win, not blocking</span>
+    <span><span class="dot" style="background:var(--faint)"></span> Phase 2 — later</span>
+    <span><span class="dot" style="background:var(--amber)"></span> Confirm — needs decision/input</span>
+  </div>
+
+  <footer>
+    <b>19 candidate items · 4 open questions.</b> Synthesized from the 8.24.26 billing discovery transcript for
+    group review — not a committed scope. Tags are a starting proposal; priority and sequencing are the point
+    of the review.
+  </footer>
+
+</div>
