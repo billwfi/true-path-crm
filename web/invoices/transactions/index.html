@@ -24,7 +24,7 @@
       <!-- Summary tiles -->
       <div class="grid grid-cols-2 md:grid-cols-5 gap-3 mb-4" id="tiles">
         <div class="card"><div class="card-body p-4"><div class="text-xs uppercase tracking-wide text-slate-400">Transactions</div><div class="text-2xl font-semibold" id="t-txns">—</div></div></div>
-        <div class="card"><div class="card-body p-4"><div class="text-xs uppercase tracking-wide text-slate-400">Tied to a group</div><div class="text-2xl font-semibold text-sky-700" id="t-matched">—</div></div></div>
+        <div class="card"><div class="card-body p-4"><div class="text-xs uppercase tracking-wide text-slate-400">Resolved to client</div><div class="text-2xl font-semibold text-sky-700" id="t-matched">—</div></div></div>
         <div class="card"><div class="card-body p-4"><div class="text-xs uppercase tracking-wide text-slate-400">Total amount</div><div class="text-2xl font-semibold" id="t-amount">—</div></div></div>
         <div class="card"><div class="card-body p-4"><div class="text-xs uppercase tracking-wide text-slate-400">Paid</div><div class="text-2xl font-semibold text-emerald-600" id="t-paid">—</div></div></div>
         <div class="card"><div class="card-body p-4"><div class="text-xs uppercase tracking-wide text-slate-400">Outstanding</div><div class="text-2xl font-semibold text-amber-600" id="t-out">—</div></div></div>
@@ -43,8 +43,8 @@
           <select class="form-control" style="max-width:170px" id="f-paid" onchange="reload()">
             <option value="">Any payment state</option><option value="unpaid">Unpaid</option>
             <option value="partial">Partially paid</option><option value="paid">Paid in full</option></select>
-          <select class="form-control" style="max-width:170px" id="f-matched" onchange="reload()">
-            <option value="">Group tie: any</option><option value="1">Tied to a group</option><option value="0">Untied</option></select>
+          <select class="form-control" style="max-width:180px" id="f-resolved" onchange="reload()">
+            <option value="">Resolution: any</option><option value="1">Resolved to client</option><option value="0">Unresolved</option></select>
           <input class="form-control" style="flex:1;min-width:180px" id="f-search" placeholder="Search patient, order #, drug, cardholder…" oninput="debounced()">
           <button class="btn btn-outline" onclick="exportRows()"><i class="fa-solid fa-file-excel"></i> Export</button>
         </div>
@@ -53,7 +53,7 @@
       <div class="card"><div class="card-body p-0">
         <div style="overflow-x:auto">
         <table class="data-table" style="min-width:1100px"><thead><tr>
-          <th>Order #</th><th>Patient</th><th>Group</th><th>Drug</th><th>Qty</th><th>Date</th>
+          <th>Order #</th><th>Patient</th><th>Client / Group</th><th>Drug</th><th>Qty</th><th>Date</th>
           <th class="text-right">Amount</th><th class="text-right">Paid</th><th class="text-right">Balance</th>
           <th>Status</th><th></th></tr></thead>
         <tbody id="rows"><tr><td colspan="11" class="text-center py-8 text-slate-400">Loading…</td></tr></tbody></table></div>
@@ -94,9 +94,9 @@
 
   function qs(){
     const p = new URLSearchParams();
-    const g=val('f-group'), st=val('f-status'), pd=val('f-paid'), m=val('f-matched'), s=val('f-search'), w=val('f-window');
+    const g=val('f-group'), st=val('f-status'), pd=val('f-paid'), rz=val('f-resolved'), s=val('f-search'), w=val('f-window');
     if(g)p.set('group',g); if(st)p.set('status',st); if(pd)p.set('paid',pd);
-    if(m)p.set('matched',m); if(s)p.set('search',s);
+    if(rz)p.set('resolved',rz); if(s)p.set('search',s);
     if(w && w!=='all')p.set('days',w);
     return p.toString();
   }
@@ -108,7 +108,7 @@
     const s=await apiGet('/uf-transactions?resource=summary&'+p.toString()).catch(()=>null);
     if(!s)return;
     document.getElementById('t-txns').textContent=(s.txns||0).toLocaleString();
-    document.getElementById('t-matched').textContent=(s.matched||0).toLocaleString();
+    document.getElementById('t-matched').textContent=(s.resolved||0).toLocaleString();
     document.getElementById('t-amount').textContent=fmt(s.amount);
     document.getElementById('t-paid').textContent=fmt(s.paid);
     document.getElementById('t-out').textContent=fmt((s.amount||0)-(s.paid||0));
@@ -160,7 +160,11 @@
     b.innerHTML = rowsCache.length ? rowsCache.map((r,i)=>`<tr>
       <td class="font-mono text-xs">${esc(r.order_number)||('#'+r.source_id)}</td>
       <td>${esc((r.patient_last||'')+', '+(r.patient_first||'')).replace(/^, |, $/,'')||'—'}</td>
-      <td>${r.group_id?`<span class="font-mono text-xs">${esc(r.group_id)}</span>${r.matches_eligibility?'':' <span title="not found in eligibility" class="text-amber-500">⚠</span>'}`:'<span class="text-slate-300">—</span>'}</td>
+      <td>${r.resolved_company
+            ? `<div class="font-medium">${esc(r.resolved_company)}</div><div class="text-xs text-slate-400 font-mono">${esc(r.tp_group_id)||''} · grp ${esc(r.group_id)}</div>`
+            : (r.group_id
+                ? `<span class="text-amber-600 text-xs">unresolved</span><div class="text-xs text-slate-400 font-mono">grp ${esc(r.group_id)}</div>`
+                : '<span class="text-slate-300">—</span>')}</td>
       <td>${esc(r.drug)||'—'}<div class="text-xs text-slate-400">${esc(r.strength)||''}</div></td>
       <td class="text-xs">${r.reporting_qty!=null?esc(r.reporting_qty):''} ${esc(r.reporting_unit)||''}</td>
       <td class="text-xs">${esc(r.date_ordered)||'—'}</td>
@@ -215,10 +219,11 @@
 
   function exportRows(){
     if(!rowsCache.length)return showToast('Nothing to export','error');
-    const header=['Order #','Patient','Group','Matched','Drug','Strength','Qty','Unit','Date Ordered','Shipped','Amount','Paid','Balance','Status'];
+    const header=['Order #','Patient','Client','TP Group','Group ID','Drug','Strength','Qty','Unit','Date Ordered','Shipped','Amount','Paid','Balance','Status'];
     const body=rowsCache.map(r=>[r.order_number||('#'+r.source_id),
-      ((r.patient_last||'')+', '+(r.patient_first||'')).replace(/^, |, $/,''), r.group_id||'',
-      r.matches_eligibility?'Y':'N', r.drug||'', r.strength||'', r.reporting_qty??'', r.reporting_unit||'',
+      ((r.patient_last||'')+', '+(r.patient_first||'')).replace(/^, |, $/,''),
+      r.resolved_company||'', r.tp_group_id||'', r.group_id||'',
+      r.drug||'', r.strength||'', r.reporting_qty??'', r.reporting_unit||'',
       r.date_ordered||'', r.shipped_date||'', Number(r.amount)||0, Number(r.paid)||0, Number(r.balance)||0, r.status||'']);
     const ws=XLSX.utils.aoa_to_sheet([header,...body]);
     ws['!cols']=header.map(h=>({wch:Math.max(9,h.length+2)}));

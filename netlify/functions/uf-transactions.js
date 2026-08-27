@@ -26,7 +26,7 @@ exports.handler = async function (event) {
   const user = verifyToken(event);
   if (!user) return unauthorized();
 
-  const { resource, id, transaction_id, group, status, paid, matched, search, days } =
+  const { resource, id, transaction_id, group, status, paid, matched, search, days, resolved } =
     event.queryStringParameters || {};
 
   try {
@@ -35,6 +35,8 @@ exports.handler = async function (event) {
       if (resource === 'summary') {
         const r = (await mssql(
           `SELECT COUNT(*) txns,
+                  SUM(CASE WHEN t.resolved_group_pk IS NOT NULL THEN 1 ELSE 0 END) resolved,
+                  COUNT(DISTINCT t.tp_group_id) tp_groups,
                   SUM(CASE WHEN t.matches_eligibility=1 THEN 1 ELSE 0 END) matched,
                   COUNT(DISTINCT t.group_id) groups,
                   ISNULL(SUM(t.amount),0) amount,
@@ -78,6 +80,7 @@ exports.handler = async function (event) {
         `SELECT TOP 500 t.id, t.source_id, t.order_number, t.transaction_number,
                 t.patient_first, t.patient_last, t.cardholder_id, t.member_id,
                 t.group_id, t.raw_group_id, t.matches_eligibility,
+                t.tp_group_id, t.resolved_company, t.resolved_pbm_id, t.resolved_group_pk,
                 t.drug, t.strength, t.reporting_qty, t.reporting_unit,
                 t.amount, t.status, t.order_status, t.date_ordered, t.shipped_date,
                 ISNULL(p.paid,0) paid, (ISNULL(t.amount,0)-ISNULL(p.paid,0)) balance,
@@ -87,6 +90,9 @@ exports.handler = async function (event) {
          WHERE (@group IS NULL OR t.group_id=@group)
            AND (@status IS NULL OR t.status=@status)
            AND (@matched IS NULL OR t.matches_eligibility=@matched)
+           AND (@resolved IS NULL
+                OR (@resolved='1' AND t.resolved_group_pk IS NOT NULL)
+                OR (@resolved='0' AND t.resolved_group_pk IS NULL))
            AND (@s IS NULL OR t.patient_last LIKE @s OR t.patient_first LIKE @s
                 OR t.order_number LIKE @s OR t.drug LIKE @s OR t.cardholder_id LIKE @s)
            AND (@paid IS NULL
@@ -97,6 +103,7 @@ exports.handler = async function (event) {
          ORDER BY ${PDATE('t.')} DESC, t.source_id DESC`,
         { group: group || null, status: status || null,
           matched: (matched === '0' || matched === '1') ? parseInt(matched, 10) : null,
+          resolved: (resolved === '0' || resolved === '1') ? resolved : null,
           paid: paid || null, s: search ? `%${search}%` : null, days: daysParam(days) })).recordset;
       return ok(r);
     }

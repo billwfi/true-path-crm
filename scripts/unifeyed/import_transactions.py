@@ -78,12 +78,32 @@ WHEN NOT MATCHED THEN INSERT
 """
 
 
+# Resolve each transaction to its client/group via PBM_Groups (group_code = group_id).
+RESOLVE_SQL = r"""
+UPDATE t SET
+    resolved_group_pk = g.id, tp_group_id = g.tp_group_id,
+    resolved_company = COALESCE(NULLIF(g.company_name,''), NULLIF(g.group_name,'')),
+    resolved_pbm_id = g.pbm_id
+FROM dbo.tp_uf_transactions t
+JOIN dbo.PBM_Groups g ON g.group_code = t.group_id;
+
+-- clear any stale resolution where the group no longer matches
+UPDATE t SET resolved_group_pk = NULL, tp_group_id = NULL, resolved_company = NULL, resolved_pbm_id = NULL
+FROM dbo.tp_uf_transactions t
+WHERE t.resolved_group_pk IS NOT NULL
+  AND NOT EXISTS (SELECT 1 FROM dbo.PBM_Groups g WHERE g.id = t.resolved_group_pk AND g.group_code = t.group_id);
+"""
+
+
 def main():
     cn = db()
     cur = cn.cursor()
     before = cur.execute("SELECT COUNT(*) FROM dbo.tp_uf_transactions").fetchone()[0]
     cur.execute(MERGE_SQL)
+    cur.execute(RESOLVE_SQL)
     after = cur.execute("SELECT COUNT(*) FROM dbo.tp_uf_transactions").fetchone()[0]
+    resolved = cur.execute("SELECT COUNT(*) FROM dbo.tp_uf_transactions WHERE resolved_group_pk IS NOT NULL").fetchone()[0]
+    print(f"resolved to a client/group: {resolved}")
     stats = cur.execute(
         """SELECT COUNT(*), SUM(CASE WHEN matches_eligibility=1 THEN 1 ELSE 0 END),
                   COUNT(DISTINCT group_id), CAST(SUM(amount) AS decimal(18,2))
