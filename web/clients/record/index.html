@@ -46,6 +46,8 @@
                 <input class="form-control" id="f-irx_client_id" placeholder="Matches eligibility CARRIER"></div>
               <div class="form-group mb-0"><label class="form-label">Broker</label>
                 <select class="form-control" id="f-broker_id"><option value="">— None —</option></select></div>
+              <div class="form-group mb-0"><label class="form-label">PBM</label>
+                <select class="form-control" id="f-pbm_id"><option value="">— None —</option></select></div>
               <div class="form-group mb-0"><label class="form-label">Email</label><input class="form-control" type="email" id="f-email"></div>
               <div class="form-group mb-0"><label class="form-label">Phone</label><input class="form-control" id="f-phone"></div>
               <div class="form-group mb-0 full"><label class="form-label">Address</label><input class="form-control" id="f-address"></div>
@@ -342,10 +344,15 @@
 
   /* ── Demographics ── */
   async function populateDropdowns(selBroker) {
-    const brokers = await apiGet('/brokers').catch(() => []);
+    const [brokers, pbms] = await Promise.all([
+      apiGet('/brokers').catch(() => []),
+      apiGet('/pbms').catch(() => []),
+    ]);
     document.getElementById('f-broker_id').innerHTML = '<option value="">— None —</option>' +
       (brokers || []).map(b => `<option value="${b.id}">${esc(b.name)}</option>`).join('');
     if (selBroker != null) document.getElementById('f-broker_id').value = selBroker || '';
+    document.getElementById('f-pbm_id').innerHTML = '<option value="">— None —</option>' +
+      (pbms || []).map(p => `<option value="${p.id}">${esc(p.name)}</option>`).join('');
   }
 
   async function loadClient() {
@@ -365,6 +372,7 @@
     document.getElementById('f-state').value = c.state || '';
     document.getElementById('f-zip_code').value = c.zip_code || '';
     document.getElementById('f-broker_id').value = c.broker_id || '';
+    document.getElementById('f-pbm_id').value = c.pbm_id || '';
     document.getElementById('f-groups').value = c.groups || '';
     document.getElementById('f-import_file_path').value = c.import_file_path || '';
     document.getElementById('f-notes').value = c.notes || '';
@@ -389,6 +397,7 @@
       state: document.getElementById('f-state').value.trim(),
       zip_code: document.getElementById('f-zip_code').value.trim(),
       broker_id: parseInt(document.getElementById('f-broker_id').value) || null,
+      pbm_id: parseInt(document.getElementById('f-pbm_id').value) || null,
       groups: document.getElementById('f-groups').value.trim(),
       import_file_path: document.getElementById('f-import_file_path').value.trim(),
       notes: document.getElementById('f-notes').value.trim(),

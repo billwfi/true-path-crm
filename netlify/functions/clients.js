@@ -13,10 +13,11 @@ exports.handler = async function (event) {
     if (event.httpMethod === 'GET') {
       if (id) {
         const r = await mssql(
-          `SELECT c.*, b.name AS broker, b.id AS broker_id,
+          `SELECT c.*, b.name AS broker, b.id AS broker_id, p.name AS pbm,
            CONCAT(s.firstname, ' ', s.lastname) AS coordinator
            FROM tp_clients c
            LEFT JOIN tp_brokers b ON b.id = c.broker_id
+           LEFT JOIN tp_pbms p ON p.id = c.pbm_id
            LEFT JOIN tp_staff s ON s.id = c.account_coordinator
            WHERE c.id = @id`, { id: parseInt(id, 10) });
         return r.recordset[0] ? ok(r.recordset[0]) : notFound();
@@ -37,13 +38,14 @@ exports.handler = async function (event) {
       const b = JSON.parse(event.body || '{}');
       const r = await mssql(
         `INSERT INTO tp_clients (name, email, phone, address, city, state, zip_code,
-           broker_id, account_coordinator, groups, notes, irx_client_id, import_file_path, active)
+           broker_id, pbm_id, account_coordinator, groups, notes, irx_client_id, import_file_path, active)
          VALUES (@name,@email,@phone,@address,@city,@state,@zip_code,
-           @broker_id,@account_coordinator,@groups,@notes,@irx_client_id,@import_file_path,@active);
+           @broker_id,@pbm_id,@account_coordinator,@groups,@notes,@irx_client_id,@import_file_path,@active);
          SELECT CAST(SCOPE_IDENTITY() AS INT) AS id;`,
         { name: b.name || '', email: b.email || null, phone: b.phone || null,
           address: b.address || null, city: b.city || null, state: b.state || null, zip_code: b.zip_code || null,
-          broker_id: parseInt(b.broker_id) || null, account_coordinator: parseInt(b.account_coordinator) || null,
+          broker_id: parseInt(b.broker_id) || null, pbm_id: parseInt(b.pbm_id) || null,
+          account_coordinator: parseInt(b.account_coordinator) || null,
           groups: b.groups || null, notes: b.notes || null, irx_client_id: b.irx_client_id || null,
           import_file_path: b.import_file_path || null,
           active: (b.active === false || b.active === 0) ? 0 : 1 });
@@ -55,14 +57,15 @@ exports.handler = async function (event) {
       const b = JSON.parse(event.body || '{}');
       await mssql(
         `UPDATE tp_clients SET name=@name, email=@email, phone=@phone, address=@address, city=@city,
-           state=@state, zip_code=@zip_code, active=@active, broker_id=@broker_id,
+           state=@state, zip_code=@zip_code, active=@active, broker_id=@broker_id, pbm_id=@pbm_id,
            account_coordinator=@account_coordinator, groups=@groups, notes=@notes, irx_client_id=@irx_client_id,
            import_file_path=@import_file_path
          WHERE id=@id`,
         { name: b.name, email: b.email || null, phone: b.phone || null, address: b.address || null,
           city: b.city || null, state: b.state || null, zip_code: b.zip_code || null,
           active: (b.active !== false && b.active !== 0) ? 1 : 0,
-          broker_id: parseInt(b.broker_id) || null, account_coordinator: parseInt(b.account_coordinator) || null,
+          broker_id: parseInt(b.broker_id) || null, pbm_id: parseInt(b.pbm_id) || null,
+          account_coordinator: parseInt(b.account_coordinator) || null,
           groups: b.groups || null, notes: b.notes || null, irx_client_id: b.irx_client_id || null,
           import_file_path: b.import_file_path || null,
           id: parseInt(id, 10) });
