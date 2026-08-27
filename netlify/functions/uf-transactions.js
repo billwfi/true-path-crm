@@ -13,12 +13,20 @@ const { verifyToken, unauthorized, ok, created, badRequest, serverError, options
 const PAID_SUB = `(SELECT transaction_id, SUM(amount) paid, COUNT(*) cnt
                    FROM dbo.tp_uf_transaction_payments GROUP BY transaction_id)`;
 
+// date_ordered is free-text; parse MM/DD/YYYY first, then an ISO prefix.
+const PDATE = (a) => `COALESCE(TRY_CONVERT(date, ${a}date_ordered, 101), TRY_CONVERT(date, LEFT(${a}date_ordered,10), 23))`;
+// "last N days" relative to the most recent transaction in the current group scope.
+const DAYS_CLAUSE = (a) =>
+  `(@days IS NULL OR ${PDATE(a)} >= DATEADD(day, -@days,
+     (SELECT MAX(${PDATE('')}) FROM dbo.tp_uf_transactions WHERE (@group IS NULL OR group_id=@group))))`;
+const daysParam = (d) => (d && d !== 'all' && parseInt(d, 10) > 0 ? parseInt(d, 10) : null);
+
 exports.handler = async function (event) {
   if (event.httpMethod === 'OPTIONS') return options();
   const user = verifyToken(event);
   if (!user) return unauthorized();
 
-  const { resource, id, transaction_id, group, status, paid, matched, search } =
+  const { resource, id, transaction_id, group, status, paid, matched, search, days } =
     event.queryStringParameters || {};
 
   try {
@@ -27,14 +35,15 @@ exports.handler = async function (event) {
       if (resource === 'summary') {
         const r = (await mssql(
           `SELECT COUNT(*) txns,
-                  SUM(CASE WHEN matches_eligibility=1 THEN 1 ELSE 0 END) matched,
-                  COUNT(DISTINCT group_id) groups,
-                  ISNULL(SUM(amount),0) amount,
+                  SUM(CASE WHEN t.matches_eligibility=1 THEN 1 ELSE 0 END) matched,
+                  COUNT(DISTINCT t.group_id) groups,
+                  ISNULL(SUM(t.amount),0) amount,
                   ISNULL((SELECT SUM(pp.amount) FROM dbo.tp_uf_transaction_payments pp
-                          JOIN dbo.tp_uf_transactions tt ON tt.id=pp.transaction_id
-                          WHERE (@g IS NULL OR tt.group_id=@g)),0) paid
-           FROM dbo.tp_uf_transactions WHERE (@g IS NULL OR group_id=@g)`,
-          { g: group || null })).recordset[0];
+                          WHERE pp.transaction_id IN (SELECT t2.id FROM dbo.tp_uf_transactions t2
+                                WHERE (@group IS NULL OR t2.group_id=@group) AND ${DAYS_CLAUSE('t2.')})),0) paid
+           FROM dbo.tp_uf_transactions t
+           WHERE (@group IS NULL OR t.group_id=@group) AND ${DAYS_CLAUSE('t.')}`,
+          { group: group || null, days: daysParam(days) })).recordset[0];
         return ok(r);
       }
 
@@ -84,10 +93,11 @@ exports.handler = async function (event) {
                 OR (@paid='unpaid'  AND ISNULL(p.paid,0)=0)
                 OR (@paid='partial' AND ISNULL(p.paid,0)>0 AND ISNULL(p.paid,0)<ISNULL(t.amount,0))
                 OR (@paid='paid'    AND ISNULL(t.amount,0)>0 AND ISNULL(p.paid,0)>=ISNULL(t.amount,0)))
-         ORDER BY t.source_id DESC`,
+           AND ${DAYS_CLAUSE('t.')}
+         ORDER BY ${PDATE('t.')} DESC, t.source_id DESC`,
         { group: group || null, status: status || null,
           matched: (matched === '0' || matched === '1') ? parseInt(matched, 10) : null,
-          paid: paid || null, s: search ? `%${search}%` : null })).recordset;
+          paid: paid || null, s: search ? `%${search}%` : null, days: daysParam(days) })).recordset;
       return ok(r);
     }
 
