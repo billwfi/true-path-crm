@@ -151,16 +151,29 @@
   </div><div class="modal-footer"><button class="btn btn-outline" onclick="hideModal('groupModal')">Cancel</button><button class="btn btn-primary" onclick="saveGroup()">Save</button></div></div></div>
 
 <div id="membersModal" class="modal-backdrop hidden"><div class="modal modal-lg"><div class="modal-header"><span class="modal-title" id="mem-title">Eligibility</span><button class="modal-close" onclick="hideModal('membersModal')">&times;</button></div>
-  <div class="modal-body"><input id="mem-search" class="form-control mb-3" placeholder="Search members…" oninput="debounceMembers()">
-    <table class="data-table"><thead><tr><th>Member ID</th><th>Name</th><th>DOB</th><th>Group</th><th>Effective</th><th>Source</th></tr></thead>
-    <tbody id="mem-body"></tbody></table></div></div></div>
+  <div class="modal-body">
+    <div class="flex items-center gap-2 mb-3">
+      <input id="mem-search" class="form-control" style="flex:1" placeholder="Search members…" oninput="debounceMembers()">
+      <span id="mem-count" class="text-xs text-slate-400 whitespace-nowrap"></span>
+      <button class="btn btn-outline btn-sm whitespace-nowrap" onclick="exportMembers()"><i class="fa-solid fa-file-excel"></i> Export to Excel</button>
+    </div>
+    <p class="text-xs text-slate-400 mb-2">Click a member to see the full record.</p>
+    <div style="overflow-x:auto">
+    <table class="data-table" style="min-width:1050px"><thead><tr>
+      <th>Member ID</th><th>Name</th><th>DOB</th><th>Person</th><th>Relationship</th>
+      <th>Group</th><th>Plan</th><th>Location</th><th>Effective</th><th>Status</th><th>Source</th></tr></thead>
+    <tbody id="mem-body"></tbody></table></div></div></div></div>
+
+<div id="memberDetailModal" class="modal-backdrop hidden"><div class="modal"><div class="modal-header"><span class="modal-title" id="md-title">Member</span><button class="modal-close" onclick="hideModal('memberDetailModal')">&times;</button></div>
+  <div class="modal-body"><div id="md-body"></div>
+  <div class="modal-footer" style="padding-top:12px"><button class="btn btn-outline btn-sm" onclick="hideModal('memberDetailModal')">Close</button></div></div></div></div>
 
 <script src="/assets/js/app.js"></script>
 <script>
   initNav('pbm-record');
   const pbmId = parseInt(new URLSearchParams(location.search).get('id'), 10) || null;
   let loaded = { contacts:false, contracts:false, groups:false };
-  let groupsCache = [], curGroup = null, gDebounce, mDebounce;
+  let groupsCache = [], curGroup = null, curGroupLabel = '', membersCache = [], gDebounce, mDebounce;
 
   function showModal(id){ document.getElementById(id).classList.remove('hidden'); }
   function hideModal(id){ document.getElementById(id).classList.add('hidden'); }
@@ -314,16 +327,76 @@
     if(r&&r.ok){ hideModal('groupModal'); loadGroups(); } else showToast('Save failed','error'); }
   async function delGroup(id){ if(!confirm('Delete group?'))return; const r=await apiDelete(`/pbm-detail?resource=group&id=${id}`); if(r&&r.ok) loadGroups(); }
 
-  function viewMembers(codeEnc,label){ curGroup=decodeURIComponent(codeEnc); document.getElementById('mem-title').textContent='Eligibility — '+label;
-    document.getElementById('mem-search').value=''; showModal('membersModal'); loadMembers(); }
+  function viewMembers(codeEnc,label){ curGroup=decodeURIComponent(codeEnc); curGroupLabel=label;
+    document.getElementById('mem-title').textContent='Eligibility — '+label;
+    document.getElementById('mem-search').value=''; membersCache=[]; document.getElementById('mem-count').textContent='';
+    showModal('membersModal'); loadMembers(); }
   function debounceMembers(){ clearTimeout(mDebounce); mDebounce=setTimeout(loadMembers,300); }
+
+  // Fields shown in the full member-detail drill-down, grouped into sections.
+  const MEM_DETAIL = [
+    ['Identity', [['MemberID','Member ID'],['PersonCode','Person Code'],['Relationship','Relationship'],
+      ['FirstName','First Name'],['MiddleName','Middle Name'],['LastName','Last Name'],['Suffix','Suffix'],
+      ['Gender','Gender'],['DateOfBirth','DOB'],['ExternalID','External ID'],['AlternateID','Alternate ID']]],
+    ['Coverage', [['GroupID','Group ID'],['GroupName','Group Name'],['PlanName','Plan'],['ClientID','Client ID'],
+      ['CompanyName','Company'],['CoverageLevelCode','Coverage Level'],['SecondaryCoverageOnly','Secondary Only'],
+      ['Active','Active'],['EffectiveStart','Effective Start'],['EffectiveEnd','Effective End']]],
+    ['Employment / Location', [['EmployeeStatusCode','Status Code'],['EmployeeStatus','Employee Status'],
+      ['EmployeeLocationCode','Location Code'],['EmployeeLocation','Location']]],
+    ['Contact', [['Address1','Address 1'],['Address2','Address 2'],['City','City'],['State','State'],
+      ['Zip','Zip'],['HomePhone','Phone'],['EmailAddress','Email']]],
+    ['Source', [['Source','Source']]],
+  ];
+  // Column order for the Excel export (label -> field).
+  const MEM_EXPORT = MEM_DETAIL.flatMap(([,rows]) => rows).map(([f,l]) => [l,f]);
+
   async function loadMembers(){ const s=document.getElementById('mem-search').value;
     const data=await apiGet(`/pbm-detail?resource=group-members&pbm_id=${pbmId}&group_code=${encodeURIComponent(curGroup)}${s?'&search='+encodeURIComponent(s):''}`);
-    document.getElementById('mem-body').innerHTML = (data&&data.length) ? data.map(m=>`<tr>
-      <td class="font-mono text-xs">${esc(m.MemberID)||'—'}</td><td>${esc(m.LastName)||''}, ${esc(m.FirstName)||''}</td>
-      <td>${esc(m.DateOfBirth)||'—'}</td><td class="font-mono text-xs">${esc(m.GroupID)||''}</td><td>${esc(m.EffectiveStart)||'—'}</td>
+    membersCache = data || [];
+    document.getElementById('mem-count').textContent = membersCache.length ? `${membersCache.length.toLocaleString()} member(s)` : '';
+    document.getElementById('mem-body').innerHTML = membersCache.length ? membersCache.map((m,i)=>`<tr style="cursor:pointer" onclick="showMemberDetail(${i})">
+      <td class="font-mono text-xs">${esc(m.MemberID)||'—'}</td><td class="font-medium">${esc(m.LastName)||''}, ${esc(m.FirstName)||''}</td>
+      <td>${esc(m.DateOfBirth)||'—'}</td><td class="font-mono text-xs">${esc(m.PersonCode)||'—'}</td><td>${esc(m.Relationship)||'—'}</td>
+      <td class="font-mono text-xs">${esc(m.GroupID)||''}</td><td>${esc(m.PlanName)||'—'}</td>
+      <td>${esc(m.EmployeeLocation||m.EmployeeLocationCode)||'—'}</td><td>${esc(m.EffectiveStart)||'—'}</td>
+      <td>${statusBadge(m)}</td>
       <td><span class="badge ${m.Source==='API'?'badge-green':'badge-gray'}">${esc(m.Source)}</span></td></tr>`).join('')
-      : '<tr><td colspan="6" class="text-center py-8 text-slate-400">No members</td></tr>';
+      : '<tr><td colspan="11" class="text-center py-8 text-slate-400">No members</td></tr>';
+  }
+
+  function statusBadge(m){
+    const a=(m.Active||'').toString().trim().toLowerCase();
+    const active = a==='y'||a==='yes'||a==='true'||a==='1'||a==='active';
+    const inactive = a==='n'||a==='no'||a==='false'||a==='0'||a==='inactive'||a==='termed';
+    if(active) return '<span class="badge badge-green">Active</span>';
+    if(inactive) return '<span class="badge badge-gray">Inactive</span>';
+    return esc(m.EmployeeStatus||m.Active)||'—';
+  }
+
+  function showMemberDetail(i){ const m=membersCache[i]; if(!m)return;
+    document.getElementById('md-title').textContent = `${(m.LastName||'').trim()}, ${(m.FirstName||'').trim()}`.replace(/^,\s*/,'') || (m.MemberID||'Member');
+    const cell=(f)=>{ const v=m[f]; return (v==null||v==='')?'<span class="text-slate-400">—</span>':esc(v); };
+    document.getElementById('md-body').innerHTML = MEM_DETAIL.map(([title,rows])=>`
+      <div style="margin-bottom:14px">
+        <div class="text-xs font-semibold uppercase tracking-wide text-slate-500" style="border-bottom:1px solid #e2e8f0;padding-bottom:4px;margin-bottom:8px">${title}</div>
+        <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px 20px">
+          ${rows.map(([f,l])=>`<div style="display:flex;justify-content:space-between;gap:12px;font-size:13px">
+            <span class="text-slate-500">${l}</span><span class="font-medium" style="text-align:right">${cell(f)}</span></div>`).join('')}
+        </div></div>`).join('');
+    showModal('memberDetailModal');
+  }
+
+  function exportMembers(){
+    const rows = membersCache || [];
+    if(!rows.length){ showToast('Nothing to export','error'); return; }
+    const header = MEM_EXPORT.map(([l])=>l);
+    const body = rows.map(m => MEM_EXPORT.map(([,f]) => m[f]==null ? '' : String(m[f])));
+    const ws = XLSX.utils.aoa_to_sheet([header, ...body]);
+    ws['!cols'] = MEM_EXPORT.map(([l]) => ({ wch: Math.min(28, Math.max(10, l.length+2)) }));
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Members');
+    const grp = (curGroupLabel||curGroup||'group').replace(/[^\w]+/g,'-').replace(/^-+|-+$/g,'').toLowerCase() || 'group';
+    XLSX.writeFile(wb, `eligibility-${grp}-${new Date().toISOString().slice(0,10)}.xlsx`);
   }
 
   function val(id){ return document.getElementById(id).value.trim(); }

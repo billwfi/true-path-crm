@@ -51,19 +51,26 @@ exports.handler = async function (event) {
         if (!group_code) return badRequest('group_code is required');
         const pid = parseInt(pbm_id, 10) || null;
         const hasElig = (await mssql("SELECT OBJECT_ID('dbo.Eligibility_Liviniti','U') oid")).recordset[0].oid;
+        // Full member detail — identity, coverage, contact, employment/location, meta.
+        // Column list is identical in both tables so the UNION ALL lines up.
+        // Shared columns present in BOTH tables (CompanyName exists only on the SFTP table,
+        // so it's added per-SELECT below to keep the UNION ALL column order aligned).
+        const cols = `CardholderID AS MemberID, PersonCode, Relationship, LastName, FirstName, MiddleName,
+                  Suffix, Gender, DateOfBirth, ExternalID, AlternateID, Address1, Address2, City, State, Zip,
+                  HomePhone, EmailAddress, GroupID, GroupName, PlanName, ClientID,
+                  EmployeeStatusCode, EmployeeStatus, EmployeeLocationCode, EmployeeLocation,
+                  CoverageLevelCode, SecondaryCoverageOnly, Active, EffectiveStart, EffectiveEnd`;
         const parts = [];
         if (hasElig) parts.push(
-          `SELECT TOP 1000 CardholderID AS MemberID, LastName, FirstName, DateOfBirth, GroupID, GroupName,
-                  EffectiveStart, EffectiveEnd, EmailAddress, 'SFTP' AS Source
+          `SELECT TOP 1000 ${cols}, CompanyName, 'SFTP' AS Source
            FROM dbo.Eligibility_Liviniti WHERE GroupID=@gc
              AND (@s IS NULL OR LastName LIKE @s OR FirstName LIKE @s OR CardholderID LIKE @s)`);
         parts.push(
-          `SELECT TOP 1000 CardholderID AS MemberID, LastName, FirstName, DateOfBirth, GroupID, GroupName,
-                  EffectiveStart, EffectiveEnd, EmailAddress, 'API' AS Source
+          `SELECT TOP 1000 ${cols}, CAST(NULL AS nvarchar(200)) AS CompanyName, 'API' AS Source
            FROM dbo.PBM_Member_Intake WHERE GroupID=@gc AND (@pid IS NULL OR pbm_id=@pid)
              AND (@s IS NULL OR LastName LIKE @s OR FirstName LIKE @s OR CardholderID LIKE @s)`);
         const r = await mssql(
-          `SELECT TOP 1000 * FROM (${parts.join(' UNION ALL ')}) x ORDER BY LastName, FirstName`,
+          `SELECT TOP 2000 * FROM (${parts.join(' UNION ALL ')}) x ORDER BY LastName, FirstName`,
           { gc: group_code, pid, s: search ? `%${search}%` : null });
         return ok(r.recordset);
       }
