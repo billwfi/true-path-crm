@@ -78,6 +78,13 @@ WHEN NOT MATCHED THEN INSERT
 """
 
 
+# Parse the free-text date_ordered into the indexed DATE column (queries filter/sort on it).
+DATE_SQL = r"""
+UPDATE dbo.tp_uf_transactions
+   SET date_ordered_d = COALESCE(TRY_CONVERT(date, date_ordered, 101), TRY_CONVERT(date, LEFT(date_ordered,10), 23))
+ WHERE date_ordered_d IS NULL AND NULLIF(LTRIM(RTRIM(date_ordered)),'') IS NOT NULL;
+"""
+
 # Resolve each transaction to its client/group via PBM_Groups (group_code = group_id).
 RESOLVE_SQL = r"""
 UPDATE t SET
@@ -100,6 +107,7 @@ def main():
     cur = cn.cursor()
     before = cur.execute("SELECT COUNT(*) FROM dbo.tp_uf_transactions").fetchone()[0]
     cur.execute(MERGE_SQL)
+    cur.execute(DATE_SQL)
     cur.execute(RESOLVE_SQL)
     after = cur.execute("SELECT COUNT(*) FROM dbo.tp_uf_transactions").fetchone()[0]
     resolved = cur.execute("SELECT COUNT(*) FROM dbo.tp_uf_transactions WHERE resolved_group_pk IS NOT NULL").fetchone()[0]

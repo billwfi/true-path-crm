@@ -13,12 +13,11 @@ const { verifyToken, unauthorized, ok, created, badRequest, serverError, options
 const PAID_SUB = `(SELECT transaction_id, SUM(amount) paid, COUNT(*) cnt
                    FROM dbo.tp_uf_transaction_payments GROUP BY transaction_id)`;
 
-// date_ordered is free-text; parse MM/DD/YYYY first, then an ISO prefix.
-const PDATE = (a) => `COALESCE(TRY_CONVERT(date, ${a}date_ordered, 101), TRY_CONVERT(date, LEFT(${a}date_ordered,10), 23))`;
+// date_ordered_d is the pre-parsed, indexed DATE of date_ordered (populated at load).
 // "last N days" relative to the most recent transaction in the current group scope.
 const DAYS_CLAUSE = (a) =>
-  `(@days IS NULL OR ${PDATE(a)} >= DATEADD(day, -@days,
-     (SELECT MAX(${PDATE('')}) FROM dbo.tp_uf_transactions WHERE (@group IS NULL OR group_id=@group))))`;
+  `(@days IS NULL OR ${a}date_ordered_d >= DATEADD(day, -@days,
+     (SELECT MAX(date_ordered_d) FROM dbo.tp_uf_transactions WHERE (@group IS NULL OR group_id=@group))))`;
 const daysParam = (d) => (d && d !== 'all' && parseInt(d, 10) > 0 ? parseInt(d, 10) : null);
 
 exports.handler = async function (event) {
@@ -54,12 +53,11 @@ exports.handler = async function (event) {
         const r = (await mssql(
           `SELECT t.group_id, MAX(t.raw_group_id) raw_group_id,
                   MAX(CAST(t.matches_eligibility AS int)) matched,
-                  COUNT(*) txns, ISNULL(SUM(t.amount),0) amount, nm.GroupName group_name
+                  COUNT(*) txns, ISNULL(SUM(t.amount),0) amount,
+                  MAX(t.resolved_company) group_name, MAX(t.tp_group_id) tp_group_id
            FROM dbo.tp_uf_transactions t
-           OUTER APPLY (SELECT TOP 1 GroupName FROM dbo.Eligibility_Liviniti e
-                        WHERE e.GroupID=t.group_id AND NULLIF(e.GroupName,'') IS NOT NULL) nm
            WHERE t.group_id IS NOT NULL
-           GROUP BY t.group_id, nm.GroupName
+           GROUP BY t.group_id
            ORDER BY amount DESC`)).recordset;
         return ok(r);
       }
@@ -100,7 +98,7 @@ exports.handler = async function (event) {
                 OR (@paid='partial' AND ISNULL(p.paid,0)>0 AND ISNULL(p.paid,0)<ISNULL(t.amount,0))
                 OR (@paid='paid'    AND ISNULL(t.amount,0)>0 AND ISNULL(p.paid,0)>=ISNULL(t.amount,0)))
            AND ${DAYS_CLAUSE('t.')}
-         ORDER BY ${PDATE('t.')} DESC, t.source_id DESC`,
+         ORDER BY t.date_ordered_d DESC, t.source_id DESC`,
         { group: group || null, status: status || null,
           matched: (matched === '0' || matched === '1') ? parseInt(matched, 10) : null,
           resolved: (resolved === '0' || resolved === '1') ? resolved : null,
