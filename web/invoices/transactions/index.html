@@ -87,7 +87,7 @@
   initNav('invoices-transactions');
   let rowsCache = [], curTxn = null, sDebounce;
   const fmt = n => '$' + (Number(n)||0).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2});
-  const esc = s => (s==null?'':String(s)).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  const escv = s => (s==null?'':String(s)).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
   function showModal(id){ document.getElementById(id).classList.remove('hidden'); }
   function hideModal(id){ document.getElementById(id).classList.add('hidden'); }
   function debounced(){ clearTimeout(sDebounce); sDebounce=setTimeout(reload,300); }
@@ -118,7 +118,7 @@
     const g=await apiGet('/uf-transactions?resource=groups').catch(()=>[]);
     const opts=(g||[]).map(x=>{
       const label=(x.group_name?x.group_name+' — ':'')+x.group_id+' ('+x.txns+' · '+fmt(x.amount)+')'+(x.matched?'':' ⚠');
-      return `<option value="${esc(x.group_id)}">${esc(label)}</option>`;
+      return `<option value="${escv(x.group_id)}">${escv(label)}</option>`;
     }).join('');
     document.getElementById('f-group').innerHTML='<option value="">All groups</option>'+opts;
     // status options from current rows are populated after first load
@@ -140,7 +140,7 @@
     const sel=document.getElementById('f-status');
     if(sel.options.length<=1){
       const set=[...new Set(rowsCache.map(r=>r.status).filter(Boolean))].sort();
-      sel.innerHTML='<option value="">All statuses</option>'+set.map(s=>`<option>${esc(s)}</option>`).join('');
+      sel.innerHTML='<option value="">All statuses</option>'+set.map(s=>`<option>${escv(s)}</option>`).join('');
     }
     renderRows();
   }
@@ -158,16 +158,16 @@
       ? 'Showing the first 500 matching transactions — narrow with filters.'
       : `${rowsCache.length.toLocaleString()} transaction(s)`;
     b.innerHTML = rowsCache.length ? rowsCache.map((r,i)=>`<tr>
-      <td class="font-mono text-xs">${esc(r.order_number)||('#'+r.source_id)}</td>
-      <td>${esc((r.patient_last||'')+', '+(r.patient_first||'')).replace(/^, |, $/,'')||'—'}</td>
+      <td class="font-mono text-xs">${escv(r.order_number)||('#'+r.source_id)}</td>
+      <td>${escv((r.patient_last||'')+', '+(r.patient_first||'')).replace(/^, |, $/,'')||'—'}</td>
       <td>${r.resolved_company
-            ? `<div class="font-medium">${esc(r.resolved_company)}</div><div class="text-xs text-slate-400 font-mono">${esc(r.tp_group_id)||''} · grp ${esc(r.group_id)}</div>`
+            ? `<div class="font-medium">${escv(r.resolved_company)}</div><div class="text-xs text-slate-400 font-mono">${escv(r.tp_group_id)||''} · grp ${escv(r.group_id)}</div>`
             : (r.group_id
-                ? `<span class="text-amber-600 text-xs">unresolved</span><div class="text-xs text-slate-400 font-mono">grp ${esc(r.group_id)}</div>`
+                ? `<span class="text-amber-600 text-xs">unresolved</span><div class="text-xs text-slate-400 font-mono">grp ${escv(r.group_id)}</div>`
                 : '<span class="text-slate-300">—</span>')}</td>
-      <td>${esc(r.drug)||'—'}<div class="text-xs text-slate-400">${esc(r.strength)||''}</div></td>
-      <td class="text-xs">${r.reporting_qty!=null?esc(r.reporting_qty):''} ${esc(r.reporting_unit)||''}</td>
-      <td class="text-xs">${esc(r.date_ordered)||'—'}</td>
+      <td>${escv(r.drug)||'—'}<div class="text-xs text-slate-400">${escv(r.strength)||''}</div></td>
+      <td class="text-xs">${r.reporting_qty!=null?escv(r.reporting_qty):''} ${escv(r.reporting_unit)||''}</td>
+      <td class="text-xs">${escv(r.date_ordered)||'—'}</td>
       <td class="text-right font-medium tabular-nums">${fmt(r.amount)}</td>
       <td class="text-right tabular-nums ${Number(r.paid)>0?'text-emerald-600':'text-slate-400'}">${fmt(r.paid)}</td>
       <td class="text-right tabular-nums ${Number(r.balance)>0?'text-amber-600':''}">${fmt(r.balance)}</td>
@@ -181,9 +181,9 @@
   async function openPay(i){
     const r=rowsCache[i]; curTxn=r;
     document.getElementById('pay-ctx').innerHTML =
-      `<b>${esc((r.patient_first||'')+' '+(r.patient_last||''))}</b> · ${esc(r.drug)||''} `+
-      `· order ${esc(r.order_number)||('#'+r.source_id)}<br>Amount ${fmt(r.amount)} · Paid ${fmt(r.paid)} · `+
-      `<b>Balance ${fmt(r.balance)}</b>${r.group_id?' · group '+esc(r.group_id):''}`;
+      `<b>${escv((r.patient_first||'')+' '+(r.patient_last||''))}</b> · ${escv(r.drug)||''} `+
+      `· order ${escv(r.order_number)||('#'+r.source_id)}<br>Amount ${fmt(r.amount)} · Paid ${fmt(r.paid)} · `+
+      `<b>Balance ${fmt(r.balance)}</b>${r.group_id?' · group '+escv(r.group_id):''}`;
     document.getElementById('p-amount').value = (Number(r.balance)>0?Number(r.balance).toFixed(2):'');
     document.getElementById('p-date').value=''; document.getElementById('p-method').value='';
     document.getElementById('p-reference').value=''; document.getElementById('p-note').value='';
@@ -194,8 +194,8 @@
       document.getElementById('pay-history').innerHTML = (h&&h.length)?
         '<div class="text-xs uppercase tracking-wide text-slate-400 mt-3 mb-1">Payments</div>'+
         h.map(p=>`<div class="flex justify-between text-sm border-b border-slate-100 py-1">
-          <span>${fmt(p.amount)} ${p.method?'· '+esc(p.method):''} ${p.reference?'· '+esc(p.reference):''}</span>
-          <span class="text-slate-400">${p.paid_date?esc(String(p.paid_date).slice(0,10)):''}
+          <span>${fmt(p.amount)} ${p.method?'· '+escv(p.method):''} ${p.reference?'· '+escv(p.reference):''}</span>
+          <span class="text-slate-400">${p.paid_date?escv(String(p.paid_date).slice(0,10)):''}
             <button class="text-red-400 ml-2" title="delete" onclick="delPay(${p.id})">&times;</button></span></div>`).join('') : '';
     }
   }
