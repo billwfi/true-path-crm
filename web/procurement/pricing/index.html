@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Client Pricing — True Path CRM</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+  <link rel="stylesheet" href="/assets/css/app.css">
+</head>
+<body class="bg-slate-100 text-slate-700">
+<div id="app" class="flex h-screen overflow-hidden">
+  <div id="nav-placeholder"></div>
+  <div class="flex-1 flex flex-col overflow-hidden">
+    <div id="topbar"></div>
+    <main class="flex-1 overflow-y-auto p-6">
+
+      <div class="search-bar mb-4">
+        <span class="text-lg font-semibold">Client Pricing &amp; Formulary</span>
+        <span class="ml-2 text-sm text-slate-400">Per-client drug price, rebate, and approved-product formulary</span>
+      </div>
+
+      <div class="card mb-4"><div class="card-body p-3">
+        <div class="flex flex-wrap items-center gap-2">
+          <label class="text-sm text-slate-500">Client</label>
+          <select class="form-control" style="max-width:360px" id="f-company" onchange="loadCompany()"><option value="">Select a client…</option></select>
+          <button class="btn btn-outline" onclick="exportRows()" id="btn-export" disabled><i class="fa-solid fa-file-excel"></i> Export pricing</button>
+        </div>
+      </div></div>
+
+      <div id="body" class="hidden">
+        <div class="grid grid-cols-2 md:grid-cols-3 gap-3 mb-4">
+          <div class="card"><div class="card-body p-4"><div class="text-xs uppercase tracking-wide text-slate-400">Priced drugs</div><div class="text-2xl font-semibold" id="t-priced">—</div></div></div>
+          <div class="card"><div class="card-body p-4"><div class="text-xs uppercase tracking-wide text-slate-400">With rebate</div><div class="text-2xl font-semibold text-emerald-600" id="t-rebate">—</div></div></div>
+          <div class="card"><div class="card-body p-4"><div class="text-xs uppercase tracking-wide text-slate-400">Formulary (approved)</div><div class="text-2xl font-semibold text-sky-700" id="t-formulary">—</div></div></div>
+        </div>
+
+        <div class="card mb-4"><div class="card-header"><span class="card-title">Pricing &amp; Rebates</span></div><div class="card-body p-0">
+          <div style="overflow-x:auto">
+          <table class="data-table" style="min-width:820px"><thead><tr>
+            <th>Product</th><th>Strength</th><th>NDC</th><th class="text-right">Price</th>
+            <th class="text-right">Rebate</th><th class="text-right">Max Annual Rebate</th><th></th></tr></thead>
+          <tbody id="prows"><tr><td colspan="7" class="text-center py-6 text-slate-400">—</td></tr></tbody></table></div>
+        </div></div>
+
+        <div class="card"><div class="card-header"><span class="card-title">Formulary — approved products</span>
+          <span class="text-xs text-slate-400 ml-2" id="form-count"></span></div><div class="card-body">
+          <input class="form-control mb-3" id="form-search" placeholder="Search this client's approved products by name or NDC…" oninput="debounceForm()">
+          <div style="overflow-x:auto"><table class="data-table"><thead><tr><th>Product</th><th>Strength</th><th>NDC</th><th>UOM</th></tr></thead>
+          <tbody id="frows"><tr><td colspan="4" class="text-center py-6 text-slate-400">Type to search this client's formulary</td></tr></tbody></table></div>
+        </div></div>
+      </div>
+    </main>
+  </div>
+</div>
+
+<div id="priceModal" class="modal-backdrop hidden"><div class="modal"><div class="modal-header">
+  <span class="modal-title" id="pr-title">Edit pricing</span><button class="modal-close" onclick="hideModal('priceModal')">&times;</button></div>
+  <div class="modal-body">
+    <div id="pr-ctx" class="mb-3 text-sm text-slate-500"></div>
+    <div class="form-grid">
+      <div class="form-group"><label class="form-label">Price</label><input class="form-control" id="pr-price" type="number" step="any"></div>
+      <div class="form-group"><label class="form-label">Rebate Amount</label><input class="form-control" id="pr-rebate" type="number" step="any"></div>
+      <div class="form-group full"><label class="form-label">Max Annual Rebate</label><input class="form-control" id="pr-max" type="number" step="any"></div>
+    </div>
+  </div>
+  <div class="modal-footer"><button class="btn btn-outline" onclick="hideModal('priceModal')">Cancel</button>
+    <button class="btn btn-primary" onclick="savePrice()">Save</button></div></div></div>
+
+<script src="/assets/js/app.js"></script>
+<script>
+  initNav('procurement-pricing');
+  let pricingCache = [], curCompany = null, curName = '', fDeb, curPrice = null;
+  const escv = s => (s==null?'':String(s)).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  const money = n => (n==null||n===''||Number(n)===0)?'—':'$'+Number(n).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2});
+  function showModal(id){ document.getElementById(id).classList.remove('hidden'); }
+  function hideModal(id){ document.getElementById(id).classList.add('hidden'); }
+
+  async function loadCompanies(){
+    const list = await apiGet('/client-pricing?resource=companies').catch(()=>[]) || [];
+    document.getElementById('f-company').innerHTML = '<option value="">Select a client…</option>' +
+      list.map(c=>`<option value="${c.company_id}">${escv(c.name)} — ${c.pricing} priced · ${c.formulary} formulary</option>`).join('');
+  }
+
+  async function loadCompany(){
+    const sel = document.getElementById('f-company');
+    curCompany = sel.value ? parseInt(sel.value,10) : null;
+    curName = sel.value ? sel.options[sel.selectedIndex].text.replace(/ — .*$/,'') : '';
+    if(!curCompany){ document.getElementById('body').classList.add('hidden'); document.getElementById('btn-export').disabled=true; return; }
+    document.getElementById('body').classList.remove('hidden'); document.getElementById('btn-export').disabled=false;
+    // pricing
+    pricingCache = await apiGet('/client-pricing?resource=pricing&company_id='+curCompany).catch(()=>[]) || [];
+    document.getElementById('t-priced').textContent = pricingCache.length.toLocaleString();
+    document.getElementById('t-rebate').textContent = pricingCache.filter(r=>Number(r.rebate_amount)>0).length.toLocaleString();
+    document.getElementById('prows').innerHTML = pricingCache.length ? pricingCache.map((r,i)=>`<tr style="cursor:pointer" onclick="openPrice(${i})">
+      <td><div class="font-medium">${escv(r.short_name)||('#'+r.product_source_id)}</div><div class="text-xs text-slate-400">${escv(r.label)||''}</div></td>
+      <td>${escv(r.strength)||'—'}</td><td class="font-mono text-xs">${escv(r.ndc_comp)||'—'}</td>
+      <td class="text-right tabular-nums">${money(r.price)}</td>
+      <td class="text-right tabular-nums text-emerald-600">${money(r.rebate_amount)}</td>
+      <td class="text-right tabular-nums">${money(r.max_annual_rebate)}</td>
+      <td class="text-right"><button class="btn btn-outline btn-sm" onclick="event.stopPropagation();openPrice(${i})">Edit</button></td></tr>`).join('')
+      : '<tr><td colspan="7" class="text-center py-6 text-slate-400">No pricing for this client</td></tr>';
+    // formulary count
+    const f = await apiGet('/client-pricing?resource=formulary&company_id='+curCompany).catch(()=>({count:0}));
+    document.getElementById('t-formulary').textContent = (f.count||0).toLocaleString();
+    document.getElementById('form-count').textContent = (f.count||0).toLocaleString()+' approved products';
+    document.getElementById('form-search').value='';
+    document.getElementById('frows').innerHTML = '<tr><td colspan="4" class="text-center py-6 text-slate-400">Type to search this client’s formulary</td></tr>';
+  }
+
+  function debounceForm(){ clearTimeout(fDeb); fDeb=setTimeout(searchForm,300); }
+  async function searchForm(){
+    const s = document.getElementById('form-search').value.trim();
+    if(!s || !curCompany){ document.getElementById('frows').innerHTML='<tr><td colspan="4" class="text-center py-6 text-slate-400">Type to search this client’s formulary</td></tr>'; return; }
+    const r = await apiGet('/client-pricing?resource=formulary&company_id='+curCompany+'&search='+encodeURIComponent(s)).catch(()=>({products:[]}));
+    const p = r.products||[];
+    document.getElementById('frows').innerHTML = p.length ? p.map(x=>`<tr>
+      <td><div class="font-medium">${escv(x.short_name)||('#'+x.source_id)}</div><div class="text-xs text-slate-400">${escv(x.label)||''}</div></td>
+      <td>${escv(x.strength)||'—'}</td><td class="font-mono text-xs">${escv(x.ndc_comp)||'—'}</td><td class="text-xs">${escv(x.unit_type)||'—'}</td></tr>`).join('')
+      : '<tr><td colspan="4" class="text-center py-6 text-slate-400">No approved products match — this client may not cover that drug</td></tr>';
+  }
+
+  function openPrice(i){ const r=pricingCache[i]; curPrice=r;
+    document.getElementById('pr-ctx').innerHTML = `<b>${escv(r.short_name)||''}</b> ${escv(r.strength)||''} · ${escv(curName)}`;
+    document.getElementById('pr-price').value = r.price==null?'':r.price;
+    document.getElementById('pr-rebate').value = r.rebate_amount==null?'':r.rebate_amount;
+    document.getElementById('pr-max').value = r.max_annual_rebate==null?'':r.max_annual_rebate;
+    showModal('priceModal'); }
+  async function savePrice(){
+    if(!curPrice)return;
+    const b={ price:document.getElementById('pr-price').value, rebate_amount:document.getElementById('pr-rebate').value, max_annual_rebate:document.getElementById('pr-max').value };
+    const r=await apiPatch('/client-pricing?id='+curPrice.id,b);
+    if(r&&r.ok){ showToast('Saved'); hideModal('priceModal'); loadCompany(); } else showToast('Save failed','error');
+  }
+
+  function exportRows(){
+    if(!pricingCache.length) return showToast('Nothing to export','error');
+    const header=['Product','Strength','NDC','Price','Rebate','Max Annual Rebate'];
+    const body=pricingCache.map(r=>[r.short_name||'',r.strength||'',r.ndc_comp||'',Number(r.price)||'',Number(r.rebate_amount)||'',Number(r.max_annual_rebate)||'']);
+    const ws=XLSX.utils.aoa_to_sheet([header,...body]); const wb=XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb,ws,'Pricing'); XLSX.writeFile(wb,`client-pricing-${curName.replace(/[^\w]+/g,'-').toLowerCase()}-${new Date().toISOString().slice(0,10)}.xlsx`);
+  }
+
+  loadCompanies();
+</script>
+</body>
+</html>
