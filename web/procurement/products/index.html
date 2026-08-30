@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Product Master — True Path CRM</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+  <link rel="stylesheet" href="/assets/css/app.css">
+</head>
+<body class="bg-slate-100 text-slate-700">
+<div id="app" class="flex h-screen overflow-hidden">
+  <div id="nav-placeholder"></div>
+  <div class="flex-1 flex flex-col overflow-hidden">
+    <div id="topbar"></div>
+    <main class="flex-1 overflow-y-auto p-6">
+
+      <div class="search-bar mb-4">
+        <span class="text-lg font-semibold">Product Master</span>
+        <span class="ml-2 text-sm text-slate-400">Drug catalog · NDC · unit of measure · pricing · vendor</span>
+      </div>
+
+      <div class="grid grid-cols-3 gap-3 mb-4">
+        <div class="card"><div class="card-body p-4"><div class="text-xs uppercase tracking-wide text-slate-400">Products</div><div class="text-2xl font-semibold" id="t-products">—</div></div></div>
+        <div class="card"><div class="card-body p-4"><div class="text-xs uppercase tracking-wide text-slate-400">With NDC</div><div class="text-2xl font-semibold text-sky-700" id="t-ndc">—</div></div></div>
+        <div class="card"><div class="card-body p-4"><div class="text-xs uppercase tracking-wide text-slate-400">Vendors</div><div class="text-2xl font-semibold" id="t-vendors">—</div></div></div>
+      </div>
+
+      <div class="card mb-4"><div class="card-body p-3">
+        <div class="flex flex-wrap items-center gap-2">
+          <select class="form-control" style="max-width:180px" id="f-vendor" onchange="reload()"><option value="">All vendors</option></select>
+          <select class="form-control" style="max-width:150px" id="f-active" onchange="reload()"><option value="">Any status</option><option value="1">Active</option><option value="0">Inactive</option></select>
+          <input class="form-control" style="flex:1;min-width:200px" id="f-search" placeholder="Search name, NDC, strength…" oninput="debounced()">
+          <button class="btn btn-outline" onclick="exportRows()"><i class="fa-solid fa-file-excel"></i> Export</button>
+          <button class="btn btn-primary" onclick="openNew()"><i class="fa-solid fa-plus"></i> New Product</button>
+        </div>
+      </div></div>
+
+      <div class="card"><div class="card-body p-0">
+        <div style="overflow-x:auto">
+        <table class="data-table" style="min-width:1050px"><thead><tr>
+          <th>Product</th><th>Strength</th><th>NDC</th><th>UOM</th>
+          <th class="text-right">Unit Price</th><th class="text-right">Price</th><th>Vendor</th><th>Status</th><th></th></tr></thead>
+        <tbody id="rows"><tr><td colspan="9" class="text-center py-8 text-slate-400">Loading…</td></tr></tbody></table></div>
+        <div class="p-2 text-xs text-slate-400" id="rowcap"></div>
+      </div></div>
+    </main>
+  </div>
+</div>
+
+<div id="prodModal" class="modal-backdrop hidden"><div class="modal modal-lg"><div class="modal-header">
+  <span class="modal-title" id="pm-title">Product</span><button class="modal-close" onclick="hideModal('prodModal')">&times;</button></div>
+  <div class="modal-body">
+    <div class="form-grid">
+      <div class="form-group full"><label class="form-label">Label</label><input class="form-control" id="p-label"></div>
+      <div class="form-group"><label class="form-label">Short Name</label><input class="form-control" id="p-short_name"></div>
+      <div class="form-group"><label class="form-label">Strength</label><input class="form-control" id="p-strength"></div>
+      <div class="form-group"><label class="form-label">NDC</label><input class="form-control" id="p-ndc"></div>
+      <div class="form-group"><label class="form-label">NDC (formatted)</label><input class="form-control" id="p-ndc_comp"></div>
+      <div class="form-group"><label class="form-label">Unit Type (UOM)</label><input class="form-control" id="p-unit_type" placeholder="tabs/capsules, mL…"></div>
+      <div class="form-group"><label class="form-label">Unit Quantity</label><input class="form-control" id="p-unit_quantity" type="number" step="any"></div>
+      <div class="form-group"><label class="form-label">Unit Price</label><input class="form-control" id="p-unit_price" type="number" step="any"></div>
+      <div class="form-group"><label class="form-label">Unit Cost</label><input class="form-control" id="p-unit_cost" type="number" step="any"></div>
+      <div class="form-group"><label class="form-label">Price</label><input class="form-control" id="p-price" type="number" step="any"></div>
+      <div class="form-group"><label class="form-label">AWP</label><input class="form-control" id="p-awp" type="number" step="any"></div>
+      <div class="form-group"><label class="form-label">Vendor</label><select class="form-control" id="p-vendor_id"><option value="">—</option></select></div>
+      <div class="form-group"><label class="form-label">Status</label><select class="form-control" id="p-active"><option value="1">Active</option><option value="0">Inactive</option></select></div>
+      <div class="form-group"><label class="form-label">Flags</label>
+        <div class="flex items-center gap-4 pt-1 text-sm">
+          <label class="flex items-center gap-1"><input type="checkbox" id="p-specialty"> Specialty</label>
+          <label class="flex items-center gap-1"><input type="checkbox" id="p-high_maintenance"> High-maintenance</label></div></div>
+    </div>
+    <div id="p-altndc" class="text-xs text-slate-400 mt-2"></div>
+  </div>
+  <div class="modal-footer"><button class="btn btn-outline" onclick="hideModal('prodModal')">Cancel</button>
+    <button class="btn btn-primary" onclick="saveProduct()">Save</button></div></div></div>
+
+<script src="/assets/js/app.js"></script>
+<script>
+  initNav('procurement-products');
+  let rowsCache = [], vendors = [], curId = null, sDeb;
+  const escv = s => (s==null?'':String(s)).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  const money = n => (n==null||n==='')?'—':'$'+Number(n).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2});
+  function showModal(id){ document.getElementById(id).classList.remove('hidden'); }
+  function hideModal(id){ document.getElementById(id).classList.add('hidden'); }
+  function debounced(){ clearTimeout(sDeb); sDeb=setTimeout(reload,300); }
+  function val(id){ return document.getElementById(id).value.trim(); }
+
+  async function loadSummary(){
+    const s=await apiGet('/products?resource=summary').catch(()=>null); if(!s)return;
+    document.getElementById('t-products').textContent=(s.products||0).toLocaleString();
+    document.getElementById('t-ndc').textContent=(s.with_ndc||0).toLocaleString();
+    document.getElementById('t-vendors').textContent=(s.vendors||0).toLocaleString();
+  }
+  async function loadVendors(){
+    vendors = await apiGet('/products?resource=vendors').catch(()=>[]) || [];
+    const opts = vendors.map(v=>`<option value="${v.id}">${escv(v.name)}</option>`).join('');
+    document.getElementById('f-vendor').innerHTML='<option value="">All vendors</option>'+opts;
+    document.getElementById('p-vendor_id').innerHTML='<option value="">—</option>'+opts;
+  }
+  function qs(){
+    const p=new URLSearchParams(); const v=val('f-vendor'),a=val('f-active'),s=val('f-search');
+    if(v)p.set('vendor_id',v); if(a)p.set('active',a); if(s)p.set('search',s); return p.toString();
+  }
+  async function reload(){
+    await loadSummary();
+    rowsCache = await apiGet('/products?'+qs()).catch(()=>[]) || [];
+    document.getElementById('rowcap').textContent = rowsCache.length>=500 ? 'Showing the first 500 — narrow with search/filters.' : `${rowsCache.length.toLocaleString()} product(s)`;
+    document.getElementById('rows').innerHTML = rowsCache.length ? rowsCache.map((r,i)=>`<tr style="cursor:pointer" onclick="openEdit(${i})">
+      <td><div class="font-medium">${escv(r.short_name)||'—'}</div><div class="text-xs text-slate-400">${escv(r.label)||''}</div></td>
+      <td>${escv(r.strength)||'—'}</td>
+      <td class="font-mono text-xs">${escv(r.ndc_comp||r.ndc)||'—'}</td>
+      <td class="text-xs">${r.unit_quantity!=null?escv(r.unit_quantity):''} ${escv(r.unit_type)||''}</td>
+      <td class="text-right tabular-nums">${money(r.unit_price)}</td>
+      <td class="text-right tabular-nums font-medium">${money(r.price)}</td>
+      <td>${escv(r.vendor)||'—'}${r.specialty?' <span class="badge badge-purple">Specialty</span>':''}</td>
+      <td>${r.active?'<span class="badge badge-green">Active</span>':'<span class="badge badge-gray">Inactive</span>'}</td>
+      <td class="text-right"><button class="btn btn-outline btn-sm" onclick="event.stopPropagation();openEdit(${i})">Edit</button></td></tr>`).join('')
+      : '<tr><td colspan="9" class="text-center py-8 text-slate-400">No products match</td></tr>';
+  }
+
+  function fill(p){
+    curId = p.id || null;
+    document.getElementById('pm-title').textContent = p.id ? (p.short_name||'Product') : 'New Product';
+    for(const k of ['label','short_name','strength','ndc','ndc_comp','unit_type','unit_quantity','unit_price','unit_cost','price','awp'])
+      document.getElementById('p-'+k).value = (p[k]==null?'':p[k]);
+    document.getElementById('p-vendor_id').value = p.vendor_id || '';
+    document.getElementById('p-active').value = (p.active===0||p.active===false)?'0':'1';
+    document.getElementById('p-specialty').checked = !!p.specialty;
+    document.getElementById('p-high_maintenance').checked = !!p.high_maintenance;
+    document.getElementById('p-altndc').innerHTML = (p.alt_ndc&&p.alt_ndc.length)?('Also mapped NDCs: '+p.alt_ndc.map(escv).join(', ')):'';
+    showModal('prodModal');
+  }
+  function openNew(){ fill({}); }
+  async function openEdit(i){ const r=rowsCache[i]; const full=await apiGet('/products?id='+r.id).catch(()=>r); fill(full||r); }
+
+  function form(){
+    return { short_name:val('p-short_name'), label:val('p-label'), strength:val('p-strength'),
+      ndc:val('p-ndc'), ndc_comp:val('p-ndc_comp'), unit_type:val('p-unit_type'),
+      unit_quantity:val('p-unit_quantity'), unit_price:val('p-unit_price'), unit_cost:val('p-unit_cost'),
+      price:val('p-price'), awp:val('p-awp'), vendor_id:val('p-vendor_id')||null,
+      active:document.getElementById('p-active').value==='1',
+      specialty:document.getElementById('p-specialty').checked,
+      high_maintenance:document.getElementById('p-high_maintenance').checked };
+  }
+  async function saveProduct(){
+    const b=form();
+    if(!b.short_name && !b.label) return showToast('Name required','error');
+    const r = curId ? await apiPatch('/products?id='+curId,b) : await apiPost('/products',b);
+    if(r&&(r.ok||r.id)){ showToast('Saved'); hideModal('prodModal'); reload(); } else showToast('Save failed','error');
+  }
+
+  function exportRows(){
+    if(!rowsCache.length) return showToast('Nothing to export','error');
+    const header=['Short Name','Label','Strength','NDC','NDC (formatted)','Unit Type','Unit Qty','Unit Price','Unit Cost','Price','AWP','Vendor','Active'];
+    const body=rowsCache.map(r=>[r.short_name||'',r.label||'',r.strength||'',r.ndc||'',r.ndc_comp||'',r.unit_type||'',
+      r.unit_quantity??'',Number(r.unit_price)||'',Number(r.unit_cost)||'',Number(r.price)||'',Number(r.awp)||'',r.vendor||'',r.active?'Y':'N']);
+    const ws=XLSX.utils.aoa_to_sheet([header,...body]); const wb=XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb,ws,'Products'); XLSX.writeFile(wb,`product-master-${new Date().toISOString().slice(0,10)}.xlsx`);
+  }
+
+  (async()=>{ await loadVendors(); await reload(); })();
+</script>
+</body>
+</html>

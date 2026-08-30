@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Vendors — True Path CRM</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+  <link rel="stylesheet" href="/assets/css/app.css">
+</head>
+<body class="bg-slate-100 text-slate-700">
+<div id="app" class="flex h-screen overflow-hidden">
+  <div id="nav-placeholder"></div>
+  <div class="flex-1 flex flex-col overflow-hidden">
+    <div id="topbar"></div>
+    <main class="flex-1 overflow-y-auto p-6">
+
+      <div class="search-bar mb-4">
+        <span class="text-lg font-semibold">Vendors</span>
+        <span class="ml-2 text-sm text-slate-400">Sourcing vendors used by the product master</span>
+        <button class="btn btn-primary ml-auto" onclick="openNew()"><i class="fa-solid fa-plus"></i> New Vendor</button>
+      </div>
+
+      <div class="card"><div class="card-body p-0">
+        <table class="data-table"><thead><tr>
+          <th style="width:90px">ID</th><th>Name</th><th class="text-right">Products</th><th>Status</th><th></th></tr></thead>
+        <tbody id="rows"><tr><td colspan="5" class="text-center py-8 text-slate-400">Loading…</td></tr></tbody></table>
+      </div></div>
+    </main>
+  </div>
+</div>
+
+<div id="vModal" class="modal-backdrop hidden"><div class="modal"><div class="modal-header">
+  <span class="modal-title" id="v-title">Vendor</span><button class="modal-close" onclick="hideModal('vModal')">&times;</button></div>
+  <div class="modal-body">
+    <div class="form-group"><label class="form-label">Vendor ID *</label><input class="form-control" id="v-id" type="number">
+      <p class="text-xs text-slate-400 mt-1">Numeric id (matches the product master's vendor code).</p></div>
+    <div class="form-group"><label class="form-label">Name *</label><input class="form-control" id="v-name"></div>
+    <div class="form-group"><label class="form-label">Status</label><select class="form-control" id="v-active"><option value="1">Active</option><option value="0">Inactive</option></select></div>
+  </div>
+  <div class="modal-footer"><button class="btn btn-outline" onclick="hideModal('vModal')">Cancel</button>
+    <button class="btn btn-primary" onclick="saveVendor()">Save</button></div></div></div>
+
+<script src="/assets/js/app.js"></script>
+<script>
+  initNav('procurement-vendors');
+  let cache = [], editing = false;
+  const escv = s => (s==null?'':String(s)).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  function showModal(id){ document.getElementById(id).classList.remove('hidden'); }
+  function hideModal(id){ document.getElementById(id).classList.add('hidden'); }
+
+  async function reload(){
+    cache = await apiGet('/products?resource=vendors').catch(()=>[]) || [];
+    document.getElementById('rows').innerHTML = cache.length ? cache.map(v=>`<tr>
+      <td class="font-mono">${v.id}</td><td class="font-medium">${escv(v.name)}</td>
+      <td class="text-right tabular-nums">${(v.products||0).toLocaleString()}</td>
+      <td>${v.active?'<span class="badge badge-green">Active</span>':'<span class="badge badge-gray">Inactive</span>'}</td>
+      <td class="text-right"><button class="btn btn-outline btn-sm" onclick='openEdit(${JSON.stringify(v)})'>Edit</button></td></tr>`).join('')
+      : '<tr><td colspan="5" class="text-center py-8 text-slate-400">No vendors</td></tr>';
+  }
+  function openNew(){ editing=false; document.getElementById('v-title').textContent='New Vendor';
+    document.getElementById('v-id').value=''; document.getElementById('v-id').disabled=false;
+    document.getElementById('v-name').value=''; document.getElementById('v-active').value='1'; showModal('vModal'); }
+  function openEdit(v){ editing=true; document.getElementById('v-title').textContent=v.name;
+    document.getElementById('v-id').value=v.id; document.getElementById('v-id').disabled=true;
+    document.getElementById('v-name').value=v.name; document.getElementById('v-active').value=v.active?'1':'0'; showModal('vModal'); }
+  async function saveVendor(){
+    const id=parseInt(document.getElementById('v-id').value,10);
+    const name=document.getElementById('v-name').value.trim();
+    const active=document.getElementById('v-active').value==='1';
+    if(!id||!name) return showToast('ID and name required','error');
+    let r;
+    if(editing) r=await apiPatch('/products?resource=vendor&id='+id,{name,active});
+    else r=await apiPost('/products?resource=vendor',{id,name,active});
+    if(r&&(r.ok||r.id)){ showToast('Saved'); hideModal('vModal'); reload(); } else showToast('Save failed','error');
+  }
+  reload();
+</script>
+</body>
+</html>
