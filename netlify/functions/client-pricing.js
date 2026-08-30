@@ -42,16 +42,16 @@ exports.handler = async function (event) {
         const cnt = (await mssql(
           `SELECT ISNULL(product_count,0) n FROM dbo.tp_client_formulary WHERE company_id=@cid`, { cid })).recordset[0];
         const count = cnt ? cnt.n : 0;
-        if (!search) return ok({ count, products: [] });
-        // membership search: expand this company's JSON list and match the product master by name/NDC
+        // list this company's approved products (TOP 500), optionally narrowed by search
         const r = (await mssql(
-          `SELECT TOP 200 p.source_id, p.short_name, p.label, p.strength, p.ndc_comp, p.unit_type
+          `SELECT TOP 500 p.source_id, p.short_name, p.label, p.strength, p.ndc_comp, p.unit_type
            FROM dbo.tp_client_formulary f
            CROSS APPLY OPENJSON(f.products_json) j
            JOIN dbo.tp_products p ON p.source_id = TRY_CONVERT(int, j.value)
-           WHERE f.company_id=@cid AND (p.short_name LIKE @s OR p.label LIKE @s OR p.ndc_comp LIKE @s)
+           WHERE f.company_id=@cid
+             AND (@s IS NULL OR p.short_name LIKE @s OR p.label LIKE @s OR p.ndc_comp LIKE @s)
            ORDER BY p.short_name, p.strength`,
-          { cid, s: `%${search}%` })).recordset;
+          { cid, s: search ? `%${search}%` : null })).recordset;
         return ok({ count, products: r });
       }
       return badRequest('resource required');

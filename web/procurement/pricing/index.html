@@ -70,7 +70,7 @@
 <script src="/assets/js/app.js"></script>
 <script>
   initNav('procurement-pricing');
-  let pricingCache = [], curCompany = null, curName = '', fDeb, curPrice = null;
+  let pricingCache = [], curCompany = null, curName = '', fDeb, curPrice = null, formCount = 0;
   const escv = s => (s==null?'':String(s)).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
   const money = n => (n==null||n===''||Number(n)===0)?'—':'$'+Number(n).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2});
   function showModal(id){ document.getElementById(id).classList.remove('hidden'); }
@@ -100,25 +100,28 @@
       <td class="text-right tabular-nums">${money(r.max_annual_rebate)}</td>
       <td class="text-right"><button class="btn btn-outline btn-sm" onclick="event.stopPropagation();openPrice(${i})">Edit</button></td></tr>`).join('')
       : '<tr><td colspan="7" class="text-center py-6 text-slate-400">No pricing for this client</td></tr>';
-    // formulary count
-    const f = await apiGet('/client-pricing?resource=formulary&company_id='+curCompany).catch(()=>({count:0}));
-    document.getElementById('t-formulary').textContent = (f.count||0).toLocaleString();
-    document.getElementById('form-count').textContent = (f.count||0).toLocaleString()+' approved products';
+    // formulary — list approved products by default
     document.getElementById('form-search').value='';
-    document.getElementById('frows').innerHTML = '<tr><td colspan="4" class="text-center py-6 text-slate-400">Type to search this client’s formulary</td></tr>';
+    formCount = 0;
+    await loadFormulary('');
   }
 
-  function debounceForm(){ clearTimeout(fDeb); fDeb=setTimeout(searchForm,300); }
-  async function searchForm(){
-    const s = document.getElementById('form-search').value.trim();
-    if(!s || !curCompany){ document.getElementById('frows').innerHTML='<tr><td colspan="4" class="text-center py-6 text-slate-400">Type to search this client’s formulary</td></tr>'; return; }
-    const r = await apiGet('/client-pricing?resource=formulary&company_id='+curCompany+'&search='+encodeURIComponent(s)).catch(()=>({products:[]}));
-    const p = r.products||[];
+  function renderForm(products){
+    const p = products||[];
+    document.getElementById('t-formulary').textContent = (formCount||0).toLocaleString();
+    const capped = formCount>500 ? ` · showing first 500 — search to narrow` : '';
+    document.getElementById('form-count').textContent = (formCount||0).toLocaleString()+' approved products'+capped;
     document.getElementById('frows').innerHTML = p.length ? p.map(x=>`<tr>
       <td><div class="font-medium">${escv(x.short_name)||('#'+x.source_id)}</div><div class="text-xs text-slate-400">${escv(x.label)||''}</div></td>
       <td>${escv(x.strength)||'—'}</td><td class="font-mono text-xs">${escv(x.ndc_comp)||'—'}</td><td class="text-xs">${escv(x.unit_type)||'—'}</td></tr>`).join('')
-      : '<tr><td colspan="4" class="text-center py-6 text-slate-400">No approved products match — this client may not cover that drug</td></tr>';
+      : '<tr><td colspan="4" class="text-center py-6 text-slate-400">No approved products match</td></tr>';
   }
+  async function loadFormulary(s){
+    const r = await apiGet('/client-pricing?resource=formulary&company_id='+curCompany+(s?'&search='+encodeURIComponent(s):'')).catch(()=>({count:0,products:[]}));
+    formCount = r.count||0;
+    renderForm(r.products);
+  }
+  function debounceForm(){ clearTimeout(fDeb); fDeb=setTimeout(()=>{ if(curCompany) loadFormulary(document.getElementById('form-search').value.trim()); },300); }
 
   function openPrice(i){ const r=pricingCache[i]; curPrice=r;
     document.getElementById('pr-ctx').innerHTML = `<b>${escv(r.short_name)||''}</b> ${escv(r.strength)||''} · ${escv(curName)}`;
