@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Members — True Path CRM</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+  <link rel="stylesheet" href="/assets/css/app.css">
+</head>
+<body class="bg-slate-100 text-slate-700">
+<div id="app" class="flex h-screen overflow-hidden">
+  <div id="nav-placeholder"></div>
+  <div class="flex-1 flex flex-col overflow-hidden">
+    <div id="topbar"></div>
+    <main class="flex-1 overflow-y-auto p-6">
+
+      <div class="search-bar mb-4">
+        <span class="text-lg font-semibold">Members</span>
+        <span class="ml-2 text-sm text-slate-400">Member profiles &amp; medication history</span>
+      </div>
+
+      <div class="grid grid-cols-3 gap-3 mb-4">
+        <div class="card"><div class="card-body p-4"><div class="text-xs uppercase tracking-wide text-slate-400">Members</div><div class="text-2xl font-semibold" id="t-members">—</div></div></div>
+        <div class="card"><div class="card-body p-4"><div class="text-xs uppercase tracking-wide text-slate-400">Active</div><div class="text-2xl font-semibold text-emerald-600" id="t-active">—</div></div></div>
+        <div class="card"><div class="card-body p-4"><div class="text-xs uppercase tracking-wide text-slate-400">Medications on file</div><div class="text-2xl font-semibold text-sky-700" id="t-meds">—</div></div></div>
+      </div>
+
+      <div class="card mb-4"><div class="card-body p-3">
+        <div class="flex flex-wrap items-center gap-2">
+          <select class="form-control" style="max-width:280px" id="f-company" onchange="reload()"><option value="">All clients</option></select>
+          <select class="form-control" style="max-width:140px" id="f-active" onchange="reload()"><option value="">Any status</option><option value="1">Active</option><option value="0">Inactive</option></select>
+          <input class="form-control" style="flex:1;min-width:200px" id="f-search" placeholder="Search name, member ID, cardholder…" oninput="debounced()">
+          <button class="btn btn-outline" onclick="exportRows()"><i class="fa-solid fa-file-excel"></i> Export</button>
+        </div>
+      </div></div>
+
+      <div class="card"><div class="card-body p-0">
+        <div style="overflow-x:auto">
+        <table class="data-table" style="min-width:1000px"><thead><tr>
+          <th>Name</th><th>DOB</th><th>Member ID</th><th>Cardholder</th><th>Group</th><th>Client</th>
+          <th>Enrollment</th><th class="text-right">Meds</th><th>Status</th></tr></thead>
+        <tbody id="rows"><tr><td colspan="9" class="text-center py-8 text-slate-400">Loading…</td></tr></tbody></table></div>
+        <div class="p-2 text-xs text-slate-400" id="rowcap"></div>
+      </div></div>
+    </main>
+  </div>
+</div>
+
+<div id="memModal" class="modal-backdrop hidden"><div class="modal modal-lg"><div class="modal-header">
+  <span class="modal-title" id="m-title">Member</span><button class="modal-close" onclick="hideModal('memModal')">&times;</button></div>
+  <div class="modal-body"><div id="m-demo"></div>
+    <div class="text-xs uppercase tracking-wide text-slate-500 mt-4 mb-2" style="border-bottom:1px solid #e2e8f0;padding-bottom:4px">Medication History <span id="m-medcount" class="text-slate-400"></span></div>
+    <div style="overflow-x:auto"><table class="data-table"><thead><tr><th>Medication</th><th>Strength</th><th>NDC</th><th>Day Supply</th><th>Refills</th><th>Next Fill</th><th>Status</th></tr></thead>
+    <tbody id="m-meds"></tbody></table></div>
+  </div>
+  <div class="modal-footer"><button class="btn btn-outline" onclick="hideModal('memModal')">Close</button></div></div></div>
+
+<script src="/assets/js/app.js"></script>
+<script>
+  initNav('members');
+  let rowsCache = [], sDeb;
+  const escv = s => (s==null?'':String(s)).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  function showModal(id){ document.getElementById(id).classList.remove('hidden'); }
+  function hideModal(id){ document.getElementById(id).classList.add('hidden'); }
+  function debounced(){ clearTimeout(sDeb); sDeb=setTimeout(reload,300); }
+  function val(id){ return document.getElementById(id).value.trim(); }
+  const nm = r => `${(r.last_name||'').trim()}, ${(r.first_name||'').trim()}`.replace(/^, |, $/,'') || '—';
+
+  async function loadSummary(){
+    const s=await apiGet('/members?resource=summary').catch(()=>null); if(!s)return;
+    document.getElementById('t-members').textContent=(s.members||0).toLocaleString();
+    document.getElementById('t-active').textContent=(s.active_members||0).toLocaleString();
+    document.getElementById('t-meds').textContent=(s.meds||0).toLocaleString();
+  }
+  async function loadCompanies(){
+    const list=await apiGet('/members?resource=companies').catch(()=>[])||[];
+    document.getElementById('f-company').innerHTML='<option value="">All clients</option>'+
+      list.map(c=>`<option value="${c.company_id}">${escv(c.name)} (${c.members})</option>`).join('');
+  }
+  function qs(){ const p=new URLSearchParams(); const c=val('f-company'),a=val('f-active'),s=val('f-search');
+    if(c)p.set('company_id',c); if(a)p.set('active',a); if(s)p.set('search',s); return p.toString(); }
+
+  async function reload(){
+    await loadSummary();
+    rowsCache=await apiGet('/members?'+qs()).catch(()=>[])||[];
+    document.getElementById('rowcap').textContent = rowsCache.length>=500 ? 'Showing the first 500 — narrow with filters.' : `${rowsCache.length.toLocaleString()} member(s)`;
+    document.getElementById('rows').innerHTML = rowsCache.length ? rowsCache.map((r,i)=>`<tr style="cursor:pointer" onclick="openMember(${i})">
+      <td class="font-medium">${escv(nm(r))}</td><td>${escv(r.date_of_birth)||'—'}</td>
+      <td class="font-mono text-xs">${escv(r.member_id)||'—'}</td><td class="font-mono text-xs">${escv(r.cardholder_id)||'—'}</td>
+      <td class="font-mono text-xs">${escv(r.group_id)||'—'}</td><td>${escv(r.company)||'—'}</td>
+      <td class="text-xs">${escv(r.enrollment_status)||'—'}</td>
+      <td class="text-right tabular-nums">${r.meds||0}</td>
+      <td>${r.active?'<span class="badge badge-green">Active</span>':'<span class="badge badge-gray">Inactive</span>'}</td></tr>`).join('')
+      : '<tr><td colspan="9" class="text-center py-8 text-slate-400">No members match</td></tr>';
+  }
+
+  async function openMember(i){
+    const r=rowsCache[i];
+    const m=await apiGet('/members?id='+r.member_source_id).catch(()=>null); if(!m)return;
+    document.getElementById('m-title').textContent = nm(m);
+    const field=(l,v)=>`<div style="display:flex;justify-content:space-between;gap:12px;font-size:13px;padding:3px 0">
+      <span class="text-slate-500">${l}</span><span class="font-medium" style="text-align:right">${(v==null||v==='')?'<span class="text-slate-400">—</span>':escv(v)}</span></div>`;
+    document.getElementById('m-demo').innerHTML =
+      `<div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:2px 24px">
+        ${field('DOB',m.date_of_birth)}${field('Gender',m.gender)}
+        ${field('Member ID',m.member_id)}${field('Cardholder ID',m.cardholder_id)}
+        ${field('Group',m.group_id)}${field('Person / Reln',(m.person_code||'')+' / '+(m.relationship_code||''))}
+        ${field('Client',m.company)}${field('Enrollment',m.enrollment_status)}
+        ${field('Email',m.email)}${field('Phone',m.phone)}
+        ${field('Address',[m.address,m.city,m.state,m.zip].filter(Boolean).join(', '))}${field('Eligible thru',m.eligible_thru)}
+      </div>`;
+    const meds=m.medications||[];
+    document.getElementById('m-medcount').textContent = meds.length?`· ${meds.length}`:'';
+    document.getElementById('m-meds').innerHTML = meds.length ? meds.map(x=>`<tr>
+      <td class="font-medium">${escv(x.short_name)||escv(x.label)||('#'+(x.product_source_id||''))}</td>
+      <td>${escv(x.strength||x.product_strength)||'—'}</td><td class="font-mono text-xs">${escv(x.ndc_comp||x.ndc_code)||'—'}</td>
+      <td>${escv(x.day_supply)||'—'}</td><td>${escv(x.number_of_refills)||'—'}</td><td class="text-xs">${escv(x.next_fill_order_date)||'—'}</td>
+      <td>${x.inactive?'<span class="badge badge-gray">Inactive</span>':'<span class="badge badge-green">Active</span>'}</td></tr>`).join('')
+      : '<tr><td colspan="7" class="text-center py-6 text-slate-400">No medications on file</td></tr>';
+    showModal('memModal');
+  }
+
+  function exportRows(){
+    if(!rowsCache.length) return showToast('Nothing to export','error');
+    const header=['Last','First','DOB','Member ID','Cardholder','Group','Client','Enrollment','Meds','Status'];
+    const body=rowsCache.map(r=>[r.last_name||'',r.first_name||'',r.date_of_birth||'',r.member_id||'',r.cardholder_id||'',r.group_id||'',r.company||'',r.enrollment_status||'',r.meds||0,r.active?'Active':'Inactive']);
+    const ws=XLSX.utils.aoa_to_sheet([header,...body]); const wb=XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb,ws,'Members'); XLSX.writeFile(wb,`members-${new Date().toISOString().slice(0,10)}.xlsx`);
+  }
+
+  (async()=>{ await loadCompanies(); await reload(); })();
+</script>
+</body>
+</html>
