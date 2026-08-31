@@ -122,6 +122,7 @@ const NAV_ITEMS = [
   { href: '/project-management/bugs/', icon: 'fa-bug',      label: 'Bugs/Changes', key: 'pm-bugs' },
   { section: 'Admin' },
   { href: '/brokers/',   icon: 'fa-handshake',         label: 'Brokers',     key: 'brokers' },
+  { href: '/admin/intake-types/', icon: 'fa-diagram-next', label: 'Intake Types', key: 'intake-types' },
   { section: 'Settings', adminOnly: true },
   { href: '/settings/user-management/', icon: 'fa-users-gear', label: 'User Management', key: 'user-management' },
 ];
@@ -193,6 +194,7 @@ function initNav(activeKey) {
     'procurement-products': 'Procurement — Product Master', 'procurement-vendors': 'Procurement — Vendors',
     'procurement-pricing': 'Procurement — Client Pricing & Formulary',
     companies: 'Companies', brokers: 'Brokers', 'user-management': 'User Management',
+    'intake-types': 'Intake Types',
     'pm-dashboard': 'Project Management — Dashboard', 'pm-bugs': 'Project Management — Bugs / Changes',
     'project-plan': 'Project Plan', 'release-notes': 'Release Notes',
   };
