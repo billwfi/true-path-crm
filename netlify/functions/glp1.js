@@ -112,7 +112,7 @@ exports.handler = async function (event) {
       const listSql = `
         SELECT b.*, gi.status AS intake_status, gi.sub_status AS intake_sub_status
         FROM (${base}) b
-        LEFT JOIN dbo.GLP1_Intake gi ON gi.category = @category AND gi.member_key = b.member_key
+        LEFT JOIN dbo.tp_member_intakes gi ON gi.intake_type = @category AND gi.member_key = b.member_key
         ${onePerMember ? 'WHERE b.rn = 1' : ''}
         ORDER BY b.Group_Name, b.Last_Name, b.First_Name`;
       const r = await mssql(listSql,
@@ -166,14 +166,15 @@ exports.handler = async function (event) {
           { indx: id, assigned_to: assignedTo, assigned_by: user.id || null, category: cat });
         affected += r.rowsAffected[0] || 0;
 
-        // Auto-create the intake record (In Progress, dated today) the first time a member
-        // is assigned. Existing intake records are left untouched on re-assignment.
+        // Auto-create the typed intake status record (In Progress, dated today) the first
+        // time a member is assigned for this intake type. A member can hold several — one per
+        // intake_type. Existing intake records are left untouched on re-assignment.
         await mssql(
-          `INSERT INTO dbo.GLP1_Intake (member_key, category, status, status_date, updated_by)
+          `INSERT INTO dbo.tp_member_intakes (member_key, intake_type, status, status_date, updated_by)
            SELECT m.k, @category, 'In Progress', CAST(GETDATE() AS DATE), @by
            FROM (SELECT ${MEMBER_KEY} AS k FROM dbo.ReadyToAssign WHERE indx=@indx) m
-           WHERE NOT EXISTS (SELECT 1 FROM dbo.GLP1_Intake gi
-                             WHERE gi.category=@category AND gi.member_key=m.k)`,
+           WHERE NOT EXISTS (SELECT 1 FROM dbo.tp_member_intakes gi
+                             WHERE gi.intake_type=@category AND gi.member_key=m.k)`,
           { indx: id, category: cat, by: user.id || null });
       }
       return ok({ assigned: ids.length, records: affected, assigned_to: assignedTo });

@@ -26,28 +26,23 @@ exports.handler = async function (event) {
          FROM dbo.GLP1_ContactLog WHERE category = @category AND member_key = @member
          ORDER BY contact_date DESC, id DESC`,
         { category: cat, member });
-      const intake = await mssql(
-        `SELECT member_key, status, status_date, sub_status, updated_by, updated_at
-         FROM dbo.GLP1_Intake WHERE category = @category AND member_key = @member`,
-        { category: cat, member });
-      // Tolerate the questionnaire table not existing yet (pre-migration) so the
-      // contact log and intake status still load.
-      let q = null;
-      try {
-        const quest = await mssql(
-          `SELECT answers, disqualified, updated_by, updated_at
-           FROM dbo.GLP1_Questionnaire WHERE category = @category AND member_key = @member`,
-          { category: cat, member });
-        q = quest.recordset[0] || null;
-      } catch (e) { q = null; }
+      // Unified Intake Status record (one per member + intake_type). The questionnaire
+      // is folded in as part of this record.
+      const row = (await mssql(
+        `SELECT member_key, status, status_date, sub_status, questionnaire, disqualified, updated_by, updated_at
+         FROM dbo.tp_member_intakes WHERE intake_type = @category AND member_key = @member`,
+        { category: cat, member })).recordset[0] || null;
       return ok({
         contacts: contacts.recordset,
         attempts: contacts.recordset.length,
-        intake: intake.recordset[0] || null,
-        questionnaire: q ? {
-          answers: safeParse(q.answers),
-          disqualified: !!q.disqualified,
-          updated_at: q.updated_at,
+        intake: row ? {
+          member_key: row.member_key, status: row.status, status_date: row.status_date,
+          sub_status: row.sub_status, updated_by: row.updated_by, updated_at: row.updated_at,
+        } : null,
+        questionnaire: (row && row.questionnaire != null) ? {
+          answers: safeParse(row.questionnaire),
+          disqualified: !!row.disqualified,
+          updated_at: row.updated_at,
         } : null,
       });
     }
@@ -82,13 +77,13 @@ exports.handler = async function (event) {
         const answers = JSON.stringify(b.answers || {});
         const dq = b.disqualified ? 1 : 0;
         const r = await mssql(
-          `MERGE dbo.GLP1_Questionnaire AS t
-           USING (SELECT @member AS member_key, @category AS category) AS s
-           ON t.member_key = s.member_key AND t.category = s.category
-           WHEN MATCHED THEN UPDATE SET answers=@answers, disqualified=@dq,
+          `MERGE dbo.tp_member_intakes AS t
+           USING (SELECT @member AS member_key, @category AS intake_type) AS s
+           ON t.member_key = s.member_key AND t.intake_type = s.intake_type
+           WHEN MATCHED THEN UPDATE SET questionnaire=@answers, disqualified=@dq,
              updated_by=@updated_by, updated_at=GETDATE()
-           WHEN NOT MATCHED THEN INSERT (member_key, category, answers, disqualified, updated_by)
-             VALUES (@member, @category, @answers, @dq, @updated_by)
+           WHEN NOT MATCHED THEN INSERT (member_key, intake_type, status, status_date, questionnaire, disqualified, updated_by)
+             VALUES (@member, @category, 'In Progress', CAST(GETDATE() AS DATE), @answers, @dq, @updated_by)
            OUTPUT INSERTED.disqualified, INSERTED.updated_at;`,
           { member, category: cat, answers, dq, updated_by: user.id || null });
         return ok({ ok: true, disqualified: !!(r.recordset[0] || {}).disqualified,
@@ -96,21 +91,28 @@ exports.handler = async function (event) {
       }
 
       if (action === 'intake') {
-        // Upsert the member's intake record.
+        // Upsert the member's intake status record (one per member + intake_type).
         if (!member) return badRequest('member is required');
         const b = JSON.parse(event.body || '{}');
-        const status = INTAKE_STATUSES.includes(b.status) ? b.status : 'In Progress';
-        // Sub-status only valid when submitted to WellSync.
-        const sub = status === 'Submitted to WellSync'
-          ? (SUB_STATUSES.includes(b.sub_status) ? b.sub_status : null)
-          : null;
+        // Type-driven lifecycle: allowed statuses / sub-statuses come from the intake-type
+        // taxonomy, falling back to the GLP1 defaults for older data.
+        let allowedStatuses = INTAKE_STATUSES;
+        let subMap = { 'Submitted to WellSync': SUB_STATUSES };
+        const tcfg = (await mssql('SELECT statuses, sub_statuses FROM dbo.tp_intake_types WHERE code=@c', { c: cat })).recordset[0];
+        if (tcfg) {
+          const s = safeParse(tcfg.statuses); if (Array.isArray(s) && s.length) allowedStatuses = s;
+          const sm = safeParse(tcfg.sub_statuses); if (sm && typeof sm === 'object') subMap = sm;
+        }
+        const status = allowedStatuses.includes(b.status) ? b.status : allowedStatuses[0];
+        const subsForStatus = Array.isArray(subMap[status]) ? subMap[status] : [];
+        const sub = subsForStatus.includes(b.sub_status) ? b.sub_status : null;
         const r = await mssql(
-          `MERGE dbo.GLP1_Intake AS t
-           USING (SELECT @member AS member_key, @category AS category) AS s
-           ON t.member_key = s.member_key AND t.category = s.category
+          `MERGE dbo.tp_member_intakes AS t
+           USING (SELECT @member AS member_key, @category AS intake_type) AS s
+           ON t.member_key = s.member_key AND t.intake_type = s.intake_type
            WHEN MATCHED THEN UPDATE SET status=@status, status_date=@status_date,
              sub_status=@sub_status, updated_by=@updated_by, updated_at=GETDATE()
-           WHEN NOT MATCHED THEN INSERT (member_key, category, status, status_date, sub_status, updated_by)
+           WHEN NOT MATCHED THEN INSERT (member_key, intake_type, status, status_date, sub_status, updated_by)
              VALUES (@member, @category, @status, @status_date, @sub_status, @updated_by)
            OUTPUT INSERTED.member_key, INSERTED.status, INSERTED.status_date,
                   INSERTED.sub_status, INSERTED.updated_by, INSERTED.updated_at;`,
