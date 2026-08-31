@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Member Profile — True Path CRM</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+  <link rel="stylesheet" href="/assets/css/app.css">
+</head>
+<body class="bg-slate-100 text-slate-700">
+<div id="app" class="flex h-screen overflow-hidden">
+  <div id="nav-placeholder"></div>
+  <div class="flex-1 flex flex-col overflow-hidden">
+    <div id="topbar"></div>
+    <main class="flex-1 overflow-y-auto p-6">
+
+      <div class="search-bar">
+        <button class="btn btn-outline" onclick="goBack()"><i class="fa-solid fa-arrow-left"></i> Back</button>
+        <span class="ml-2 text-lg font-semibold" id="member-name">—</span>
+        <span id="member-status" class="ml-2"></span>
+      </div>
+
+      <!-- Member profile -->
+      <div class="card mb-4">
+        <div class="card-header"><i class="fa-solid fa-id-card text-slate-400"></i> Member Profile</div>
+        <div class="card-body form-pad">
+          <div id="demo" class="grid grid-cols-2 md:grid-cols-4 gap-x-6 gap-y-3 text-sm"></div>
+        </div>
+      </div>
+
+      <!-- Current medications (actively prescribed) -->
+      <div class="card mb-4">
+        <div class="card-header"><i class="fa-solid fa-pills text-slate-400"></i>
+          Current Medications <span id="cur-count" class="text-slate-400 text-sm ml-1"></span>
+          <span class="text-xs text-slate-400 ml-2 font-normal">— actively prescribed</span></div>
+        <div class="card-body">
+          <div style="overflow-x:auto"><table class="data-table">
+            <thead><tr><th>Medication</th><th>Strength</th><th>NDC</th><th>Day Supply</th><th>Refills</th><th>Next Fill</th></tr></thead>
+            <tbody id="cur-meds"></tbody></table></div>
+        </div>
+      </div>
+
+      <!-- Past / discontinued medications -->
+      <div class="card">
+        <div class="card-header"><i class="fa-solid fa-clock-rotate-left text-slate-400"></i>
+          Past Medications <span id="past-count" class="text-slate-400 text-sm ml-1"></span></div>
+        <div class="card-body">
+          <div style="overflow-x:auto"><table class="data-table">
+            <thead><tr><th>Medication</th><th>Strength</th><th>NDC</th><th>Day Supply</th><th>Refills</th><th>Next Fill</th></tr></thead>
+            <tbody id="past-meds"></tbody></table></div>
+        </div>
+      </div>
+    </main>
+  </div>
+</div>
+
+<script src="/assets/js/app.js"></script>
+<script>
+  initNav('members');
+  const escv = s => (s == null ? '' : String(s)).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  const params = new URLSearchParams(location.search);
+  const memberId = params.get('id');
+  const nm = m => `${(m.last_name || '').trim()}, ${(m.first_name || '').trim()}`.replace(/^, |, $/, '') || 'Member';
+  function goBack() { if (history.length > 1) history.back(); else location.href = '/members/'; }
+
+  function field(l, v) {
+    return `<div><div class="text-xs text-slate-400">${escv(l)}</div>
+      <div class="font-medium">${(v == null || v === '') ? '—' : escv(v)}</div></div>`;
+  }
+  // A medication row (Next Fill / refills only shown on current meds).
+  function medRow(x) {
+    return `<tr>
+      <td class="font-medium">${escv(x.short_name) || escv(x.label) || ('#' + (x.product_source_id || ''))}</td>
+      <td>${escv(x.strength || x.product_strength) || '—'}</td>
+      <td class="font-mono text-xs">${escv(x.ndc_comp || x.ndc_code) || '—'}</td>
+      <td>${escv(x.day_supply) || '—'}</td>
+      <td>${escv(x.number_of_refills) || '—'}</td>
+      <td class="text-xs">${x.next_fill_order_date ? fmtDate(x.next_fill_order_date) : '—'}</td>
+    </tr>`;
+  }
+
+  async function load() {
+    if (!memberId) { document.querySelector('main').innerHTML = '<div class="card"><div class="card-body text-center py-10 text-slate-400">No member specified</div></div>'; return; }
+    const m = await apiGet('/members?id=' + encodeURIComponent(memberId)).catch(() => null);
+    if (!m) { document.querySelector('main').innerHTML = '<div class="card"><div class="card-body text-center py-10 text-slate-400">Member not found</div></div>'; return; }
+
+    document.getElementById('member-name').textContent = nm(m);
+    document.getElementById('member-status').innerHTML =
+      m.active ? '<span class="badge badge-green">Active</span>' : '<span class="badge badge-gray">Inactive</span>';
+
+    document.getElementById('demo').innerHTML =
+      field('DOB', m.date_of_birth) + field('Gender', m.gender) +
+      field('Member ID', m.member_id) + field('Cardholder ID', m.cardholder_id) +
+      field('Group', m.group_id) + field('Person / Reln', [m.person_code, m.relationship_code].filter(Boolean).join(' / ')) +
+      field('Client', m.company) + field('Enrollment', m.enrollment_status) +
+      field('Email', m.email) + field('Phone', m.phone) +
+      field('Address', [m.address, m.city, m.state, m.zip].filter(Boolean).join(', ')) +
+      field('Eligible thru', m.eligible_thru);
+
+    const meds = m.medications || [];
+    // "Current" = actively prescribed (not flagged inactive); "Past" = discontinued.
+    const current = meds.filter(x => !x.inactive);
+    const past = meds.filter(x => x.inactive);
+    document.getElementById('cur-count').textContent = current.length ? '· ' + current.length : '';
+    document.getElementById('past-count').textContent = past.length ? '· ' + past.length : '';
+    document.getElementById('cur-meds').innerHTML = current.length
+      ? current.map(medRow).join('')
+      : '<tr><td colspan="6" class="text-center py-6 text-slate-400">No current medications on file</td></tr>';
+    document.getElementById('past-meds').innerHTML = past.length
+      ? past.map(medRow).join('')
+      : '<tr><td colspan="6" class="text-center py-6 text-slate-400">None</td></tr>';
+  }
+
+  load();
+</script>
+</body>
+</html>

@@ -95,30 +95,10 @@
       : '<tr><td colspan="9" class="text-center py-8 text-slate-400">No members match</td></tr>';
   }
 
-  async function openMember(i){
-    const r=rowsCache[i];
-    const m=await apiGet('/members?id='+r.member_source_id).catch(()=>null); if(!m)return;
-    document.getElementById('m-title').textContent = nm(m);
-    const field=(l,v)=>`<div style="display:flex;justify-content:space-between;gap:12px;font-size:13px;padding:3px 0">
-      <span class="text-slate-500">${l}</span><span class="font-medium" style="text-align:right">${(v==null||v==='')?'<span class="text-slate-400">—</span>':escv(v)}</span></div>`;
-    document.getElementById('m-demo').innerHTML =
-      `<div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:2px 24px">
-        ${field('DOB',m.date_of_birth)}${field('Gender',m.gender)}
-        ${field('Member ID',m.member_id)}${field('Cardholder ID',m.cardholder_id)}
-        ${field('Group',m.group_id)}${field('Person / Reln',(m.person_code||'')+' / '+(m.relationship_code||''))}
-        ${field('Client',m.company)}${field('Enrollment',m.enrollment_status)}
-        ${field('Email',m.email)}${field('Phone',m.phone)}
-        ${field('Address',[m.address,m.city,m.state,m.zip].filter(Boolean).join(', '))}${field('Eligible thru',m.eligible_thru)}
-      </div>`;
-    const meds=m.medications||[];
-    document.getElementById('m-medcount').textContent = meds.length?`· ${meds.length}`:'';
-    document.getElementById('m-meds').innerHTML = meds.length ? meds.map(x=>`<tr>
-      <td class="font-medium">${escv(x.short_name)||escv(x.label)||('#'+(x.product_source_id||''))}</td>
-      <td>${escv(x.strength||x.product_strength)||'—'}</td><td class="font-mono text-xs">${escv(x.ndc_comp||x.ndc_code)||'—'}</td>
-      <td>${escv(x.day_supply)||'—'}</td><td>${escv(x.number_of_refills)||'—'}</td><td class="text-xs">${escv(x.next_fill_order_date)||'—'}</td>
-      <td>${x.inactive?'<span class="badge badge-gray">Inactive</span>':'<span class="badge badge-green">Active</span>'}</td></tr>`).join('')
-      : '<tr><td colspan="7" class="text-center py-6 text-slate-400">No medications on file</td></tr>';
-    showModal('memModal');
+  // Open the full member page (profile + current/past medications).
+  function openMember(i){
+    const r=rowsCache[i]; if(!r)return;
+    location.href = '/members/record/?id=' + encodeURIComponent(r.member_source_id);
   }
 
   function exportRows(){

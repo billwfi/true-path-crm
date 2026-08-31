@@ -409,24 +409,10 @@
   }
   function cmDebounce(){ clearTimeout(cmDeb); cmDeb = setTimeout(loadClientMembers, 300); }
 
-  async function openCmMember(i) {
+  // Open the full member page (profile + current/past medications).
+  function openCmMember(i) {
     const row = cmCache[i]; if (!row) return;
-    const m = await apiGet('/members?id=' + row.member_source_id).catch(() => null); if (!m) return;
-    document.getElementById('cmm-title').textContent = memName(m);
-    const field = (l, v) => `<div style="display:flex;justify-content:space-between;gap:12px;font-size:13px;padding:3px 0"><span class="text-slate-500">${l}</span><span class="font-medium" style="text-align:right">${(v==null||v==='')?'<span class="text-slate-400">—</span>':esc(String(v))}</span></div>`;
-    document.getElementById('cmm-demo').innerHTML = `<div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:2px 24px">
-      ${field('DOB',m.date_of_birth)}${field('Gender',m.gender)}${field('Member ID',m.member_id)}${field('Cardholder ID',m.cardholder_id)}
-      ${field('Group',m.group_id)}${field('Enrollment',m.enrollment_status)}${field('Email',m.email)}${field('Phone',m.phone)}
-      ${field('Address',[m.address,m.city,m.state,m.zip].filter(Boolean).join(', '))}${field('Eligible thru',m.eligible_thru)}</div>`;
-    const meds = m.medications || [];
-    document.getElementById('cmm-medcount').textContent = meds.length ? ('· ' + meds.length) : '';
-    document.getElementById('cmm-meds').innerHTML = meds.length ? meds.map(x => `<tr>
-      <td class="font-medium">${esc(x.short_name)||esc(x.label)||('#'+(x.product_source_id||''))}</td>
-      <td>${esc(x.strength||x.product_strength)||'—'}</td><td class="font-mono text-xs">${esc(x.ndc_comp||x.ndc_code)||'—'}</td>
-      <td>${esc(x.day_supply)||'—'}</td><td>${esc(x.number_of_refills)||'—'}</td><td class="text-xs">${esc(x.next_fill_order_date)||'—'}</td>
-      <td>${x.inactive?'<span class="badge badge-gray">Inactive</span>':'<span class="badge badge-green">Active</span>'}</td></tr>`).join('')
-      : '<tr><td colspan="7" class="text-center py-6 text-slate-400">No medications on file</td></tr>';
-    document.getElementById('cmMemModal').classList.remove('hidden');
+    location.href = '/members/record/?id=' + encodeURIComponent(row.member_source_id);
   }
 
   /* ── Formulary (approved products from tp_client_formulary via uf_company_id) ── */
