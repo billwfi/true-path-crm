@@ -20,11 +20,33 @@ exports.handler = async function (event) {
   const user = verifyToken(event);
   if (!user) return unauthorized();
 
-  const { id, status, search, resource, action, lead_id } = event.queryStringParameters || {};
+  const { id, status, search, resource, action, lead_id, opportunity_id } = event.queryStringParameters || {};
+  const BENEFIT_TYPES = ['iRx', 'GLP1'];
+  const benefitType = (t) => (BENEFIT_TYPES.includes(t) ? t : 'iRx');
+  const drugAmt = (t, v) => (benefitType(t) === 'GLP1' && v != null && v !== '' ? Number(v) : null);
 
   try {
     if (event.httpMethod === 'GET') {
       if (resource === 'dashboard') return await dashboard();
+      if (resource === 'opportunities') {
+        const lid = parseInt(lead_id, 10);
+        if (!lid) return badRequest('lead_id required');
+        const opps = (await mssql(
+          `SELECT id, lead_id, name, value, stage, effective_date, end_date, notes, converted_contract_id
+           FROM dbo.tp_lead_opportunities WHERE lead_id = @lid ORDER BY created_at DESC`, { lid })).recordset;
+        if (opps.length) {
+          const ids = opps.map(o => o.id);
+          const inList = ids.map((_, i) => `@o${i}`).join(',');
+          const p = {}; ids.forEach((v, i) => p['o' + i] = v);
+          const bens = (await mssql(
+            `SELECT id, opportunity_id, name, type, coverage, value, notes, tirzepatide_amount, semaglutide_amount
+             FROM dbo.tp_lead_opp_benefits WHERE opportunity_id IN (${inList}) ORDER BY name`, p)).recordset;
+          const byOpp = {};
+          bens.forEach(b => (byOpp[b.opportunity_id] = byOpp[b.opportunity_id] || []).push(b));
+          opps.forEach(o => o.benefits = byOpp[o.id] || []);
+        }
+        return ok(opps);
+      }
       if (resource === 'contacts') {
         const lid = parseInt(lead_id, 10);
         if (!lid) return badRequest('lead_id required');
@@ -58,6 +80,30 @@ exports.handler = async function (event) {
 
     if (event.httpMethod === 'POST') {
       if (action === 'convert') return await convert(parseInt(id, 10), user);
+      if (resource === 'opportunity') {
+        const lid = parseInt(lead_id, 10);
+        if (!lid) return badRequest('lead_id required');
+        const b = JSON.parse(event.body || '{}');
+        if (!b.name) return badRequest('name required');
+        const r = await mssql(
+          `INSERT INTO dbo.tp_lead_opportunities (lead_id, name, value, stage, effective_date, end_date, notes, created_by)
+           OUTPUT INSERTED.* VALUES (@lid, @name, @value, @stage, @eff, @end, @notes, @by)`,
+          { lid, name: b.name, value: b.value || null, stage: b.stage || 'Open',
+            eff: b.effective_date || null, end: b.end_date || null, notes: b.notes || null, by: user.id || null });
+        return created(r.recordset[0]);
+      }
+      if (resource === 'opp-benefit') {
+        const oid = parseInt(opportunity_id, 10);
+        if (!oid) return badRequest('opportunity_id required');
+        const b = JSON.parse(event.body || '{}');
+        if (!b.name) return badRequest('name required');
+        const r = await mssql(
+          `INSERT INTO dbo.tp_lead_opp_benefits (opportunity_id, name, type, coverage, value, notes, tirzepatide_amount, semaglutide_amount)
+           OUTPUT INSERTED.* VALUES (@oid, @name, @type, @coverage, @value, @notes, @tirz, @sema)`,
+          { oid, name: b.name, type: benefitType(b.type), coverage: b.coverage || null, value: b.value || null,
+            notes: b.notes || null, tirz: drugAmt(b.type, b.tirzepatide_amount), sema: drugAmt(b.type, b.semaglutide_amount) });
+        return created(r.recordset[0]);
+      }
       if (resource === 'contact') {
         const lid = parseInt(lead_id, 10);
         if (!lid) return badRequest('lead_id required');
@@ -87,6 +133,28 @@ exports.handler = async function (event) {
     }
 
     if (event.httpMethod === 'PATCH') {
+      if (resource === 'opportunity') {
+        const oid = parseInt(id, 10);
+        if (!oid) return badRequest('id required');
+        const b = JSON.parse(event.body || '{}');
+        const r = await mssql(
+          `UPDATE dbo.tp_lead_opportunities SET name=@name, value=@value, stage=@stage,
+             effective_date=@eff, end_date=@end, notes=@notes OUTPUT INSERTED.* WHERE id=@id`,
+          { id: oid, name: b.name, value: b.value || null, stage: b.stage || 'Open',
+            eff: b.effective_date || null, end: b.end_date || null, notes: b.notes || null });
+        return r.recordset[0] ? ok(r.recordset[0]) : notFound();
+      }
+      if (resource === 'opp-benefit') {
+        const bid = parseInt(id, 10);
+        if (!bid) return badRequest('id required');
+        const b = JSON.parse(event.body || '{}');
+        const r = await mssql(
+          `UPDATE dbo.tp_lead_opp_benefits SET name=@name, type=@type, coverage=@coverage, value=@value,
+             notes=@notes, tirzepatide_amount=@tirz, semaglutide_amount=@sema OUTPUT INSERTED.* WHERE id=@id`,
+          { id: bid, name: b.name, type: benefitType(b.type), coverage: b.coverage || null, value: b.value || null,
+            notes: b.notes || null, tirz: drugAmt(b.type, b.tirzepatide_amount), sema: drugAmt(b.type, b.semaglutide_amount) });
+        return r.recordset[0] ? ok(r.recordset[0]) : notFound();
+      }
       if (resource === 'contact') {
         const cid = parseInt(id, 10);
         if (!cid) return badRequest('id required');
@@ -117,9 +185,26 @@ exports.handler = async function (event) {
         await mssql('DELETE FROM dbo.tp_lead_contacts WHERE id=@id', { id: cid });
         return ok({ deleted: true });
       }
+      if (resource === 'opportunity') {
+        const oid = parseInt(id, 10);
+        if (!oid) return badRequest('id required');
+        await mssql('DELETE FROM dbo.tp_lead_opp_benefits WHERE opportunity_id=@id', { id: oid });
+        await mssql('DELETE FROM dbo.tp_lead_opportunities WHERE id=@id', { id: oid });
+        return ok({ deleted: true });
+      }
+      if (resource === 'opp-benefit') {
+        const bid = parseInt(id, 10);
+        if (!bid) return badRequest('id required');
+        await mssql('DELETE FROM dbo.tp_lead_opp_benefits WHERE id=@id', { id: bid });
+        return ok({ deleted: true });
+      }
       if (!id) return badRequest('id required');
-      await mssql('DELETE FROM dbo.tp_lead_contacts WHERE lead_id=@id', { id: parseInt(id, 10) });
-      await mssql('DELETE FROM tp_leads WHERE id=@id', { id: parseInt(id, 10) });
+      const lid = parseInt(id, 10);
+      await mssql('DELETE FROM dbo.tp_lead_contacts WHERE lead_id=@id', { id: lid });
+      await mssql(`DELETE FROM dbo.tp_lead_opp_benefits WHERE opportunity_id IN
+                    (SELECT id FROM dbo.tp_lead_opportunities WHERE lead_id=@id)`, { id: lid });
+      await mssql('DELETE FROM dbo.tp_lead_opportunities WHERE lead_id=@id', { id: lid });
+      await mssql('DELETE FROM tp_leads WHERE id=@id', { id: lid });
       return ok({ deleted: true });
     }
 
@@ -158,10 +243,41 @@ async function convert(lid, user) {
        VALUES (@cid, @name, @email, @phone, 'Primary contact (converted from lead)', @by)`,
       { cid: clientId, name: lead.name, email: lead.email || null, phone: lead.phone || null, by: user.id || null });
   }
+  // Each non-lost opportunity becomes a client contract, and its benefits become
+  // contract benefits. Contract numbers are smart-named <SLUG>-<YEAR>-<NNN>.
+  const opps = (await mssql(
+    `SELECT * FROM dbo.tp_lead_opportunities WHERE lead_id=@lid AND stage <> 'Lost' ORDER BY created_at`,
+    { lid })).recordset;
+  const slug = (clientName.toUpperCase().replace(/[^A-Z0-9 ]/g, ' ').split(/\s+/).filter(Boolean)
+    .map(w => w[0]).join('') || 'CLIENT').slice(0, 12);
+  let seq = 0, contracts = 0;
+  for (const o of opps) {
+    seq += 1;
+    const yr = o.effective_date ? new Date(o.effective_date).getFullYear() : new Date().getFullYear();
+    const num = `${slug}-${yr}-${String(seq).padStart(3, '0')}`;
+    const con = await mssql(
+      `INSERT INTO dbo.Client_Contracts (client_id, name, contract_number, effective_date, end_date, status, notes, created_by)
+       VALUES (@cid, @name, @num, @eff, @end, 'Active', @notes, @by);
+       SELECT CAST(SCOPE_IDENTITY() AS INT) AS id;`,
+      { cid: clientId, name: o.name, num, eff: o.effective_date || null, end: o.end_date || null,
+        notes: o.notes || `From opportunity (lead #${lid})`, by: user.id || null });
+    const contractId = con.recordset[0].id;
+    const bens = (await mssql('SELECT * FROM dbo.tp_lead_opp_benefits WHERE opportunity_id=@id', { id: o.id })).recordset;
+    for (const b of bens) {
+      await mssql(
+        `INSERT INTO dbo.Client_Contract_Benefits (contract_id, name, type, coverage, value, notes, tirzepatide_amount, semaglutide_amount)
+         VALUES (@cid, @name, @type, @coverage, @value, @notes, @tirz, @sema)`,
+        { cid: contractId, name: b.name, type: b.type || 'iRx', coverage: b.coverage || null, value: b.value || null,
+          notes: b.notes || null, tirz: b.tirzepatide_amount, sema: b.semaglutide_amount });
+    }
+    await mssql('UPDATE dbo.tp_lead_opportunities SET converted_contract_id=@con WHERE id=@id', { con: contractId, id: o.id });
+    contracts += 1;
+  }
+
   await mssql(
     `UPDATE tp_leads SET status='Converted', converted_client_id=@cid, converted_at=GETDATE() WHERE id=@id`,
     { cid: clientId, id: lid });
-  return ok({ client_id: clientId });
+  return ok({ client_id: clientId, contracts });
 }
 
 async function dashboard() {

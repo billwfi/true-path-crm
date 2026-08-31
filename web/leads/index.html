@@ -110,12 +110,73 @@
           <tbody id="contact-body"></tbody>
         </table>
       </div>
+
+      <!-- Opportunities (existing leads only) — convert to contracts + benefits -->
+      <div id="opp-section" style="display:none">
+        <div class="text-xs uppercase tracking-wide text-slate-500 mt-4 mb-2 flex items-center" style="border-bottom:1px solid #e2e8f0;padding-bottom:4px">
+          <span>Opportunities <span id="opp-count" class="text-slate-400"></span></span>
+          <button class="btn btn-outline btn-sm ml-auto" onclick="openOpp()"><i class="fa-solid fa-plus"></i> Add Opportunity</button>
+        </div>
+        <table class="data-table">
+          <thead><tr><th>Opportunity</th><th>Value</th><th>Stage</th><th>Benefits</th><th></th></tr></thead>
+          <tbody id="opp-body"></tbody>
+        </table>
+      </div>
     </div>
     <div class="modal-footer">
       <button class="btn btn-outline" onclick="closeModal('lead-modal')">Cancel</button>
       <button class="btn btn-danger btn-sm" id="delete-btn" onclick="doDelete()" style="display:none">Delete</button>
       <button class="btn btn-success btn-sm" id="convert-btn" onclick="doConvert()" style="display:none"><i class="fa-solid fa-user-check"></i> Convert to Client</button>
       <button class="btn btn-primary" onclick="save()">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- Opportunity modal (fields + benefits) -->
+<div id="opp-modal" class="modal-backdrop hidden">
+  <div class="modal modal-lg">
+    <div class="modal-header">
+      <span class="modal-title" id="opp-title">New Opportunity</span>
+      <button class="modal-close" onclick="closeModal('opp-modal')">×</button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="o-id">
+      <div class="form-grid">
+        <div class="form-group" style="grid-column:1/-1"><label class="form-label">Opportunity Name *</label><input class="form-control" id="o-name" placeholder="e.g. 2026 GLP-1 Program"></div>
+        <div class="form-group"><label class="form-label">Estimated Value ($)</label><input class="form-control" type="number" id="o-value"></div>
+        <div class="form-group"><label class="form-label">Stage</label>
+          <select class="form-control" id="o-stage"><option>Open</option><option>Won</option><option>Lost</option></select></div>
+        <div class="form-group"><label class="form-label">Effective Date</label><input class="form-control" type="date" id="o-eff"></div>
+        <div class="form-group"><label class="form-label">Renewal / End Date</label><input class="form-control" type="date" id="o-end"></div>
+      </div>
+      <div class="form-group"><label class="form-label">Notes</label><textarea class="form-control" id="o-notes" rows="2"></textarea></div>
+
+      <!-- Benefits -->
+      <div id="obn-section" style="display:none">
+        <div class="text-xs uppercase tracking-wide text-slate-500 mt-3 mb-2" style="border-bottom:1px solid #e2e8f0;padding-bottom:4px">
+          Benefits <span id="obn-count" class="text-slate-400"></span></div>
+        <div class="flex flex-wrap items-end gap-2 mb-3">
+          <input type="hidden" id="ob-id">
+          <div class="form-group mb-0" style="flex:1;min-width:150px"><label class="form-label">Benefit *</label><input class="form-control" id="ob-name" placeholder="e.g. GLP-1 Coverage"></div>
+          <div class="form-group mb-0"><label class="form-label">Type</label>
+            <select class="form-control" id="ob-type" style="max-width:110px" onchange="obnToggleGlp()"><option>iRx</option><option>GLP1</option></select></div>
+          <div class="form-group mb-0"><label class="form-label">Coverage</label><input class="form-control" id="ob-coverage" style="max-width:130px" placeholder="e.g. 100%"></div>
+          <div class="form-group mb-0"><label class="form-label">Value</label><input class="form-control" id="ob-value" style="max-width:120px"></div>
+          <div class="form-group mb-0 obn-glp" style="display:none"><label class="form-label">Tirz $</label><input class="form-control" type="number" id="ob-tirz" style="max-width:100px"></div>
+          <div class="form-group mb-0 obn-glp" style="display:none"><label class="form-label">Sema $</label><input class="form-control" type="number" id="ob-sema" style="max-width:100px"></div>
+          <button class="btn btn-primary btn-sm" onclick="saveBenefit()"><i class="fa-solid fa-plus"></i> <span id="ob-save-label">Add</span></button>
+          <button class="btn btn-outline btn-sm" id="ob-cancel" onclick="resetBenefitForm()" style="display:none">Cancel</button>
+        </div>
+        <table class="data-table">
+          <thead><tr><th>Benefit</th><th>Type</th><th>Coverage</th><th>Value</th><th>GLP-1 $</th><th></th></tr></thead>
+          <tbody id="obn-body"></tbody>
+        </table>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeModal('opp-modal')">Close</button>
+      <button class="btn btn-danger btn-sm" id="opp-delete" onclick="deleteOpp()" style="display:none">Delete</button>
+      <button class="btn btn-primary" onclick="saveOpp()">Save Opportunity</button>
     </div>
   </div>
 </div>
@@ -207,6 +268,7 @@
     document.getElementById('convert-btn').style.display = 'none';
     document.getElementById('converted-banner').style.display = 'none';
     document.getElementById('contact-section').style.display = 'none';
+    document.getElementById('opp-section').style.display = 'none';
     document.getElementById('modal-title').textContent = 'New Lead';
     resetContactForm();
   }
@@ -236,9 +298,11 @@
     } else {
       document.getElementById('convert-btn').style.display = '';
     }
-    // Contact tracking
+    // Contact tracking + opportunities
     document.getElementById('contact-section').style.display = '';
+    document.getElementById('opp-section').style.display = '';
     loadContacts(l.id);
+    loadOpps(l.id);
     openModal('lead-modal');
   }
 
@@ -314,6 +378,154 @@
       else { closeModal('lead-modal'); load(); }
     } else showToast('Convert failed', 'error');
   }
+
+  /* ── Opportunities (convert to contracts + benefits) ── */
+  let leadOpps = [];
+  const STAGE_BADGE = { Open: 'blue', Won: 'green', Lost: 'gray' };
+
+  async function loadOpps(leadId) {
+    leadOpps = await apiGet(`/leads?resource=opportunities&lead_id=${leadId}`) || [];
+    document.getElementById('opp-count').textContent = leadOpps.length ? `· ${leadOpps.length}` : '';
+    document.getElementById('opp-body').innerHTML = leadOpps.length
+      ? leadOpps.map(o => `<tr>
+          <td class="font-medium">${esc(o.name)}${o.converted_contract_id ? ' <span class="badge badge-green">→ contract</span>' : ''}</td>
+          <td>${o.value != null ? fmtCurrency(o.value) : '—'}</td>
+          <td><span class="badge badge-${STAGE_BADGE[o.stage] || 'gray'}">${esc(o.stage)}</span></td>
+          <td class="text-xs text-slate-500">${(o.benefits || []).length}</td>
+          <td class="text-right whitespace-nowrap">
+            <button class="btn btn-outline btn-sm" onclick="openOpp(${o.id})"><i class="fa-solid fa-pen"></i></button>
+            <button class="btn btn-danger btn-sm" onclick="deleteOpp(${o.id})"><i class="fa-solid fa-trash"></i></button>
+          </td></tr>`).join('')
+      : '<tr><td colspan="5" class="text-center py-5 text-slate-400">No opportunities yet</td></tr>';
+  }
+
+  function openOpp(id) {
+    const o = id ? leadOpps.find(x => x.id === id) : null;
+    document.getElementById('o-id').value = o ? o.id : '';
+    document.getElementById('o-name').value = o ? o.name : '';
+    document.getElementById('o-value').value = o && o.value != null ? o.value : '';
+    document.getElementById('o-stage').value = o ? o.stage : 'Open';
+    document.getElementById('o-eff').value = o && o.effective_date ? String(o.effective_date).slice(0, 10) : '';
+    document.getElementById('o-end').value = o && o.end_date ? String(o.end_date).slice(0, 10) : '';
+    document.getElementById('o-notes').value = o ? (o.notes || '') : '';
+    document.getElementById('opp-title').textContent = o ? `Opportunity — ${o.name}` : 'New Opportunity';
+    document.getElementById('opp-delete').style.display = o ? '' : 'none';
+    document.getElementById('obn-section').style.display = o ? '' : 'none';  // benefits after the opp exists
+    resetBenefitForm();
+    renderBenefits(o ? (o.benefits || []) : []);
+    openModal('opp-modal');
+  }
+
+  async function saveOpp() {
+    const leadId = document.getElementById('edit-id').value;
+    const oid = document.getElementById('o-id').value;
+    const body = {
+      name: document.getElementById('o-name').value.trim(),
+      value: document.getElementById('o-value').value || null,
+      stage: document.getElementById('o-stage').value,
+      effective_date: document.getElementById('o-eff').value || null,
+      end_date: document.getElementById('o-end').value || null,
+      notes: document.getElementById('o-notes').value.trim() || null,
+    };
+    if (!body.name) { showToast('Opportunity name is required', 'error'); return; }
+    const res = oid ? await apiPatch(`/leads?resource=opportunity&id=${oid}`, body)
+                    : await apiPost(`/leads?resource=opportunity&lead_id=${leadId}`, body);
+    if (!res || !res.ok) { showToast('Save failed', 'error'); return; }
+    const row = await res.json().catch(() => ({}));
+    showToast('Opportunity saved', 'success');
+    await loadOpps(leadId);
+    if (!oid && row.id) {   // new -> reveal benefits so they can be added now
+      document.getElementById('o-id').value = row.id;
+      document.getElementById('opp-title').textContent = `Opportunity — ${body.name}`;
+      document.getElementById('opp-delete').style.display = '';
+      document.getElementById('obn-section').style.display = '';
+      renderBenefits([]);
+    }
+  }
+
+  async function deleteOpp(id) {
+    const oid = id || document.getElementById('o-id').value;
+    if (!oid || !confirm2('Delete this opportunity and its benefits?')) return;
+    const res = await apiDelete(`/leads?resource=opportunity&id=${oid}`);
+    if (res && res.ok) { showToast('Deleted', 'success'); closeModal('opp-modal'); loadOpps(document.getElementById('edit-id').value); }
+    else showToast('Delete failed', 'error');
+  }
+
+  /* Benefits within an opportunity */
+  function obnToggleGlp() {
+    const glp = document.getElementById('ob-type').value === 'GLP1';
+    document.querySelectorAll('.obn-glp').forEach(e => e.style.display = glp ? '' : 'none');
+  }
+  function resetBenefitForm() {
+    ['ob-id', 'ob-name', 'ob-coverage', 'ob-value', 'ob-tirz', 'ob-sema'].forEach(id => { const e = document.getElementById(id); if (e) e.value = ''; });
+    const t = document.getElementById('ob-type'); if (t) t.value = 'iRx';
+    obnToggleGlp();
+    const lbl = document.getElementById('ob-save-label'); if (lbl) lbl.textContent = 'Add';
+    const cx = document.getElementById('ob-cancel'); if (cx) cx.style.display = 'none';
+  }
+  function renderBenefits(bens) {
+    document.getElementById('obn-count').textContent = bens.length ? `· ${bens.length}` : '';
+    document.getElementById('obn-body').innerHTML = bens.length
+      ? bens.map(b => {
+          const glp = [];
+          if (b.tirzepatide_amount != null) glp.push('Tirz ' + fmtCurrency(b.tirzepatide_amount));
+          if (b.semaglutide_amount != null) glp.push('Sema ' + fmtCurrency(b.semaglutide_amount));
+          return `<tr>
+            <td class="font-medium">${esc(b.name)}</td>
+            <td><span class="badge badge-${b.type === 'GLP1' ? 'purple' : 'blue'}">${esc(b.type) || 'iRx'}</span></td>
+            <td>${esc(b.coverage) || '—'}</td>
+            <td>${esc(b.value) || '—'}</td>
+            <td class="text-xs text-slate-500">${glp.join(' · ') || '—'}</td>
+            <td class="text-right whitespace-nowrap">
+              <button class="btn btn-outline btn-sm" onclick='editBenefit(${JSON.stringify(b).replace(/'/g, "&#39;")})'><i class="fa-solid fa-pen"></i></button>
+              <button class="btn btn-danger btn-sm" onclick="deleteBenefit(${b.id})"><i class="fa-solid fa-trash"></i></button>
+            </td></tr>`;
+        }).join('')
+      : '<tr><td colspan="6" class="text-center py-4 text-slate-400">No benefits yet</td></tr>';
+  }
+  function editBenefit(b) {
+    document.getElementById('ob-id').value = b.id;
+    document.getElementById('ob-name').value = b.name || '';
+    document.getElementById('ob-type').value = b.type || 'iRx';
+    document.getElementById('ob-coverage').value = b.coverage || '';
+    document.getElementById('ob-value').value = b.value || '';
+    document.getElementById('ob-tirz').value = b.tirzepatide_amount != null ? b.tirzepatide_amount : '';
+    document.getElementById('ob-sema').value = b.semaglutide_amount != null ? b.semaglutide_amount : '';
+    obnToggleGlp();
+    document.getElementById('ob-save-label').textContent = 'Save';
+    document.getElementById('ob-cancel').style.display = '';
+  }
+  async function saveBenefit() {
+    const oid = document.getElementById('o-id').value;
+    if (!oid) { showToast('Save the opportunity first', 'error'); return; }
+    const bid = document.getElementById('ob-id').value;
+    const body = {
+      name: document.getElementById('ob-name').value.trim(),
+      type: document.getElementById('ob-type').value,
+      coverage: document.getElementById('ob-coverage').value.trim() || null,
+      value: document.getElementById('ob-value').value.trim() || null,
+      tirzepatide_amount: document.getElementById('ob-tirz').value || null,
+      semaglutide_amount: document.getElementById('ob-sema').value || null,
+    };
+    if (!body.name) { showToast('Benefit name is required', 'error'); return; }
+    const res = bid ? await apiPatch(`/leads?resource=opp-benefit&id=${bid}`, body)
+                    : await apiPost(`/leads?resource=opp-benefit&opportunity_id=${oid}`, body);
+    if (!res || !res.ok) { showToast('Save failed', 'error'); return; }
+    showToast('Benefit saved', 'success');
+    resetBenefitForm();
+    await refreshOppBenefits(oid);
+  }
+  async function deleteBenefit(id) {
+    if (!confirm2('Delete this benefit?')) return;
+    const res = await apiDelete(`/leads?resource=opp-benefit&id=${id}`);
+    if (res && res.ok) { await refreshOppBenefits(document.getElementById('o-id').value); } else showToast('Delete failed', 'error');
+  }
+  async function refreshOppBenefits(oid) {
+    await loadOpps(document.getElementById('edit-id').value);
+    const o = leadOpps.find(x => String(x.id) === String(oid));
+    renderBenefits(o ? (o.benefits || []) : []);
+  }
+  document.getElementById('opp-modal').addEventListener('click', e => { if (e.target === e.currentTarget) closeModal('opp-modal'); });
 
   function getForm() {
     return {
