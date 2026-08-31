@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sales Dashboard — True Path CRM</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+  <link rel="stylesheet" href="/assets/css/app.css">
+</head>
+<body class="bg-slate-100 text-slate-700">
+<div id="app" class="flex h-screen overflow-hidden">
+  <div id="nav-placeholder"></div>
+  <div class="flex-1 flex flex-col overflow-hidden">
+    <div id="topbar"></div>
+    <main class="flex-1 overflow-y-auto p-6">
+
+      <div class="search-bar">
+        <span class="text-lg font-semibold">Sales Pipeline</span>
+        <a class="btn btn-primary ml-auto" href="/leads/"><i class="fa-solid fa-user-plus"></i> Manage Leads</a>
+      </div>
+
+      <!-- KPI cards -->
+      <div class="grid grid-cols-2 md:grid-cols-5 gap-3 mb-5" id="kpis"></div>
+
+      <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        <!-- Pipeline funnel -->
+        <div class="card lg:col-span-2">
+          <div class="card-header"><i class="fa-solid fa-filter text-slate-400"></i> Pipeline by Stage</div>
+          <div class="card-body"><div id="funnel"></div></div>
+        </div>
+        <!-- By source -->
+        <div class="card">
+          <div class="card-header"><i class="fa-solid fa-share-nodes text-slate-400"></i> Leads by Source</div>
+          <div class="card-body"><div id="sources"></div></div>
+        </div>
+      </div>
+
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mt-4">
+        <!-- Upcoming follow-ups -->
+        <div class="card">
+          <div class="card-header"><i class="fa-solid fa-calendar-check text-slate-400"></i> Upcoming Follow-ups</div>
+          <div class="card-body">
+            <table class="data-table"><thead><tr><th>Due</th><th>Lead</th><th>Type</th><th>Notes</th></tr></thead>
+            <tbody id="followups"></tbody></table>
+          </div>
+        </div>
+        <!-- Recent conversions -->
+        <div class="card">
+          <div class="card-header"><i class="fa-solid fa-handshake-angle text-slate-400"></i> Recent Conversions</div>
+          <div class="card-body">
+            <table class="data-table"><thead><tr><th>Lead</th><th>Value</th><th>Converted</th><th></th></tr></thead>
+            <tbody id="conversions"></tbody></table>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+</div>
+
+<script src="/assets/js/app.js"></script>
+<script>
+  initNav('sales-dashboard');
+  const escv = s => (s == null ? '' : String(s)).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  const STAGES = ['New', 'Contacted', 'Qualified', 'Converted', 'Lost'];
+  const STAGE_COLOR = { New: '#3b82f6', Contacted: '#6366f1', Qualified: '#0d9488', Converted: '#16a34a', Lost: '#94a3b8' };
+  const money = n => (n == null ? '$0' : '$' + Number(n).toLocaleString('en-US', { maximumFractionDigits: 0 }));
+
+  function kpi(label, value, sub, accent) {
+    return `<div class="card"><div class="card-body p-4">
+      <div class="text-xs uppercase tracking-wide text-slate-400">${escv(label)}</div>
+      <div class="text-2xl font-semibold" style="color:${accent || '#1e293b'}">${escv(value)}</div>
+      ${sub ? `<div class="text-xs text-slate-400 mt-0.5">${escv(sub)}</div>` : ''}</div></div>`;
+  }
+
+  async function load() {
+    const d = await apiGet('/leads?resource=dashboard');
+    if (!d) return;
+    const t = d.totals || {};
+    const convRate = t.total ? Math.round((t.converted || 0) / t.total * 100) : 0;
+
+    document.getElementById('kpis').innerHTML =
+      kpi('Open Leads', t.open_leads || 0, 'in the pipeline', '#0d9488') +
+      kpi('Open Pipeline', money(t.open_value), 'potential value', '#1f5f8b') +
+      kpi('Won', t.converted || 0, 'converted to clients', '#16a34a') +
+      kpi('Won Value', money(t.won_value), 'closed value', '#16a34a') +
+      kpi('Conversion', convRate + '%', `${t.converted || 0} of ${t.total || 0} leads`, '#7c3aed');
+
+    // Funnel — one bar per stage, width scaled to the largest stage count.
+    const smap = {}; (d.byStatus || []).forEach(s => smap[s.status] = s);
+    const max = Math.max(1, ...STAGES.map(s => (smap[s] || {}).n || 0));
+    document.getElementById('funnel').innerHTML = STAGES.map(s => {
+      const row = smap[s] || { n: 0, val: 0 };
+      const pct = Math.round((row.n || 0) / max * 100);
+      const c = STAGE_COLOR[s];
+      return `<div style="margin-bottom:12px">
+        <div class="flex items-center justify-between text-sm mb-1">
+          <span class="font-medium">${s}</span>
+          <span class="text-slate-500">${row.n || 0}${row.val ? ` · ${money(row.val)}` : ''}</span>
+        </div>
+        <div style="height:12px;background:#f1f5f9;border-radius:6px;overflow:hidden">
+          <div style="height:100%;width:${pct}%;background:${c};border-radius:6px"></div>
+        </div></div>`;
+    }).join('');
+
+    // Sources
+    const srcMax = Math.max(1, ...(d.bySource || []).map(x => x.n));
+    document.getElementById('sources').innerHTML = (d.bySource || []).length
+      ? (d.bySource || []).map(x => `<div style="margin-bottom:10px">
+          <div class="flex items-center justify-between text-sm mb-1"><span>${escv(x.source)}</span><span class="text-slate-500">${x.n}</span></div>
+          <div style="height:8px;background:#f1f5f9;border-radius:4px;overflow:hidden">
+            <div style="height:100%;width:${Math.round(x.n / srcMax * 100)}%;background:#0ea5b7;border-radius:4px"></div></div>
+        </div>`).join('')
+      : '<div class="text-sm text-slate-400 text-center py-4">No leads yet</div>';
+
+    // Follow-ups
+    document.getElementById('followups').innerHTML = (d.followups || []).length
+      ? (d.followups || []).map(f => `<tr>
+          <td class="text-xs whitespace-nowrap">${fmtDate(f.followup_date)}</td>
+          <td class="font-medium"><a class="text-teal-700" href="/leads/?open=${f.lead_id}">${escv(f.lead_name)}</a>${f.company ? `<div class="text-xs text-slate-400">${escv(f.company)}</div>` : ''}</td>
+          <td><span class="badge badge-blue">${escv(f.contact_type)}</span></td>
+          <td class="text-xs text-slate-500">${escv(f.notes) || '—'}</td>
+        </tr>`).join('')
+      : '<tr><td colspan="4" class="text-center py-6 text-slate-400">No follow-ups scheduled</td></tr>';
+
+    // Conversions
+    document.getElementById('conversions').innerHTML = (d.recent || []).length
+      ? (d.recent || []).map(r => `<tr>
+          <td class="font-medium">${escv(r.company || r.name)}</td>
+          <td>${r.value ? money(r.value) : '—'}</td>
+          <td class="text-xs text-slate-400">${fmtDate(r.converted_at)}</td>
+          <td class="text-right">${r.converted_client_id ? `<a class="btn btn-outline btn-sm" href="/clients/record/?id=${r.converted_client_id}">Open Client</a>` : ''}</td>
+        </tr>`).join('')
+      : '<tr><td colspan="4" class="text-center py-6 text-slate-400">No conversions yet</td></tr>';
+  }
+
+  load();
+</script>
+</body>
+</html>

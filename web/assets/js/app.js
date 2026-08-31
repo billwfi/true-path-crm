@@ -83,9 +83,11 @@ const NAV_ITEMS = [
   { href: '/dashboard/', icon: 'fa-gauge-high',       label: 'Dashboard',   key: 'dashboard' },
   { href: '/clients/',   icon: 'fa-users',             label: 'Clients',     key: 'clients' },
   { href: '/members/',   icon: 'fa-user-injured',      label: 'Members',     key: 'members' },
-  { href: '/leads/',     icon: 'fa-user-plus',         label: 'Leads',       key: 'leads' },
   { href: '/tasks/',     icon: 'fa-list-check',        label: 'Tasks',       key: 'tasks' },
   { href: '/reminders/',icon: 'fa-bell',              label: 'Reminders',   key: 'reminders' },
+  { section: 'Sales' },
+  { href: '/sales/',     icon: 'fa-chart-line',        label: 'Sales Dashboard', key: 'sales-dashboard' },
+  { href: '/leads/',     icon: 'fa-user-plus',         label: 'Leads',       key: 'leads' },
   { section: 'Marketing' },
   { href: '/marketing/schedulers/',   icon: 'fa-calendar-check', label: 'Schedulers',   key: 'marketing-schedulers' },
   { href: '/marketing/appointments/', icon: 'fa-calendar-day',   label: 'Appointments', key: 'marketing-appointments' },
@@ -175,7 +177,8 @@ function initNav(activeKey) {
 
   // Build topbar
   const pageTitles = {
-    dashboard: 'Dashboard', clients: 'Clients', 'client-record': 'Client Record', members: 'Members', leads: 'Leads', tasks: 'Tasks',
+    dashboard: 'Dashboard', clients: 'Clients', 'client-record': 'Client Record', members: 'Members',
+    'sales-dashboard': 'Sales Dashboard', leads: 'Leads', tasks: 'Tasks',
     reminders: 'Reminders', 'marketing-schedulers': 'Marketing — Schedulers',
     'marketing-appointments': 'Marketing — Appointments',
     'marketing-email-templates': 'Marketing — Email Templates',

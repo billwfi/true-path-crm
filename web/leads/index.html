@@ -55,13 +55,18 @@
 
 <!-- Lead modal -->
 <div id="lead-modal" class="modal-backdrop hidden">
-  <div class="modal">
+  <div class="modal modal-lg">
     <div class="modal-header">
       <span class="modal-title" id="modal-title">New Lead</span>
       <button class="modal-close" onclick="closeModal('lead-modal')">×</button>
     </div>
     <div class="modal-body">
       <input type="hidden" id="edit-id">
+      <div id="converted-banner" class="flex items-center gap-2 bg-emerald-50 border border-emerald-300 text-emerald-800 rounded-md px-4 py-2.5 mb-3 text-sm" style="display:none">
+        <i class="fa-solid fa-circle-check"></i>
+        <span>Converted to a client.</span>
+        <a id="converted-link" class="btn btn-outline btn-sm ml-auto" href="#"><i class="fa-solid fa-folder-open"></i> Open Client</a>
+      </div>
       <div class="form-grid">
         <div class="form-group"><label class="form-label">Full Name *</label><input class="form-control" id="f-name"></div>
         <div class="form-group"><label class="form-label">Company</label><input class="form-control" id="f-company"></div>
@@ -83,10 +88,33 @@
       </div>
       <div class="form-group"><label class="form-label">Tags</label><input class="form-control" id="f-tags" placeholder="comma-separated tags"></div>
       <div class="form-group"><label class="form-label">Notes</label><textarea class="form-control" id="f-notes" rows="3"></textarea></div>
+
+      <!-- Contact tracking (existing leads only) -->
+      <div id="contact-section" style="display:none">
+        <div class="text-xs uppercase tracking-wide text-slate-500 mt-4 mb-2" style="border-bottom:1px solid #e2e8f0;padding-bottom:4px">
+          Contact Efforts <span id="contact-count" class="text-slate-400"></span></div>
+        <div class="flex flex-wrap items-end gap-2 mb-3">
+          <input type="hidden" id="c-id">
+          <div class="form-group mb-0"><label class="form-label">Type</label>
+            <select class="form-control" id="c-type" style="max-width:130px">
+              <option>Email</option><option>Phone</option><option>Meeting</option><option>Other</option>
+            </select></div>
+          <div class="form-group mb-0"><label class="form-label">Date</label><input type="date" class="form-control" id="c-date" style="max-width:150px"></div>
+          <div class="form-group mb-0"><label class="form-label">Follow-up</label><input type="date" class="form-control" id="c-followup" style="max-width:150px"></div>
+          <div class="form-group mb-0" style="flex:1;min-width:180px"><label class="form-label">Notes</label><input class="form-control" id="c-notes" placeholder="What happened…"></div>
+          <button class="btn btn-primary btn-sm" onclick="saveContact()"><i class="fa-solid fa-plus"></i> <span id="c-save-label">Log</span></button>
+          <button class="btn btn-outline btn-sm" id="c-cancel" onclick="resetContactForm()" style="display:none">Cancel</button>
+        </div>
+        <table class="data-table">
+          <thead><tr><th>Date</th><th>Type</th><th>Notes</th><th>Follow-up</th><th></th></tr></thead>
+          <tbody id="contact-body"></tbody>
+        </table>
+      </div>
     </div>
     <div class="modal-footer">
       <button class="btn btn-outline" onclick="closeModal('lead-modal')">Cancel</button>
       <button class="btn btn-danger btn-sm" id="delete-btn" onclick="doDelete()" style="display:none">Delete</button>
+      <button class="btn btn-success btn-sm" id="convert-btn" onclick="doConvert()" style="display:none"><i class="fa-solid fa-user-check"></i> Convert to Client</button>
       <button class="btn btn-primary" onclick="save()">Save</button>
     </div>
   </div>
@@ -176,7 +204,11 @@
     document.getElementById('f-status').value = 'New';
     document.getElementById('f-source').value = '';
     document.getElementById('delete-btn').style.display = 'none';
+    document.getElementById('convert-btn').style.display = 'none';
+    document.getElementById('converted-banner').style.display = 'none';
+    document.getElementById('contact-section').style.display = 'none';
     document.getElementById('modal-title').textContent = 'New Lead';
+    resetContactForm();
   }
 
   async function openEdit(id) {
@@ -196,7 +228,91 @@
     document.getElementById('f-notes').value       = l.notes       || '';
     document.getElementById('modal-title').textContent = `Edit — ${l.name}`;
     document.getElementById('delete-btn').style.display = '';
+
+    // Convert / converted state
+    if (l.converted_client_id) {
+      document.getElementById('converted-banner').style.display = '';
+      document.getElementById('converted-link').href = `/clients/record/?id=${l.converted_client_id}`;
+    } else {
+      document.getElementById('convert-btn').style.display = '';
+    }
+    // Contact tracking
+    document.getElementById('contact-section').style.display = '';
+    loadContacts(l.id);
     openModal('lead-modal');
+  }
+
+  /* ── Contact efforts ── */
+  function resetContactForm() {
+    const set = (id, v) => { const e = document.getElementById(id); if (e) e.value = v; };
+    set('c-id', ''); set('c-type', 'Email'); set('c-date', new Date().toISOString().slice(0, 10));
+    set('c-followup', ''); set('c-notes', '');
+    const lbl = document.getElementById('c-save-label'); if (lbl) lbl.textContent = 'Log';
+    const cx = document.getElementById('c-cancel'); if (cx) cx.style.display = 'none';
+  }
+
+  async function loadContacts(leadId) {
+    const rows = await apiGet(`/leads?resource=contacts&lead_id=${leadId}`) || [];
+    document.getElementById('contact-count').textContent = rows.length ? `· ${rows.length}` : '';
+    const TYPE_COLOR = { Email: 'blue', Phone: 'green', Meeting: 'purple', Other: 'gray' };
+    document.getElementById('contact-body').innerHTML = rows.length
+      ? rows.map(c => `<tr>
+          <td class="text-xs whitespace-nowrap">${fmtDate(c.contact_date)}</td>
+          <td><span class="badge badge-${TYPE_COLOR[c.contact_type] || 'gray'}">${esc(c.contact_type)}</span></td>
+          <td class="text-sm">${esc(c.notes) || '—'}</td>
+          <td class="text-xs">${c.followup_date ? fmtDate(c.followup_date) : '—'}</td>
+          <td class="text-right whitespace-nowrap">
+            <button class="btn btn-outline btn-sm" title="Edit" onclick='editContact(${JSON.stringify(c).replace(/'/g, "&#39;")})'><i class="fa-solid fa-pen"></i></button>
+            <button class="btn btn-danger btn-sm" title="Delete" onclick="deleteContact(${c.id})"><i class="fa-solid fa-trash"></i></button>
+          </td>
+        </tr>`).join('')
+      : '<tr><td colspan="5" class="text-center py-5 text-slate-400">No contact efforts logged yet</td></tr>';
+  }
+
+  function editContact(c) {
+    document.getElementById('c-id').value = c.id;
+    document.getElementById('c-type').value = c.contact_type || 'Email';
+    document.getElementById('c-date').value = c.contact_date ? String(c.contact_date).slice(0, 10) : '';
+    document.getElementById('c-followup').value = c.followup_date ? String(c.followup_date).slice(0, 10) : '';
+    document.getElementById('c-notes').value = c.notes || '';
+    document.getElementById('c-save-label').textContent = 'Save';
+    document.getElementById('c-cancel').style.display = '';
+  }
+
+  async function saveContact() {
+    const leadId = document.getElementById('edit-id').value;
+    if (!leadId) return;
+    const cid = document.getElementById('c-id').value;
+    const body = {
+      contact_type: document.getElementById('c-type').value,
+      contact_date: document.getElementById('c-date').value || null,
+      followup_date: document.getElementById('c-followup').value || null,
+      notes: document.getElementById('c-notes').value.trim() || null,
+    };
+    const res = cid
+      ? await apiPatch(`/leads?resource=contact&id=${cid}`, body)
+      : await apiPost(`/leads?resource=contact&lead_id=${leadId}`, body);
+    if (res && res.ok) { showToast(cid ? 'Contact updated' : 'Contact logged', 'success'); resetContactForm(); loadContacts(leadId); load(); }
+    else showToast('Save failed', 'error');
+  }
+
+  async function deleteContact(cid) {
+    if (!confirm2('Delete this contact effort?')) return;
+    const res = await apiDelete(`/leads?resource=contact&id=${cid}`);
+    if (res && res.ok) { loadContacts(document.getElementById('edit-id').value); } else showToast('Delete failed', 'error');
+  }
+
+  async function doConvert() {
+    const id = document.getElementById('edit-id').value;
+    if (!id) return;
+    if (!confirm2('Convert this lead to a client? This creates a client record (and a primary contact) and marks the lead Converted.')) return;
+    const res = await apiPost(`/leads?action=convert&id=${id}`, {});
+    if (res && res.ok) {
+      const data = await res.json().catch(() => ({}));
+      showToast('Lead converted to client', 'success');
+      if (data.client_id) location.href = `/clients/record/?id=${data.client_id}`;
+      else { closeModal('lead-modal'); load(); }
+    } else showToast('Convert failed', 'error');
   }
 
   function getForm() {
@@ -232,7 +348,11 @@
   }
 
   document.getElementById('lead-modal').addEventListener('click', e => { if (e.target === e.currentTarget) closeModal('lead-modal'); });
-  load();
+  (async () => {
+    await load();
+    const openId = new URLSearchParams(location.search).get('open');
+    if (openId) openEdit(parseInt(openId, 10));  // deep-link from the Sales dashboard
+  })();
 </script>
 </body>
 </html>
