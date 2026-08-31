@@ -14,7 +14,7 @@ exports.handler = async function (event) {
   const user = verifyToken(event);
   if (!user) return unauthorized();
 
-  const { member, contact_id, action, category, resource } = event.queryStringParameters || {};
+  const { member, contact_id, action, category, resource, q_id } = event.queryStringParameters || {};
   const cat = category || 'GLP1';
 
   try {
@@ -39,6 +39,25 @@ exports.handler = async function (event) {
            WHERE mi.member_key = @member
            ORDER BY t.sort_order, mi.intake_type`, { member })).recordset;
         return ok(rows);
+      }
+      if (resource === 'questionnaires') {
+        // A GLP-1 intake can have several questionnaires (one per visit / re-eval).
+        const rows = (await mssql(
+          `SELECT id, intake_date, followup_date, medication_selected, disqualified, completed, updated_at, created_at
+           FROM dbo.tp_intake_questionnaires
+           WHERE member_key = @member AND intake_type = @category
+           ORDER BY COALESCE(intake_date, CAST(created_at AS date)) DESC, id DESC`,
+          { member, category: cat })).recordset;
+        return ok(rows);
+      }
+      if (resource === 'questionnaire') {
+        const qid = parseInt(q_id, 10);
+        if (!qid) return badRequest('q_id is required');
+        const row = (await mssql(
+          `SELECT id, member_key, intake_type, answers, disqualified, completed, updated_at
+           FROM dbo.tp_intake_questionnaires WHERE id = @id`, { id: qid })).recordset[0];
+        return row ? ok({ id: row.id, answers: safeParse(row.answers), disqualified: !!row.disqualified,
+                          completed: !!row.completed, updated_at: row.updated_at }) : notFound();
       }
       const contacts = await mssql(
         `SELECT id, member_key, contact_date, contact_type, notes, followup_date,
@@ -107,23 +126,50 @@ exports.handler = async function (event) {
       }
 
       if (action === 'questionnaire') {
-        // Upsert the member's intake questionnaire (answers stored as JSON).
+        // Create (no q_id) or update (q_id) one of the intake's questionnaires. The
+        // intake_date / followup_date / medication_selected are surfaced as columns for the
+        // list; the full answer set is kept as JSON.
         if (!member) return badRequest('member is required');
         const b = JSON.parse(event.body || '{}');
-        const answers = JSON.stringify(b.answers || {});
-        const dq = b.disqualified ? 1 : 0;
+        const a = b.answers || {};
+        const params = {
+          member, category: cat,
+          answers: JSON.stringify(a),
+          dq: b.disqualified ? 1 : 0,
+          completed: b.completed ? 1 : 0,
+          intake_date: a.intake_date || null,
+          followup_date: a.followup_date || null,
+          medication_selected: (a.medication_selected || '').slice(0, 100) || null,
+          by: user.id || null,
+        };
+        const qid = parseInt(q_id, 10);
+        if (qid) {
+          const r = await mssql(
+            `UPDATE dbo.tp_intake_questionnaires
+             SET answers=@answers, disqualified=@dq, completed=@completed,
+                 intake_date=@intake_date, followup_date=@followup_date, medication_selected=@medication_selected,
+                 updated_by=@by, updated_at=GETDATE()
+             OUTPUT INSERTED.id, INSERTED.disqualified, INSERTED.completed, INSERTED.updated_at
+             WHERE id=@id`, { ...params, id: qid });
+          return r.recordset[0]
+            ? ok({ ok: true, id: r.recordset[0].id, disqualified: !!r.recordset[0].disqualified,
+                   completed: !!r.recordset[0].completed, updated_at: r.recordset[0].updated_at })
+            : notFound();
+        }
+        // New questionnaire — make sure the parent intake row exists first.
+        await mssql(
+          `IF NOT EXISTS (SELECT 1 FROM dbo.tp_member_intakes WHERE member_key=@member AND intake_type=@category)
+             INSERT INTO dbo.tp_member_intakes (member_key, intake_type, status, status_date, updated_by)
+             VALUES (@member, @category, 'In Progress', CAST(GETDATE() AS DATE), @by)`,
+          { member, category: cat, by: user.id || null });
         const r = await mssql(
-          `MERGE dbo.tp_member_intakes AS t
-           USING (SELECT @member AS member_key, @category AS intake_type) AS s
-           ON t.member_key = s.member_key AND t.intake_type = s.intake_type
-           WHEN MATCHED THEN UPDATE SET questionnaire=@answers, disqualified=@dq,
-             updated_by=@updated_by, updated_at=GETDATE()
-           WHEN NOT MATCHED THEN INSERT (member_key, intake_type, status, status_date, questionnaire, disqualified, updated_by)
-             VALUES (@member, @category, 'In Progress', CAST(GETDATE() AS DATE), @answers, @dq, @updated_by)
-           OUTPUT INSERTED.disqualified, INSERTED.updated_at;`,
-          { member, category: cat, answers, dq, updated_by: user.id || null });
-        return ok({ ok: true, disqualified: !!(r.recordset[0] || {}).disqualified,
-                    updated_at: (r.recordset[0] || {}).updated_at });
+          `INSERT INTO dbo.tp_intake_questionnaires
+             (member_key, intake_type, intake_date, followup_date, medication_selected, answers, disqualified, completed, created_by, updated_by, updated_at)
+           OUTPUT INSERTED.id, INSERTED.updated_at
+           VALUES (@member, @category, @intake_date, @followup_date, @medication_selected, @answers, @dq, @completed, @by, @by, GETDATE())`,
+          params);
+        return ok({ ok: true, id: r.recordset[0].id, disqualified: !!params.dq,
+                    completed: !!params.completed, updated_at: r.recordset[0].updated_at });
       }
 
       if (action === 'intake') {
@@ -184,11 +230,19 @@ exports.handler = async function (event) {
     }
 
     if (event.httpMethod === 'DELETE') {
+      if (action === 'delete-questionnaire') {
+        const qid = parseInt(q_id, 10);
+        if (!qid) return badRequest('q_id is required');
+        const r = await mssql('DELETE FROM dbo.tp_intake_questionnaires WHERE id=@id', { id: qid });
+        return r.rowsAffected[0] ? ok({ deleted: true }) : notFound();
+      }
       if (action === 'delete-intake') {
-        // Remove an entire intake track for this member: its status/questionnaire record
-        // plus its contact log. Leaves any assignment (ReadyToAssign) untouched.
+        // Remove an entire intake track for this member: its status record, questionnaires
+        // and contact log. Leaves any assignment (ReadyToAssign) untouched.
         if (!member) return badRequest('member is required');
         await mssql('DELETE FROM dbo.GLP1_ContactLog WHERE member_key=@member AND category=@category',
+          { member, category: cat });
+        await mssql('DELETE FROM dbo.tp_intake_questionnaires WHERE member_key=@member AND intake_type=@category',
           { member, category: cat });
         const r = await mssql('DELETE FROM dbo.tp_member_intakes WHERE member_key=@member AND intake_type=@category',
           { member, category: cat });

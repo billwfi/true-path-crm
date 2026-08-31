@@ -111,18 +111,37 @@
             </div>
           </div>
 
-          <!-- Intake Questionnaire (GLP-1 intake only) -->
+          <!-- Intake Questionnaires (GLP-1 intake only) — a list; each opens into the form -->
           <div class="card" id="q-card">
-            <div class="card-header"><i class="fa-solid fa-file-medical text-slate-400"></i> Intake Questionnaire</div>
+            <div class="card-header"><i class="fa-solid fa-file-medical text-slate-400"></i> Intake Questionnaires</div>
             <div class="card-body">
-              <div id="q-dq-banner" class="flex items-center gap-2 bg-red-50 border border-red-300 text-red-700 rounded-md px-4 py-3 mb-4 text-sm" style="display:none">
-                <i class="fa-solid fa-triangle-exclamation"></i>
-                <span><strong>Possible disqualification.</strong> <span id="q-dq-reasons"></span></span>
+
+              <!-- LIST -->
+              <div id="q-list-view">
+                <div class="flex justify-end mb-3">
+                  <button class="btn btn-outline btn-sm" onclick="addQuestionnaire()"><i class="fa-solid fa-plus"></i> Add Questionnaire</button>
+                </div>
+                <table class="data-table">
+                  <thead><tr>
+                    <th>Intake Date</th><th>Follow-up</th><th>Medication</th><th>Status</th><th></th>
+                  </tr></thead>
+                  <tbody id="q-list-body"></tbody>
+                </table>
               </div>
-              <div id="q-form"></div>
-              <div class="flex items-center gap-3 mt-2">
-                <button class="btn btn-primary" onclick="saveQuestionnaire()"><i class="fa-solid fa-floppy-disk"></i> Save Questionnaire</button>
-                <span class="text-xs text-slate-400" id="q-updated"></span>
+
+              <!-- DETAIL: the questionnaire form -->
+              <div id="q-detail-view" style="display:none">
+                <button class="btn btn-outline btn-sm mb-3" onclick="backToQuestionnaireList()"><i class="fa-solid fa-arrow-left"></i> Back to questionnaires</button>
+                <div id="q-dq-banner" class="flex items-center gap-2 bg-red-50 border border-red-300 text-red-700 rounded-md px-4 py-3 mb-4 text-sm" style="display:none">
+                  <i class="fa-solid fa-triangle-exclamation"></i>
+                  <span><strong>Possible disqualification.</strong> <span id="q-dq-reasons"></span></span>
+                </div>
+                <div id="q-form"></div>
+                <div class="flex items-center gap-3 mt-2">
+                  <button class="btn btn-primary" onclick="saveQuestionnaire(false)"><i class="fa-solid fa-floppy-disk"></i> Save</button>
+                  <button class="btn btn-outline" onclick="saveQuestionnaire(true)"><i class="fa-solid fa-check"></i> Complete &amp; Save</button>
+                  <span class="text-xs text-slate-400" id="q-updated"></span>
+                </div>
               </div>
             </div>
           </div>
@@ -198,6 +217,7 @@
   // The member can hold several intakes (one per type). `intakes` is the full set; `activeCat`
   // is the one currently open in the tabs below.
   let intakes = [], activeCat = null, activeType = null, allTypes = [];
+  let questionnaires = [], currentQid = null;  // the active intake's questionnaires + the one open in the form
   const trackCat = () => activeCat || (record && record.category) || 'GLP1';  // active intake type
 
   function opt(v, sel) { return `<option ${v === sel ? 'selected' : ''}>${esc(v)}</option>`; }
@@ -304,10 +324,11 @@
     activeCat = cat;
     activeType = intakes.find(i => i.intake_type === cat) || null;
     document.getElementById('i-title').textContent = `Intake Status — ${typeName(activeType)}`;
-    document.getElementById('q-card').style.display = isGlp1(cat) ? '' : 'none';  // questionnaire = GLP-1 only
+    document.getElementById('q-card').style.display = isGlp1(cat) ? '' : 'none';  // questionnaires = GLP-1 only
     document.getElementById('intake-list').style.display = 'none';
     document.getElementById('intake-detail').style.display = '';
     await loadTracking();
+    if (isGlp1(cat)) await loadQuestionnaires();
   }
 
   async function backToIntakeList() {
@@ -349,10 +370,63 @@
     const data = await apiGet(`/glp1-tracking?member=${encodeURIComponent(memberKey)}&category=${encodeURIComponent(trackCat())}`) || {};
     contacts = data.contacts || [];
     intake = data.intake;
-    qData = data.questionnaire;
     renderIntake();
     renderContacts();
+  }
+
+  /* ── Intake questionnaires (a GLP-1 intake can have several) ── */
+  async function loadQuestionnaires() {
+    questionnaires = await apiGet(`/glp1-tracking?member=${encodeURIComponent(memberKey)}&category=${encodeURIComponent(activeCat)}&resource=questionnaires`) || [];
+    renderQuestionnaireList();
+    showQList();
+  }
+
+  function qStatusBadge(q) {
+    if (q.disqualified) return '<span class="badge badge-red">Possible DQ</span>';
+    if (q.completed) return '<span class="badge badge-green">Completed</span>';
+    return '<span class="badge badge-gray">Draft</span>';
+  }
+
+  function renderQuestionnaireList() {
+    document.getElementById('q-list-body').innerHTML = questionnaires.length
+      ? questionnaires.map(q => `<tr>
+          <td>${q.intake_date ? fmtDate(q.intake_date) : '—'}</td>
+          <td>${q.followup_date ? fmtDate(q.followup_date) : '—'}</td>
+          <td>${esc(q.medication_selected) || '<span class="text-slate-400">—</span>'}</td>
+          <td>${qStatusBadge(q)}</td>
+          <td class="text-right whitespace-nowrap">
+            <button class="btn btn-primary btn-sm" onclick="openQuestionnaire(${q.id})"><i class="fa-solid fa-folder-open"></i> Open</button>
+            <button class="btn btn-danger btn-sm" onclick="deleteQuestionnaire(${q.id})"><i class="fa-solid fa-trash"></i></button>
+          </td>
+        </tr>`).join('')
+      : '<tr><td colspan="5" class="text-center py-6 text-slate-400">No questionnaires yet — use “Add Questionnaire”.</td></tr>';
+  }
+
+  function showQList() {
+    document.getElementById('q-list-view').style.display = '';
+    document.getElementById('q-detail-view').style.display = 'none';
+  }
+  function showQForm() {
+    document.getElementById('q-list-view').style.display = 'none';
+    document.getElementById('q-detail-view').style.display = '';
     renderQuestionnaire();
+  }
+
+  function addQuestionnaire() { currentQid = null; qData = null; showQForm(); }
+
+  async function openQuestionnaire(id) {
+    currentQid = id;
+    qData = await apiGet(`/glp1-tracking?member=${encodeURIComponent(memberKey)}&resource=questionnaire&q_id=${id}`) || null;
+    showQForm();
+  }
+
+  function backToQuestionnaireList() { loadQuestionnaires(); }
+
+  async function deleteQuestionnaire(id) {
+    if (!confirm2('Delete this questionnaire?')) return;
+    const res = await apiDelete(`/glp1-tracking?member=${encodeURIComponent(memberKey)}&category=${encodeURIComponent(activeCat)}&action=delete-questionnaire&q_id=${id}`);
+    if (res && res.ok) { showToast('Questionnaire deleted', 'success'); await loadQuestionnaires(); }
+    else showToast('Delete failed', 'error');
   }
 
   /* ── Intake ── */
@@ -633,15 +707,20 @@
     document.getElementById('q-dq-reasons').textContent = reasons.join('; ');
   }
 
-  async function saveQuestionnaire() {
+  async function saveQuestionnaire(complete) {
     const answers = collectQuestionnaire();
     const disqualified = computeDQ(answers).length > 0;
-    const res = await apiPatch(`/glp1-tracking?member=${encodeURIComponent(memberKey)}&category=${encodeURIComponent(trackCat())}&action=questionnaire`,
-      { answers, disqualified });
+    const completed = complete ? true : !!(qData && qData.completed);
+    let url = `/glp1-tracking?member=${encodeURIComponent(memberKey)}&category=${encodeURIComponent(activeCat)}&action=questionnaire`;
+    if (currentQid) url += `&q_id=${currentQid}`;
+    const res = await apiPatch(url, { answers, disqualified, completed });
     if (res && res.ok) {
-      qData = { answers, disqualified, updated_at: new Date().toISOString() };
-      showToast('Questionnaire saved', 'success');
-      document.getElementById('q-updated').textContent = 'Last saved ' + fmtDate(qData.updated_at);
+      const data = await res.json().catch(() => ({}));
+      if (data.id) currentQid = data.id;
+      qData = { id: currentQid, answers, disqualified, completed, updated_at: data.updated_at || new Date().toISOString() };
+      showToast(complete ? 'Questionnaire completed & saved' : 'Questionnaire saved', 'success');
+      document.getElementById('q-updated').textContent =
+        'Last saved ' + fmtDate(qData.updated_at) + (completed ? ' · Completed' : '');
     } else showToast('Save failed', 'error');
   }
 
