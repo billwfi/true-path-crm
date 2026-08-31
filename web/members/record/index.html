@@ -20,34 +20,53 @@
         <span id="member-status" class="ml-2"></span>
       </div>
 
-      <!-- Member profile -->
-      <div class="card mb-4">
-        <div class="card-header"><i class="fa-solid fa-id-card text-slate-400"></i> Member Profile</div>
-        <div class="card-body form-pad">
-          <div id="demo" class="grid grid-cols-2 md:grid-cols-4 gap-x-6 gap-y-3 text-sm"></div>
+      <!-- Tabs (mirror the assigned-record view) -->
+      <div id="tabbar" class="flex gap-6 border-b border-slate-200 mb-4 px-1">
+        <button class="tab-btn active" data-tab="info" onclick="showTab('info')">Member Info</button>
+        <button class="tab-btn" data-tab="intakes" onclick="showTab('intakes')">
+          Intakes in Process <span id="tab-intakes" class="badge badge-blue ml-1">0</span></button>
+      </div>
+
+      <!-- Member Info panel -->
+      <div class="tab-panel" data-panel="info">
+        <div class="card mb-4">
+          <div class="card-header"><i class="fa-solid fa-id-card text-slate-400"></i> Member Profile</div>
+          <div class="card-body form-pad">
+            <div id="demo" class="grid grid-cols-2 md:grid-cols-4 gap-x-6 gap-y-3 text-sm"></div>
+          </div>
+        </div>
+
+        <div class="card mb-4">
+          <div class="card-header"><i class="fa-solid fa-pills text-slate-400"></i>
+            Current Medications <span id="cur-count" class="text-slate-400 text-sm ml-1"></span>
+            <span class="text-xs text-slate-400 ml-2 font-normal">— actively prescribed</span></div>
+          <div class="card-body">
+            <div style="overflow-x:auto"><table class="data-table">
+              <thead><tr><th>Medication</th><th>Strength</th><th>NDC</th><th>Day Supply</th><th>Refills</th><th>Next Fill</th></tr></thead>
+              <tbody id="cur-meds"></tbody></table></div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header"><i class="fa-solid fa-clock-rotate-left text-slate-400"></i>
+            Past Medications <span id="past-count" class="text-slate-400 text-sm ml-1"></span></div>
+          <div class="card-body">
+            <div style="overflow-x:auto"><table class="data-table">
+              <thead><tr><th>Medication</th><th>Strength</th><th>NDC</th><th>Day Supply</th><th>Refills</th><th>Next Fill</th></tr></thead>
+              <tbody id="past-meds"></tbody></table></div>
+          </div>
         </div>
       </div>
 
-      <!-- Current medications (actively prescribed) -->
-      <div class="card mb-4">
-        <div class="card-header"><i class="fa-solid fa-pills text-slate-400"></i>
-          Current Medications <span id="cur-count" class="text-slate-400 text-sm ml-1"></span>
-          <span class="text-xs text-slate-400 ml-2 font-normal">— actively prescribed</span></div>
-        <div class="card-body">
-          <div style="overflow-x:auto"><table class="data-table">
-            <thead><tr><th>Medication</th><th>Strength</th><th>NDC</th><th>Day Supply</th><th>Refills</th><th>Next Fill</th></tr></thead>
-            <tbody id="cur-meds"></tbody></table></div>
-        </div>
-      </div>
-
-      <!-- Past / discontinued medications -->
-      <div class="card">
-        <div class="card-header"><i class="fa-solid fa-clock-rotate-left text-slate-400"></i>
-          Past Medications <span id="past-count" class="text-slate-400 text-sm ml-1"></span></div>
-        <div class="card-body">
-          <div style="overflow-x:auto"><table class="data-table">
-            <thead><tr><th>Medication</th><th>Strength</th><th>NDC</th><th>Day Supply</th><th>Refills</th><th>Next Fill</th></tr></thead>
-            <tbody id="past-meds"></tbody></table></div>
+      <!-- Intakes in Process panel -->
+      <div class="tab-panel" data-panel="intakes" style="display:none">
+        <div class="card">
+          <div class="card-header"><i class="fa-solid fa-clipboard-check text-slate-400"></i> Intakes in Process</div>
+          <div class="card-body">
+            <div style="overflow-x:auto"><table class="data-table">
+              <thead><tr><th>Category</th><th>Status</th><th>Status Date</th><th>Sub-Status</th><th>Assigned To</th><th></th></tr></thead>
+              <tbody id="intake-body"></tbody></table></div>
+          </div>
         </div>
       </div>
     </main>
@@ -60,14 +79,19 @@
   const escv = s => (s == null ? '' : String(s)).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   const params = new URLSearchParams(location.search);
   const memberId = params.get('id');
+  let intakeKey = null;  // the key the intake engine uses for this member (their member_id)
   const nm = m => `${(m.last_name || '').trim()}, ${(m.first_name || '').trim()}`.replace(/^, |, $/, '') || 'Member';
   function goBack() { if (history.length > 1) history.back(); else location.href = '/members/'; }
+
+  function showTab(name) {
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === name));
+    document.querySelectorAll('.tab-panel').forEach(p => p.style.display = p.dataset.panel === name ? '' : 'none');
+  }
 
   function field(l, v) {
     return `<div><div class="text-xs text-slate-400">${escv(l)}</div>
       <div class="font-medium">${(v == null || v === '') ? '—' : escv(v)}</div></div>`;
   }
-  // A medication row (Next Fill / refills only shown on current meds).
   function medRow(x) {
     return `<tr>
       <td class="font-medium">${escv(x.short_name) || escv(x.label) || ('#' + (x.product_source_id || ''))}</td>
@@ -79,10 +103,42 @@
     </tr>`;
   }
 
+  /* ── Intakes in process (shared with the assigned-record view) ── */
+  const CAT_COLOR = { GLP1: '#0d9488', NONGLP1: '#1f5f8b' };
+  function typeName(i) { return (i && i.name) || (i && i.intake_type === 'NONGLP1' ? 'Non-GLP-1' : 'GLP-1'); }
+  function catBadge(i) {
+    const c = (i && i.color) || CAT_COLOR[i && i.intake_type] || '#64748b';
+    return `<span class="badge" style="background:${c}1a;color:${c}">${escv(typeName(i))}</span>`;
+  }
+  const INTAKE_COLORS = { 'In Progress': 'blue', 'Outreach Completed': 'green', 'Submitted to WellSync': 'purple' };
+  function statusBadge(s) {
+    if (!s) return '<span class="text-slate-400">—</span>';
+    return `<span class="badge badge-${INTAKE_COLORS[s] || 'gray'}">${escv(s)}</span>`;
+  }
+
+  async function loadIntakes() {
+    if (!intakeKey) { document.getElementById('tab-intakes').textContent = '0'; return; }
+    const list = await apiGet('/glp1-tracking?member=' + encodeURIComponent(intakeKey) + '&resource=intakes').catch(() => []) || [];
+    document.getElementById('tab-intakes').textContent = list.length;
+    document.getElementById('intake-body').innerHTML = list.length
+      ? list.map(i => `<tr>
+          <td>${catBadge(i)}</td>
+          <td>${statusBadge(i.status)}</td>
+          <td class="text-xs text-slate-500">${i.status_date ? fmtDate(i.status_date) : '—'}</td>
+          <td>${escv(i.sub_status) || '<span class="text-slate-400">—</span>'}</td>
+          <td>${escv(i.assigned_name) || '<span class="text-slate-400">Unassigned</span>'}</td>
+          <td class="text-right whitespace-nowrap">${i.ready_indx
+            ? `<a class="btn btn-primary btn-sm" href="/glp1/record/?indx=${i.ready_indx}"><i class="fa-solid fa-folder-open"></i> Open</a>`
+            : '<span class="text-xs text-slate-400">—</span>'}</td>
+        </tr>`).join('')
+      : '<tr><td colspan="6" class="text-center py-8 text-slate-400">No intakes in process for this member</td></tr>';
+  }
+
   async function load() {
     if (!memberId) { document.querySelector('main').innerHTML = '<div class="card"><div class="card-body text-center py-10 text-slate-400">No member specified</div></div>'; return; }
     const m = await apiGet('/members?id=' + encodeURIComponent(memberId)).catch(() => null);
     if (!m) { document.querySelector('main').innerHTML = '<div class="card"><div class="card-body text-center py-10 text-slate-400">Member not found</div></div>'; return; }
+    intakeKey = (m.member_id || '').trim() || null;
 
     document.getElementById('member-name').textContent = nm(m);
     document.getElementById('member-status').innerHTML =
@@ -98,7 +154,6 @@
       field('Eligible thru', m.eligible_thru);
 
     const meds = m.medications || [];
-    // "Current" = actively prescribed (not flagged inactive); "Past" = discontinued.
     const current = meds.filter(x => !x.inactive);
     const past = meds.filter(x => x.inactive);
     document.getElementById('cur-count').textContent = current.length ? '· ' + current.length : '';
@@ -109,6 +164,8 @@
     document.getElementById('past-meds').innerHTML = past.length
       ? past.map(medRow).join('')
       : '<tr><td colspan="6" class="text-center py-6 text-slate-400">None</td></tr>';
+
+    loadIntakes();
   }
 
   load();

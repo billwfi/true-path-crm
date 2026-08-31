@@ -27,14 +27,15 @@ exports.handler = async function (event) {
         const rows = (await mssql(
           `SELECT mi.intake_type, mi.status, mi.sub_status, mi.status_date, mi.updated_at,
                   t.name, t.color, t.is_glp1,
-                  asg.assigned_to, LTRIM(RTRIM(CONCAT(u.firstname,' ',u.lastname))) AS assigned_name
+                  asg.indx AS ready_indx, asg.assigned_to,
+                  LTRIM(RTRIM(CONCAT(u.firstname,' ',u.lastname))) AS assigned_name
            FROM dbo.tp_member_intakes mi
            LEFT JOIN dbo.tp_intake_types t ON t.code = mi.intake_type
-           OUTER APPLY (SELECT TOP 1 r.assigned_to FROM dbo.ReadyToAssign r
+           OUTER APPLY (SELECT TOP 1 r.indx, r.assigned_to FROM dbo.ReadyToAssign r
              WHERE r.category = mi.intake_type
                AND COALESCE(NULLIF(r.Member_ID,''), CAST(r.indx AS VARCHAR(50))) = mi.member_key
-               AND r.assigned_to IS NOT NULL
-             ORDER BY r.assigned_at DESC) asg
+             ORDER BY CASE WHEN r.assigned_to IS NOT NULL THEN 0 ELSE 1 END,
+                      r.assigned_at DESC, r.indx DESC) asg
            LEFT JOIN dbo.Users u ON u.id = asg.assigned_to
            WHERE mi.member_key = @member
            ORDER BY t.sort_order, mi.intake_type`, { member })).recordset;
