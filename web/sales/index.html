@@ -6,6 +6,44 @@
   <script src="https://cdn.tailwindcss.com"></script>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
   <link rel="stylesheet" href="/assets/css/app.css">
+  <style>
+    .sales-wrap { max-width: 1240px; margin: 0 auto; }
+    /* KPI cards */
+    .kpi-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 16px; margin-bottom: 22px; }
+    .kpi { background:#fff; border:1px solid #e5eaf0; border-radius:14px; padding:18px 20px;
+           box-shadow:0 1px 2px rgba(15,23,42,.04); }
+    .kpi .l { font-size:11px; letter-spacing:.08em; text-transform:uppercase; color:#94a3b8; font-weight:600; }
+    .kpi .n { font-size:30px; font-weight:700; letter-spacing:-.02em; line-height:1.15; margin-top:6px; font-variant-numeric:tabular-nums; }
+    .kpi .s { font-size:12.5px; color:#94a3b8; margin-top:3px; }
+    /* Panel cards fill equal height and distribute their rows */
+    .row-2 { display:grid; grid-template-columns:2fr 1fr; gap:18px; align-items:stretch; }
+    .row-2b { display:grid; grid-template-columns:1fr 1fr; gap:18px; align-items:stretch; margin-top:18px; }
+    .pcard { background:#fff; border:1px solid #e5eaf0; border-radius:14px; box-shadow:0 1px 2px rgba(15,23,42,.04);
+             display:flex; flex-direction:column; }
+    .pcard-h { display:flex; align-items:center; gap:9px; padding:16px 22px; border-bottom:1px solid #eef2f6;
+               font-size:15px; font-weight:600; color:#1e293b; }
+    .pcard-h i { color:#94a3b8; }
+    .pcard-b { padding:20px 22px; flex:1; display:flex; flex-direction:column; }
+    .fill { flex:1; display:flex; flex-direction:column; justify-content:space-between; gap:16px; }
+    /* Bars */
+    .frow .top { display:flex; justify-content:space-between; align-items:baseline; margin-bottom:8px; }
+    .frow .name { font-size:14.5px; font-weight:600; color:#334155; }
+    .frow .val  { font-size:13px; color:#64748b; font-variant-numeric:tabular-nums; }
+    .bar { height:14px; background:#eef2f7; border-radius:8px; overflow:hidden; }
+    .bar > i { display:block; height:100%; border-radius:8px; }
+    .srow .top { display:flex; justify-content:space-between; align-items:baseline; margin-bottom:6px; }
+    .srow .name { font-size:13.5px; color:#475569; }
+    .srow .val { font-size:13px; color:#94a3b8; font-variant-numeric:tabular-nums; }
+    .sbar { height:9px; background:#eef2f7; border-radius:5px; overflow:hidden; }
+    .sbar > i { display:block; height:100%; border-radius:5px; background:#0ea5b7; }
+    /* Tables inside panels */
+    .pcard-b table { width:100%; border-collapse:collapse; }
+    .pcard-b th { text-align:left; font-size:10.5px; letter-spacing:.05em; text-transform:uppercase; color:#94a3b8;
+                  font-weight:600; padding:0 10px 10px; border-bottom:1px solid #eef2f6; }
+    .pcard-b td { padding:11px 10px; border-bottom:1px solid #f4f7fa; font-size:13px; color:#334155; vertical-align:top; }
+    .pcard-b tr:last-child td { border-bottom:none; }
+    @media (max-width:900px){ .kpi-grid{grid-template-columns:repeat(2,1fr)} .row-2,.row-2b{grid-template-columns:1fr} }
+  </style>
 </head>
 <body class="bg-slate-100 text-slate-700">
 <div id="app" class="flex h-screen overflow-hidden">
@@ -13,45 +51,46 @@
   <div class="flex-1 flex flex-col overflow-hidden">
     <div id="topbar"></div>
     <main class="flex-1 overflow-y-auto p-6">
+      <div class="sales-wrap">
 
-      <div class="search-bar">
-        <span class="text-lg font-semibold">Sales Pipeline</span>
-        <a class="btn btn-primary ml-auto" href="/leads/"><i class="fa-solid fa-user-plus"></i> Manage Leads</a>
-      </div>
-
-      <!-- KPI cards -->
-      <div class="grid grid-cols-2 md:grid-cols-5 gap-3 mb-5" id="kpis"></div>
-
-      <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        <!-- Pipeline funnel -->
-        <div class="card lg:col-span-2">
-          <div class="card-header"><i class="fa-solid fa-filter text-slate-400"></i> Pipeline by Stage</div>
-          <div class="card-body"><div id="funnel"></div></div>
+        <div class="flex items-center mb-5">
+          <div>
+            <div class="text-xl font-semibold text-slate-800">Sales Pipeline</div>
+            <div class="text-sm text-slate-400">Lead activity, conversion and follow-ups at a glance</div>
+          </div>
+          <a class="btn btn-primary ml-auto" href="/leads/"><i class="fa-solid fa-user-plus"></i> Manage Leads</a>
         </div>
-        <!-- By source -->
-        <div class="card">
-          <div class="card-header"><i class="fa-solid fa-share-nodes text-slate-400"></i> Leads by Source</div>
-          <div class="card-body"><div id="sources"></div></div>
-        </div>
-      </div>
 
-      <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mt-4">
-        <!-- Upcoming follow-ups -->
-        <div class="card">
-          <div class="card-header"><i class="fa-solid fa-calendar-check text-slate-400"></i> Upcoming Follow-ups</div>
-          <div class="card-body">
-            <table class="data-table"><thead><tr><th>Due</th><th>Lead</th><th>Type</th><th>Notes</th></tr></thead>
-            <tbody id="followups"></tbody></table>
+        <div class="kpi-grid" id="kpis"></div>
+
+        <div class="row-2">
+          <div class="pcard">
+            <div class="pcard-h"><i class="fa-solid fa-filter"></i> Pipeline by Stage</div>
+            <div class="pcard-b"><div class="fill" id="funnel"></div></div>
+          </div>
+          <div class="pcard">
+            <div class="pcard-h"><i class="fa-solid fa-share-nodes"></i> Leads by Source</div>
+            <div class="pcard-b"><div class="fill" id="sources"></div></div>
           </div>
         </div>
-        <!-- Recent conversions -->
-        <div class="card">
-          <div class="card-header"><i class="fa-solid fa-handshake-angle text-slate-400"></i> Recent Conversions</div>
-          <div class="card-body">
-            <table class="data-table"><thead><tr><th>Lead</th><th>Value</th><th>Converted</th><th></th></tr></thead>
-            <tbody id="conversions"></tbody></table>
+
+        <div class="row-2b">
+          <div class="pcard">
+            <div class="pcard-h"><i class="fa-solid fa-calendar-check"></i> Upcoming Follow-ups</div>
+            <div class="pcard-b">
+              <table><thead><tr><th>Due</th><th>Lead</th><th>Type</th><th>Notes</th></tr></thead>
+              <tbody id="followups"></tbody></table>
+            </div>
+          </div>
+          <div class="pcard">
+            <div class="pcard-h"><i class="fa-solid fa-handshake-angle"></i> Recent Conversions</div>
+            <div class="pcard-b">
+              <table><thead><tr><th>Lead</th><th>Value</th><th>Converted</th><th></th></tr></thead>
+              <tbody id="conversions"></tbody></table>
+            </div>
           </div>
         </div>
+
       </div>
     </main>
   </div>
@@ -62,14 +101,14 @@
   initNav('sales-dashboard');
   const escv = s => (s == null ? '' : String(s)).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   const STAGES = ['New', 'Contacted', 'Qualified', 'Converted', 'Lost'];
-  const STAGE_COLOR = { New: '#3b82f6', Contacted: '#6366f1', Qualified: '#0d9488', Converted: '#16a34a', Lost: '#94a3b8' };
+  const STAGE_COLOR = { New: '#3b82f6', Contacted: '#6366f1', Qualified: '#0d9488', Converted: '#16a34a', Lost: '#cbd5e1' };
   const money = n => (n == null ? '$0' : '$' + Number(n).toLocaleString('en-US', { maximumFractionDigits: 0 }));
 
   function kpi(label, value, sub, accent) {
-    return `<div class="card"><div class="card-body p-4">
-      <div class="text-xs uppercase tracking-wide text-slate-400">${escv(label)}</div>
-      <div class="text-2xl font-semibold" style="color:${accent || '#1e293b'}">${escv(value)}</div>
-      ${sub ? `<div class="text-xs text-slate-400 mt-0.5">${escv(sub)}</div>` : ''}</div></div>`;
+    return `<div class="kpi">
+      <div class="l">${escv(label)}</div>
+      <div class="n" style="color:${accent || '#1e293b'}">${escv(value)}</div>
+      <div class="s">${escv(sub || '')}</div></div>`;
   }
 
   async function load() {
@@ -85,52 +124,41 @@
       kpi('Won Value', money(t.won_value), 'closed value', '#16a34a') +
       kpi('Conversion', convRate + '%', `${t.converted || 0} of ${t.total || 0} leads`, '#7c3aed');
 
-    // Funnel — one bar per stage, width scaled to the largest stage count.
     const smap = {}; (d.byStatus || []).forEach(s => smap[s.status] = s);
     const max = Math.max(1, ...STAGES.map(s => (smap[s] || {}).n || 0));
     document.getElementById('funnel').innerHTML = STAGES.map(s => {
       const row = smap[s] || { n: 0, val: 0 };
-      const pct = Math.round((row.n || 0) / max * 100);
-      const c = STAGE_COLOR[s];
-      return `<div style="margin-bottom:12px">
-        <div class="flex items-center justify-between text-sm mb-1">
-          <span class="font-medium">${s}</span>
-          <span class="text-slate-500">${row.n || 0}${row.val ? ` · ${money(row.val)}` : ''}</span>
-        </div>
-        <div style="height:12px;background:#f1f5f9;border-radius:6px;overflow:hidden">
-          <div style="height:100%;width:${pct}%;background:${c};border-radius:6px"></div>
-        </div></div>`;
+      const pct = Math.max(row.n ? 4 : 0, Math.round((row.n || 0) / max * 100));
+      return `<div class="frow">
+        <div class="top"><span class="name">${s}</span>
+          <span class="val">${row.n || 0}${row.val ? ` &middot; ${money(row.val)}` : ''}</span></div>
+        <div class="bar"><i style="width:${pct}%;background:${STAGE_COLOR[s]}"></i></div></div>`;
     }).join('');
 
-    // Sources
     const srcMax = Math.max(1, ...(d.bySource || []).map(x => x.n));
     document.getElementById('sources').innerHTML = (d.bySource || []).length
-      ? (d.bySource || []).map(x => `<div style="margin-bottom:10px">
-          <div class="flex items-center justify-between text-sm mb-1"><span>${escv(x.source)}</span><span class="text-slate-500">${x.n}</span></div>
-          <div style="height:8px;background:#f1f5f9;border-radius:4px;overflow:hidden">
-            <div style="height:100%;width:${Math.round(x.n / srcMax * 100)}%;background:#0ea5b7;border-radius:4px"></div></div>
-        </div>`).join('')
-      : '<div class="text-sm text-slate-400 text-center py-4">No leads yet</div>';
+      ? (d.bySource || []).map(x => `<div class="srow">
+          <div class="top"><span class="name">${escv(x.source)}</span><span class="val">${x.n}</span></div>
+          <div class="sbar"><i style="width:${Math.round(x.n / srcMax * 100)}%"></i></div></div>`).join('')
+      : '<div class="text-sm text-slate-400 text-center py-6">No leads yet</div>';
 
-    // Follow-ups
     document.getElementById('followups').innerHTML = (d.followups || []).length
       ? (d.followups || []).map(f => `<tr>
-          <td class="text-xs whitespace-nowrap">${fmtDate(f.followup_date)}</td>
-          <td class="font-medium"><a class="text-teal-700" href="/leads/?open=${f.lead_id}">${escv(f.lead_name)}</a>${f.company ? `<div class="text-xs text-slate-400">${escv(f.company)}</div>` : ''}</td>
+          <td class="whitespace-nowrap text-slate-500">${fmtDate(f.followup_date)}</td>
+          <td><a class="font-medium text-teal-700" href="/leads/?open=${f.lead_id}">${escv(f.lead_name)}</a>${f.company ? `<div class="text-xs text-slate-400">${escv(f.company)}</div>` : ''}</td>
           <td><span class="badge badge-blue">${escv(f.contact_type)}</span></td>
-          <td class="text-xs text-slate-500">${escv(f.notes) || '—'}</td>
+          <td class="text-slate-500">${escv(f.notes) || '—'}</td>
         </tr>`).join('')
-      : '<tr><td colspan="4" class="text-center py-6 text-slate-400">No follow-ups scheduled</td></tr>';
+      : '<tr><td colspan="4" class="text-center py-8 text-slate-400">No follow-ups scheduled</td></tr>';
 
-    // Conversions
     document.getElementById('conversions').innerHTML = (d.recent || []).length
       ? (d.recent || []).map(r => `<tr>
           <td class="font-medium">${escv(r.company || r.name)}</td>
-          <td>${r.value ? money(r.value) : '—'}</td>
-          <td class="text-xs text-slate-400">${fmtDate(r.converted_at)}</td>
+          <td class="text-slate-600">${r.value ? money(r.value) : '—'}</td>
+          <td class="text-slate-400 whitespace-nowrap">${fmtDate(r.converted_at)}</td>
           <td class="text-right">${r.converted_client_id ? `<a class="btn btn-outline btn-sm" href="/clients/record/?id=${r.converted_client_id}">Open Client</a>` : ''}</td>
         </tr>`).join('')
-      : '<tr><td colspan="4" class="text-center py-6 text-slate-400">No conversions yet</td></tr>';
+      : '<tr><td colspan="4" class="text-center py-8 text-slate-400">No conversions yet</td></tr>';
   }
 
   load();
