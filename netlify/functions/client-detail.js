@@ -16,6 +16,31 @@ const benefitType = (t) => (BENEFIT_TYPES.includes(t) ? t : 'iRx');
 // GLP1 drug amounts only apply to GLP1 benefits; otherwise null.
 const drugAmt = (type, v) => (benefitType(type) === 'GLP1' && v != null && v !== '' ? Number(v) : null);
 
+// Smart contract number: <CLIENT-CODE>-<YEAR>-<NNN>. CODE is the client's irx_client_id
+// (or initials/slug of the name); YEAR from the effective date (else current); NNN is the
+// next sequence for that client + year, so numbers are meaningful and readable.
+async function nextContractNumber(cid, effDate) {
+  const cli = (await mssql('SELECT irx_client_id, name FROM dbo.tp_clients WHERE id=@id', { id: cid })).recordset[0] || {};
+  let code = (cli.irx_client_id || '').toString().trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
+  if (!code) {
+    const words = (cli.name || 'CLIENT').toUpperCase().replace(/[^A-Z0-9 ]/g, ' ').split(/\s+/).filter(Boolean);
+    code = words.length > 1 ? words.slice(0, 3).map(w => w[0]).join('') : (words[0] || 'CLIENT').slice(0, 4);
+  }
+  code = (code || 'CLIENT').slice(0, 12);
+  const yr = effDate ? new Date(effDate).getFullYear() : NaN;
+  const year = Number.isFinite(yr) ? yr : new Date().getFullYear();
+  const prefix = `${code}-${year}-`;
+  const rows = (await mssql(
+    `SELECT contract_number FROM dbo.Client_Contracts WHERE client_id=@id AND contract_number LIKE @p`,
+    { id: cid, p: prefix + '%' })).recordset;
+  let max = 0;
+  for (const r of rows) {
+    const m = /-(\d+)\s*$/.exec(r.contract_number || '');
+    if (m) max = Math.max(max, parseInt(m[1], 10));
+  }
+  return prefix + String(max + 1).padStart(3, '0');
+}
+
 exports.handler = async function (event) {
   if (event.httpMethod === 'OPTIONS') return options();
   const user = verifyToken(event);
@@ -88,12 +113,14 @@ exports.handler = async function (event) {
         if (!cid) return badRequest('client_id is required');
         if (!b.name) return badRequest('name is required');
         const status = CONTRACT_STATUSES.includes(b.status) ? b.status : 'Active';
+        // Smart-name the contract number when none is supplied: <CLIENT-CODE>-<YEAR>-<NNN>.
+        const num = (b.contract_number || '').trim() || await nextContractNumber(cid, b.effective_date);
         const r = await mssql(
           `INSERT INTO dbo.Client_Contracts
              (client_id, name, contract_number, effective_date, end_date, status, notes, created_by)
            OUTPUT INSERTED.*
            VALUES (@cid, @name, @num, @eff, @end, @status, @notes, @by)`,
-          { cid, name: b.name, num: b.contract_number || null,
+          { cid, name: b.name, num,
             eff: b.effective_date || null, end: b.end_date || null,
             status, notes: b.notes || null, by: user.id || null });
         return created({ ...r.recordset[0], benefits: [] });

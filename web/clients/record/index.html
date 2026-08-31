@@ -292,7 +292,9 @@
       <input type="hidden" id="co-id">
       <div class="form-group"><label class="form-label">Name / Title *</label><input class="form-control" id="co-name"></div>
       <div class="flex gap-3">
-        <div class="form-group flex-1"><label class="form-label">Contract #</label><input class="form-control" id="co-number"></div>
+        <div class="form-group flex-1"><label class="form-label">Contract #</label>
+          <input class="form-control" id="co-number" placeholder="Auto-assigned on save">
+          <p class="text-xs text-slate-400 mt-1">Leave blank to auto-assign (e.g. <span class="font-mono">TPTEST-2026-001</span>).</p></div>
         <div class="form-group flex-1"><label class="form-label">Status</label>
           <select class="form-control" id="co-status">
             <option>Active</option><option>Pending</option><option>Expired</option><option>Cancelled</option>
