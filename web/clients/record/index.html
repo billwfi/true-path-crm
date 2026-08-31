@@ -28,6 +28,10 @@
           Contacts <span id="tab-contacts" class="badge badge-blue ml-1">0</span></button>
         <button class="tab-btn" data-tab="contracts" onclick="showTab('contracts')">
           Contracts <span id="tab-contracts" class="badge badge-blue ml-1">0</span></button>
+        <button class="tab-btn" data-tab="members" onclick="showTab('members')">
+          Members <span id="tab-members" class="badge badge-blue ml-1">0</span></button>
+        <button class="tab-btn" data-tab="formulary" onclick="showTab('formulary')">
+          Formulary <span id="tab-formulary" class="badge badge-blue ml-1">0</span></button>
         <button class="tab-btn" data-tab="eligibility" onclick="showTab('eligibility')">Eligibility</button>
         <button class="tab-btn" data-tab="claims" onclick="showTab('claims')">Claims</button>
         <button class="tab-btn" data-tab="reporting" onclick="showTab('reporting')">Reporting</button>
@@ -93,6 +97,41 @@
         </div>
         <div id="contracts-list"></div>
       </div>
+
+      <!-- Members panel (from tp_uf_members via uf_company_id) -->
+      <div class="tab-panel" data-panel="members" style="display:none">
+        <div class="card"><div class="card-header">
+          <span class="card-title">Members</span>
+          <input id="cm-search" class="form-control ml-auto" style="max-width:280px" placeholder="Search members…" oninput="cmDebounce()">
+        </div><div class="card-body p-0">
+          <div style="overflow-x:auto"><table class="data-table" style="min-width:860px"><thead><tr>
+            <th>Name</th><th>DOB</th><th>Member ID</th><th>Cardholder</th><th>Group</th><th>Enrollment</th><th class="text-right">Meds</th><th>Status</th></tr></thead>
+          <tbody id="cm-rows"><tr><td colspan="8" class="text-center py-8 text-slate-400">—</td></tr></tbody></table></div>
+          <div class="p-2 text-xs text-slate-400" id="cm-cap"></div>
+        </div></div>
+      </div>
+
+      <!-- Formulary panel (approved products from tp_client_formulary via uf_company_id) -->
+      <div class="tab-panel" data-panel="formulary" style="display:none">
+        <div class="card"><div class="card-header">
+          <span class="card-title">Formulary — approved products</span>
+          <span id="cf-count" class="text-xs text-slate-400 ml-2"></span></div>
+        <div class="card-body">
+          <input id="cf-search" class="form-control mb-3" placeholder="Search this client's approved products by name or NDC…" oninput="cfDebounce()">
+          <div style="overflow-x:auto"><table class="data-table"><thead><tr><th>Product</th><th>Strength</th><th>NDC</th><th>UOM</th></tr></thead>
+          <tbody id="cf-rows"><tr><td colspan="4" class="text-center py-6 text-slate-400">—</td></tr></tbody></table></div>
+        </div></div>
+      </div>
+
+      <!-- Member detail modal (demographics + medication history) -->
+      <div id="cmMemModal" class="modal-backdrop hidden"><div class="modal modal-lg"><div class="modal-header">
+        <span class="modal-title" id="cmm-title">Member</span><button class="modal-close" onclick="document.getElementById('cmMemModal').classList.add('hidden')">&times;</button></div>
+        <div class="modal-body"><div id="cmm-demo"></div>
+          <div class="text-xs uppercase tracking-wide text-slate-500 mt-4 mb-2" style="border-bottom:1px solid #e2e8f0;padding-bottom:4px">Medication History <span id="cmm-medcount" class="text-slate-400"></span></div>
+          <div style="overflow-x:auto"><table class="data-table"><thead><tr><th>Medication</th><th>Strength</th><th>NDC</th><th>Day Supply</th><th>Refills</th><th>Next Fill</th><th>Status</th></tr></thead>
+          <tbody id="cmm-meds"></tbody></table></div>
+        </div>
+        <div class="modal-footer"><button class="btn btn-outline" onclick="document.getElementById('cmMemModal').classList.add('hidden')">Close</button></div></div></div>
 
       <!-- Eligibility panel (read-only, from irx.dbo.eligibility by CARRIER) -->
       <div class="tab-panel" data-panel="eligibility" style="display:none">
@@ -317,6 +356,7 @@
   let clientIrxId = null, eligLoaded = false, eligDebounce, eligRows = [];
   let claimsLoaded = false, reportingLoaded = false, claimsDebounce;
   let importsLoaded = false;
+  let clientUfCompanyId = null, membersLoaded = false, formularyLoaded = false, cmDeb, cfDeb, cmCache = [], cfCount = 0;
   const CL_PALETTE = ['#2563eb','#16a34a','#d97706','#dc2626','#7c3aed','#0891b2','#db2777','#65a30d','#9333ea','#0d9488','#ca8a04','#0ea5e9'];
   const rpCharts = {};  // canvas id -> Chart instance
 
@@ -326,6 +366,8 @@
     document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === name));
     document.querySelectorAll('.tab-panel').forEach(p => p.style.display = p.dataset.panel === name ? '' : 'none');
     if (name === 'eligibility' && !eligLoaded) loadEligibility();
+    if (name === 'members' && !membersLoaded) loadClientMembers();
+    if (name === 'formulary' && !formularyLoaded) loadClientFormulary('');
     if (name === 'invoices') invDefaults();
     if (name === 'claims' && !claimsLoaded) { claimsDefaults().then(loadClaims); }
     if (name === 'reporting' && !reportingLoaded) { reportDefaults().then(loadReporting); }
@@ -335,12 +377,79 @@
   // Sub-resource tabs need a saved client. Disable them until one exists.
   function gateTabs() {
     const enabled = !!clientId;
-    document.querySelectorAll('.tab-btn[data-tab="contacts"], .tab-btn[data-tab="contracts"], .tab-btn[data-tab="eligibility"], .tab-btn[data-tab="claims"], .tab-btn[data-tab="reporting"], .tab-btn[data-tab="invoices"], .tab-btn[data-tab="imports"]').forEach(b => {
+    document.querySelectorAll('.tab-btn[data-tab="contacts"], .tab-btn[data-tab="contracts"], .tab-btn[data-tab="members"], .tab-btn[data-tab="formulary"], .tab-btn[data-tab="eligibility"], .tab-btn[data-tab="claims"], .tab-btn[data-tab="reporting"], .tab-btn[data-tab="invoices"], .tab-btn[data-tab="imports"]').forEach(b => {
       b.style.opacity = enabled ? '' : '0.4';
       b.style.pointerEvents = enabled ? '' : 'none';
       b.title = enabled ? '' : 'Save the client first';
     });
   }
+
+  /* ── Members (from tp_uf_members via uf_company_id) ── */
+  const memName = r => `${(r.last_name||'').trim()}, ${(r.first_name||'').trim()}`.replace(/^, |, $/,'') || '—';
+  async function loadClientMembers() {
+    membersLoaded = true;
+    const body = document.getElementById('cm-rows');
+    if (!clientUfCompanyId) {
+      document.getElementById('tab-members').textContent = '0';
+      document.getElementById('cm-cap').textContent = '';
+      body.innerHTML = '<tr><td colspan="8" class="text-center py-8 text-slate-400">This client isn’t linked to migrated member data.</td></tr>';
+      return;
+    }
+    const s = document.getElementById('cm-search').value.trim();
+    cmCache = await apiGet('/members?company_id=' + clientUfCompanyId + (s ? '&search=' + encodeURIComponent(s) : '')).catch(() => []) || [];
+    document.getElementById('tab-members').textContent = cmCache.length >= 500 ? '500+' : cmCache.length;
+    document.getElementById('cm-cap').textContent = cmCache.length >= 500 ? 'Showing the first 500 — search to narrow.' : (cmCache.length + ' member(s)');
+    body.innerHTML = cmCache.length ? cmCache.map((r, i) => `<tr style="cursor:pointer" onclick="openCmMember(${i})">
+      <td class="font-medium">${esc(memName(r))}</td><td>${esc(r.date_of_birth)||'—'}</td>
+      <td class="font-mono text-xs">${esc(r.member_id)||'—'}</td><td class="font-mono text-xs">${esc(r.cardholder_id)||'—'}</td>
+      <td class="font-mono text-xs">${esc(r.group_id)||'—'}</td><td class="text-xs">${esc(r.enrollment_status)||'—'}</td>
+      <td class="text-right">${r.meds||0}</td>
+      <td>${r.active?'<span class="badge badge-green">Active</span>':'<span class="badge badge-gray">Inactive</span>'}</td></tr>`).join('')
+      : '<tr><td colspan="8" class="text-center py-8 text-slate-400">No members</td></tr>';
+  }
+  function cmDebounce(){ clearTimeout(cmDeb); cmDeb = setTimeout(loadClientMembers, 300); }
+
+  async function openCmMember(i) {
+    const row = cmCache[i]; if (!row) return;
+    const m = await apiGet('/members?id=' + row.member_source_id).catch(() => null); if (!m) return;
+    document.getElementById('cmm-title').textContent = memName(m);
+    const field = (l, v) => `<div style="display:flex;justify-content:space-between;gap:12px;font-size:13px;padding:3px 0"><span class="text-slate-500">${l}</span><span class="font-medium" style="text-align:right">${(v==null||v==='')?'<span class="text-slate-400">—</span>':esc(String(v))}</span></div>`;
+    document.getElementById('cmm-demo').innerHTML = `<div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:2px 24px">
+      ${field('DOB',m.date_of_birth)}${field('Gender',m.gender)}${field('Member ID',m.member_id)}${field('Cardholder ID',m.cardholder_id)}
+      ${field('Group',m.group_id)}${field('Enrollment',m.enrollment_status)}${field('Email',m.email)}${field('Phone',m.phone)}
+      ${field('Address',[m.address,m.city,m.state,m.zip].filter(Boolean).join(', '))}${field('Eligible thru',m.eligible_thru)}</div>`;
+    const meds = m.medications || [];
+    document.getElementById('cmm-medcount').textContent = meds.length ? ('· ' + meds.length) : '';
+    document.getElementById('cmm-meds').innerHTML = meds.length ? meds.map(x => `<tr>
+      <td class="font-medium">${esc(x.short_name)||esc(x.label)||('#'+(x.product_source_id||''))}</td>
+      <td>${esc(x.strength||x.product_strength)||'—'}</td><td class="font-mono text-xs">${esc(x.ndc_comp||x.ndc_code)||'—'}</td>
+      <td>${esc(x.day_supply)||'—'}</td><td>${esc(x.number_of_refills)||'—'}</td><td class="text-xs">${esc(x.next_fill_order_date)||'—'}</td>
+      <td>${x.inactive?'<span class="badge badge-gray">Inactive</span>':'<span class="badge badge-green">Active</span>'}</td></tr>`).join('')
+      : '<tr><td colspan="7" class="text-center py-6 text-slate-400">No medications on file</td></tr>';
+    document.getElementById('cmMemModal').classList.remove('hidden');
+  }
+
+  /* ── Formulary (approved products from tp_client_formulary via uf_company_id) ── */
+  async function loadClientFormulary(s) {
+    formularyLoaded = true;
+    const body = document.getElementById('cf-rows');
+    if (!clientUfCompanyId) {
+      document.getElementById('tab-formulary').textContent = '0';
+      document.getElementById('cf-count').textContent = '';
+      body.innerHTML = '<tr><td colspan="4" class="text-center py-6 text-slate-400">This client isn’t linked to a formulary.</td></tr>';
+      return;
+    }
+    const r = await apiGet('/client-pricing?resource=formulary&company_id=' + clientUfCompanyId + (s ? '&search=' + encodeURIComponent(s) : '')).catch(() => ({ count: 0, products: [] }));
+    cfCount = r.count || 0;
+    document.getElementById('tab-formulary').textContent = cfCount > 999 ? '999+' : cfCount;
+    document.getElementById('cf-count').textContent = cfCount.toLocaleString() + ' approved products' + (cfCount > 500 ? ' · showing first 500 — search to narrow' : '');
+    const p = r.products || [];
+    body.innerHTML = p.length ? p.map(x => `<tr>
+      <td><div class="font-medium">${esc(x.short_name)||('#'+x.source_id)}</div><div class="text-xs text-slate-400">${esc(x.label)||''}</div></td>
+      <td>${esc(x.strength)||'—'}</td><td class="font-mono text-xs">${esc(x.ndc_comp)||'—'}</td><td class="text-xs">${esc(x.unit_type)||'—'}</td></tr>`).join('')
+      : '<tr><td colspan="4" class="text-center py-6 text-slate-400">No approved products</td></tr>';
+  }
+  function cfDebounce(){ clearTimeout(cfDeb); cfDeb = setTimeout(() => loadClientFormulary(document.getElementById('cf-search').value.trim()), 300); }
 
   /* ── Demographics ── */
   async function populateDropdowns(selBroker) {
@@ -379,8 +488,10 @@
     document.getElementById('f-active').value = c.active ? '1' : '0';
     document.getElementById('f-irx_client_id').value = c.irx_client_id || '';
     clientIrxId = c.irx_client_id || null;
+    clientUfCompanyId = c.uf_company_id || null;
     eligLoaded = false;  // re-evaluate eligibility after (re)load
     claimsLoaded = false; reportingLoaded = false; importsLoaded = false;
+    membersLoaded = false; formularyLoaded = false;
     document.getElementById('client-name').textContent = (c.name || '').trim() || `Client #${c.id}`;
     document.getElementById('delete-btn').style.display = '';
     gateTabs();
