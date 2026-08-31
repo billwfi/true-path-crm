@@ -14,7 +14,8 @@ exports.handler = async function (event) {
   const user = verifyToken(event);
   if (!user) return unauthorized();
 
-  const { indx, status, group, search, category, stats, action, latest_per_member, drug, drugs, report, assigned_to } = event.queryStringParameters || {};
+  const { indx, status, group, search, category, stats, action, latest_per_member, drug, drugs, report, assigned_to,
+    demographics, member_id, cardholder } = event.queryStringParameters || {};
   const cat = category || 'GLP1';
   // When set, collapse to one row per Member_ID, keeping the most recent Date_of_Service.
   const onePerMember = latest_per_member === '1' || latest_per_member === 'true';
@@ -25,6 +26,28 @@ exports.handler = async function (event) {
 
   try {
     if (event.httpMethod === 'GET') {
+      // Enriched member demographics for the record page: the migrated member profile
+      // (tp_uf_members) plus the eligibility record (effective dates / plan).
+      if (demographics) {
+        const mid = (member_id || '').trim();
+        const chd = (cardholder || '').trim();
+        // The GLP1 claim member matches dbo.eligibility by MEMBER_ID (their ids differ from
+        // the migrated member ids). Return contact + coverage dates from the eligibility record.
+        const eligibility = (await mssql(
+          `SELECT TOP 1 LTRIM(RTRIM(FIRST_NAME)) first_name, LTRIM(RTRIM(LAST_NAME)) last_name,
+                  SEX gender, DATE_OF_BIRTH date_of_birth, LTRIM(RTRIM(MEMBER_ID)) member_id,
+                  LTRIM(RTRIM([GROUP])) group_id, PERSON_CODE person_code, RELATIONSHIP_CODE relationship_code,
+                  LTRIM(RTRIM(ADDRESS_1)) address, LTRIM(RTRIM(ADDRESS_2)) address2,
+                  LTRIM(RTRIM(CITY)) city, LTRIM(RTRIM(STATE)) state, LTRIM(RTRIM(ZIP)) zip,
+                  LTRIM(RTRIM(PHONE)) phone, LTRIM(RTRIM(EMail_Address)) email,
+                  MEMBER_FROM_DATE effective_start, MEMBER_THRU_DATE effective_end, MEMBER_TYPE member_type
+           FROM dbo.eligibility
+           WHERE (@mid <> '' AND LTRIM(RTRIM(MEMBER_ID)) = @mid)
+              OR (@chd <> '' AND LTRIM(RTRIM(MEMBER_ID)) = @chd)
+           ORDER BY TRY_CONVERT(date, MEMBER_THRU_DATE, 101) DESC`, { mid, chd })).recordset[0] || null;
+        return ok({ eligibility });
+      }
+
       if (indx) {
         const r = await mssql(
           `SELECT ${LIST_COLS} FROM dbo.ReadyToAssign WHERE indx = @indx AND category = @category`,

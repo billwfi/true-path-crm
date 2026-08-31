@@ -34,8 +34,8 @@
           <div class="card-header"><i class="fa-solid fa-id-card text-slate-400"></i> Contact Information</div>
           <div class="card-body form-pad">
             <div id="demographics" class="grid grid-cols-2 md:grid-cols-4 gap-x-6 gap-y-4 text-sm"></div>
-            <p class="text-xs text-amber-600 mt-3"><i class="fa-solid fa-circle-info"></i>
-              Full demographics will pull from the eligibility record (integration pending).</p>
+            <p id="demo-note" class="text-xs text-slate-400 mt-3"><i class="fa-solid fa-circle-info"></i>
+              Looking up the eligibility &amp; member record…</p>
           </div>
         </div>
       </div>
@@ -173,9 +173,40 @@
       ['City', record.City], ['State', record.State], ['Zip', record.Zip_Code],
       ['Most Recent Drug', cleanDrug],
     ];
+    renderDemographics(fields);
+    enrichDemographics();  // pull eligibility + migrated member profile
+    return true;
+  }
+
+  function renderDemographics(fields) {
     document.getElementById('demographics').innerHTML = fields.map(([k, v]) =>
       `<div><div class="text-xs text-slate-400">${esc(k)}</div><div class="font-medium">${esc(v) || '—'}</div></div>`).join('');
-    return true;
+  }
+
+  // Enrich the claim-derived demographics with the eligibility record + migrated member profile.
+  async function enrichDemographics() {
+    const note = document.getElementById('demo-note');
+    const qs = `demographics=1&member_id=${encodeURIComponent(record.Member_ID || '')}` +
+      `&cardholder=${encodeURIComponent(record.Claim_Patient_ID || record.Member_ID || '')}` +
+      `&group=${encodeURIComponent(record.Group_Code || '')}`;
+    const d = await apiGet(`/glp1?${qs}`).catch(() => null);
+    const e = d && d.eligibility;
+    const cleanDrug = (record.Drug_Name || '').replace(/\s+/g, ' ').trim();
+    if (!e) {
+      note.innerHTML = '<i class="fa-solid fa-circle-info"></i> No matching eligibility record found — showing the claim demographics.';
+      return;
+    }
+    const addr = [e.address, e.address2, e.city, e.state, e.zip].filter(Boolean).join(', ');
+    const fields = [
+      ['Member ID', record.Member_ID], ['Group', record.Group_Name],
+      ['Date of Birth', fmtDate(e.date_of_birth || record.Date_of_Birth)], ['Gender', e.gender || record.Gender],
+      ['Phone', e.phone], ['Email', e.email], ['Address', addr],
+      ['Member Type', e.member_type], ['Person / Reln', [e.person_code, e.relationship_code].filter(Boolean).join(' / ')],
+      ['Effective', fmtDate(e.effective_start)], ['Eligible Thru', fmtDate(e.effective_end)],
+      ['Most Recent Drug', cleanDrug],
+    ];
+    renderDemographics(fields);
+    note.innerHTML = '<i class="fa-solid fa-circle-check text-emerald-500"></i> Enriched from the eligibility record.';
   }
 
   async function loadTracking() {

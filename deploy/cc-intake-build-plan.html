@@ -1,0 +1,280 @@
+<title>Intake &amp; Assignment Plan</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Serif:ital,wght@0,500;1,400&display=swap">
+<style>
+  :root{
+    --ground:#eef2f1; --surface:#ffffff; --surface-2:#f6f9f8;
+    --ink:#0f1e1c; --muted:#5a6b69; --faint:#8a9997;
+    --border:#dbe4e2; --border-strong:#c4d0ce;
+    --teal:#0f766e; --teal-deep:#0b4f49; --teal-soft:#e3f0ee;
+    --built:#15803d; --built-soft:#dcfce7;
+    --partial:#b45309; --partial-soft:#fbefdc;
+    --missing:#b23a48; --missing-soft:#f7e4e6;
+    --blue:#1f5f8b; --blue-soft:#e2edf4;
+    --shadow:0 1px 2px rgba(15,30,28,.04),0 4px 16px rgba(15,30,28,.05);
+  }
+  :root:not([data-theme="light"]){ @media (prefers-color-scheme: dark){
+    --ground:#0a1211; --surface:#101b19; --surface-2:#0d1615;
+    --ink:#e7efed; --muted:#93a4a1; --faint:#63736f;
+    --border:#1e2c2a; --border-strong:#2b3b39;
+    --teal:#4cbfb2; --teal-deep:#7fd6cb; --teal-soft:#12312d;
+    --built:#5bbd7f; --built-soft:#12301d;
+    --partial:#e0a960; --partial-soft:#2e2415;
+    --missing:#e08b95; --missing-soft:#2e191c;
+    --blue:#7fb4d8; --blue-soft:#16242e;
+    --shadow:0 1px 2px rgba(0,0,0,.3),0 6px 20px rgba(0,0,0,.35);
+  }}
+  :root[data-theme="dark"]{
+    --ground:#0a1211; --surface:#101b19; --surface-2:#0d1615;
+    --ink:#e7efed; --muted:#93a4a1; --faint:#63736f;
+    --border:#1e2c2a; --border-strong:#2b3b39;
+    --teal:#4cbfb2; --teal-deep:#7fd6cb; --teal-soft:#12312d;
+    --built:#5bbd7f; --built-soft:#12301d;
+    --partial:#e0a960; --partial-soft:#2e2415;
+    --missing:#e08b95; --missing-soft:#2e191c;
+    --blue:#7fb4d8; --blue-soft:#16242e;
+    --shadow:0 1px 2px rgba(0,0,0,.3),0 6px 20px rgba(0,0,0,.35);
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--ground);color:var(--ink);
+    font-family:"IBM Plex Sans",system-ui,-apple-system,Segoe UI,Roboto,sans-serif;
+    line-height:1.55;-webkit-font-smoothing:antialiased}
+  .wrap{max-width:1060px;margin:0 auto;padding:clamp(20px,4vw,56px) clamp(16px,4vw,40px) 80px}
+  .eyebrow{font-family:"IBM Plex Mono",monospace;font-size:12px;letter-spacing:.16em;
+    text-transform:uppercase;color:var(--teal);font-weight:600;margin:0 0 14px}
+  h1{font-size:clamp(30px,5vw,46px);line-height:1.05;margin:0 0 16px;font-weight:700;
+    letter-spacing:-.02em;text-wrap:balance}
+  h1 em{font-family:"IBM Plex Serif",serif;font-style:italic;font-weight:400;color:var(--teal-deep)}
+  .lede{font-size:clamp(16px,2vw,18px);color:var(--muted);max-width:70ch;margin:0 0 24px}
+  .meta-row{display:flex;flex-wrap:wrap;gap:8px 10px;font-family:"IBM Plex Mono",monospace;font-size:12.5px}
+  .chip{display:inline-flex;align-items:center;gap:6px;padding:5px 11px;border-radius:999px;
+    background:var(--surface);border:1px solid var(--border);color:var(--muted)}
+  .chip b{color:var(--ink);font-weight:600}
+  .rule{height:1px;background:var(--border);margin:34px 0}
+
+  h2.sec{font-size:13px;font-family:"IBM Plex Mono",monospace;letter-spacing:.12em;text-transform:uppercase;
+    color:var(--faint);margin:0 0 16px;font-weight:600}
+
+  /* ── Current-state flow ── */
+  .flow{display:flex;flex-wrap:wrap;align-items:stretch;gap:8px;margin:0 0 10px}
+  .stage{background:var(--surface);border:1px solid var(--border);border-radius:11px;padding:12px 14px;
+    box-shadow:var(--shadow);flex:1;min-width:135px;display:flex;flex-direction:column;gap:3px}
+  .stage .s-lab{font-family:"IBM Plex Mono",monospace;font-size:10.5px;letter-spacing:.05em;
+    text-transform:uppercase;color:var(--teal)}
+  .stage .s-name{font-size:14px;font-weight:600;line-height:1.25}
+  .stage .s-tbl{font-family:"IBM Plex Mono",monospace;font-size:11px;color:var(--faint)}
+  .arrow{align-self:center;color:var(--border-strong);font-size:18px;flex:0 0 auto}
+  @media(max-width:720px){.arrow{transform:rotate(90deg)}}
+  .flow-note{font-size:13.5px;color:var(--muted);background:var(--teal-soft);border-radius:10px;
+    padding:12px 16px;border:1px solid color-mix(in srgb,var(--teal) 25%,transparent)}
+  .flow-note b{color:var(--teal-deep)}
+
+  /* ── Gap analysis ── */
+  .gaps{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+  @media(max-width:760px){.gaps{grid-template-columns:1fr}}
+  .gap{background:var(--surface);border:1px solid var(--border);border-radius:13px;overflow:hidden;box-shadow:var(--shadow)}
+  .gap-h{padding:12px 16px;font-weight:700;font-size:14px;display:flex;align-items:center;gap:8px;
+    border-bottom:1px solid var(--border)}
+  .gap-h .dot{width:9px;height:9px;border-radius:50%}
+  .gap.built .gap-h{background:var(--built-soft);color:var(--built)} .gap.built .dot{background:var(--built)}
+  .gap.partial .gap-h{background:var(--partial-soft);color:var(--partial)} .gap.partial .dot{background:var(--partial)}
+  .gap.missing .gap-h{background:var(--missing-soft);color:var(--missing)} .gap.missing .dot{background:var(--missing)}
+  .gap ul{margin:0;padding:12px 16px;list-style:none;display:flex;flex-direction:column;gap:9px}
+  .gap li{font-size:13px;color:var(--muted);padding-left:15px;position:relative}
+  .gap li::before{content:"";position:absolute;left:0;top:8px;width:5px;height:5px;border-radius:50%;background:var(--border-strong)}
+  .gap li b{color:var(--ink);font-weight:600}
+
+  /* ── Phases ── */
+  .phase{background:var(--surface);border:1px solid var(--border);border-radius:14px;
+    box-shadow:var(--shadow);margin:0 0 14px;overflow:hidden}
+  .ph-head{display:flex;gap:16px;align-items:flex-start;padding:18px 20px;border-bottom:1px solid var(--border);
+    background:var(--surface-2)}
+  .ph-num{font-family:"IBM Plex Mono",monospace;font-weight:600;font-size:13px;color:#fff;background:var(--teal);
+    width:30px;height:30px;border-radius:8px;display:flex;align-items:center;justify-content:center;flex:0 0 auto;margin-top:2px}
+  .ph-tt{font-size:18px;font-weight:700;margin:0 0 2px;letter-spacing:-.01em}
+  .ph-goal{font-size:13.5px;color:var(--muted);margin:0}
+  .ph-tasks{padding:6px 20px 14px}
+  .task{display:grid;grid-template-columns:1fr auto;gap:4px 14px;align-items:start;
+    padding:11px 0;border-bottom:1px solid var(--border)}
+  .task:last-child{border-bottom:none}
+  .task h4{margin:0;font-size:14.5px;font-weight:600;line-height:1.3}
+  .task p{margin:3px 0 0;font-size:13px;color:var(--muted)}
+  .eff{font-family:"IBM Plex Mono",monospace;font-size:10.5px;font-weight:600;letter-spacing:.04em;
+    padding:3px 8px;border-radius:6px;white-space:nowrap;height:fit-content}
+  .eff.S{background:var(--built-soft);color:var(--built)}
+  .eff.M{background:var(--blue-soft);color:var(--blue)}
+  .eff.L{background:var(--partial-soft);color:var(--partial)}
+
+  footer{margin-top:44px;padding-top:22px;border-top:1px solid var(--border);font-size:13px;color:var(--faint)}
+  footer b{color:var(--muted);font-weight:600}
+  .legend{display:flex;flex-wrap:wrap;gap:8px 16px;margin:14px 0 0;font-size:12.5px;color:var(--muted)}
+  .legend span{display:inline-flex;align-items:center;gap:7px}
+  .legend .k{font-family:"IBM Plex Mono",monospace;font-weight:600;padding:2px 7px;border-radius:5px;font-size:10.5px}
+</style>
+
+<div class="wrap">
+
+  <p class="eyebrow">Client Concierge · Build Plan</p>
+  <h1>Claims &amp; eligibility → review → <em>assign</em> → intake</h1>
+  <p class="lede">A phased plan to generalize today's GLP1-only assignment pipeline into a type-driven
+    intake engine: AMT and managers review claims/eligibility data and assign it to concierges, each
+    assignment opens a typed intake record (GLP1 <em>or</em> non-GLP1) for the CC to work, and a registered
+    member hands off to procurement. It starts with <b>Phase 0 — the product/pricing/member masters</b>
+    migrated from Unifeyed, which everything else depends on.</p>
+  <div class="meta-row">
+    <span class="chip">Projects&nbsp; <b>Data Foundations · Client Concierge</b></span>
+    <span class="chip">Plan&nbsp; <b>Phase 0 + 6 intake phases</b></span>
+    <span class="chip">Tasks&nbsp; <b>43</b> (14 foundation + 29 intake)</span>
+    <span class="chip">Basis&nbsp; <b>GLP1 model + Unifeyed data + CC/SOP docs</b></span>
+  </div>
+
+  <div class="rule"></div>
+
+  <!-- CURRENT STATE -->
+  <h2 class="sec">What exists today — the GLP1 model to generalize</h2>
+  <div class="flow">
+    <div class="stage"><span class="s-lab">Feed</span><span class="s-name">Claims / utilization</span><span class="s-tbl">ReadyToAssign · category='GLP1'</span></div>
+    <span class="arrow">→</span>
+    <div class="stage"><span class="s-lab">Assign</span><span class="s-name">Manager assigns member</span><span class="s-tbl">status→Assigned · assigned_to</span></div>
+    <span class="arrow">→</span>
+    <div class="stage"><span class="s-lab">Intake</span><span class="s-name">Intake record created</span><span class="s-tbl">GLP1_Intake (auto)</span></div>
+    <span class="arrow">→</span>
+    <div class="stage"><span class="s-lab">Work</span><span class="s-name">Concierge queue</span><span class="s-tbl">call-center/in-progress · other</span></div>
+    <span class="arrow">→</span>
+    <div class="stage"><span class="s-lab">Record</span><span class="s-name">Member working surface</span><span class="s-tbl">contacts · questionnaire · status</span></div>
+  </div>
+  <p class="flow-note"><b>The good news:</b> the schema is already keyed by a <code>category</code> column across
+    ReadyToAssign / GLP1_Intake / ContactLog / Questionnaire, and a first-class <b>Client Concierge</b> role
+    already exists. The work is mostly <b>de-hardcoding "GLP1" from the screens</b>, adding a non-GLP1 workflow,
+    and wiring the disconnected pieces together — not rebuilding from scratch.</p>
+
+  <!-- GAP ANALYSIS -->
+  <h2 class="sec" style="margin-top:34px">Gap analysis</h2>
+  <div class="gaps">
+    <div class="gap built">
+      <div class="gap-h"><span class="dot"></span>Built</div>
+      <ul>
+        <li><b>GLP1 assign flow</b> — ready-to-assign → assign → concierge queues</li>
+        <li><b>GLP1 member record</b> — contacts, questionnaire (auto-disqualify), intake lifecycle</li>
+        <li><b>PBM member intake</b> API + review/verify/assign UI</li>
+        <li><b>Claims viewing</b> &amp; reporting; <b>eligibility</b> import + view</li>
+        <li><b>Auth + Client Concierge role</b> + nav gating</li>
+      </ul>
+    </div>
+    <div class="gap partial">
+      <div class="gap-h"><span class="dot"></span>Partial</div>
+      <ul>
+        <li><b>Category generalizes the data</b> — but every page hardcodes GLP1</li>
+        <li><b>Two assignee silos</b> — GLP1 uses <code>Users</code>, PBM intake uses <code>tp_staff</code></li>
+        <li><b>PBM intake assignment is a dead-end</b> — stamps a row, no working record</li>
+        <li><b>Roles</b> — UI-only nav gating, minimal server-side authorization</li>
+      </ul>
+    </div>
+    <div class="gap missing">
+      <div class="gap-h"><span class="dot"></span>Missing</div>
+      <ul>
+        <li><b>Non-GLP1 processing</b> — no working surface or lifecycle</li>
+        <li><b>Review-then-assign</b> for claims/eligibility (only viewing today)</li>
+        <li><b>Role/user-aware dashboard</b> — the dashboard is global, not "my work"</li>
+        <li><b>Eligibility → demographics</b> on the record (integration pending)</li>
+        <li><b>Member ↔ procurement linkage</b> — batch orders stand alone</li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- PHASE 0 — FOUNDATIONS -->
+  <h2 class="sec" style="margin-top:38px">Phase 0 — the prerequisite: data foundations &amp; masters</h2>
+  <div class="phase">
+    <div class="ph-head" style="background:var(--teal-soft)"><div class="ph-num" style="background:var(--teal-deep)">0</div><div><p class="ph-tt">Data foundations &amp; masters <span style="font-family:'IBM Plex Mono',monospace;font-size:11px;font-weight:600;color:var(--teal-deep);border:1px solid var(--teal);border-radius:5px;padding:2px 7px;margin-left:8px;text-transform:uppercase;letter-spacing:.05em">Do first</span></p><p class="ph-goal">Migrate the product / pricing / member masters from Unifeyed. This is what lets CC put a real medication on a procurement ticket — and it unblocks Procurement (rebate pricing) and Finance (UOM / invoicing) too.</p></div></div>
+    <div class="ph-tasks">
+      <div class="task"><div><h4>Product master + vendors (new Procurement nav area)</h4><p>A drug catalog (<b>NDC · strength · UOM · unit price/cost · AWP · vendor · flags</b>) from Unifeyed's 11,310 products, plus a vendor list — managed under a new <b>Procurement</b> nav area (Vendors · Product Master).</p></div><span class="eff L">LARGE</span></div>
+      <div class="task"><div><h4>Client pricing, rebates &amp; formulary</h4><p>Per-client drug price + <b>rebate amounts</b> (tblcompany_pricing, 1,730) and each client's <b>approved-product formulary</b> (638) — feeds Procurement rebates and Finance invoicing.</p></div><span class="eff L">LARGE</span></div>
+      <div class="task"><div><h4>Member profiles &amp; medication history</h4><p>Member/patient profiles (6,569) and their medication/Rx history (10,157) from Unifeyed — historical context for CC and the source for eligibility→demographics.</p></div><span class="eff M">MED</span></div>
+      <div class="task"><div><h4>Idempotent migration tooling &amp; sync</h4><p>Re-runnable cross-DB MERGE loaders (same pattern as the transactions migration) with reconciliation, and a sync strategy until full cutover.</p></div><span class="eff M">MED</span></div>
+    </div>
+  </div>
+
+  <!-- ROADMAP -->
+  <h2 class="sec" style="margin-top:34px">Then — the intake build (phases 1–6)</h2>
+
+  <div class="phase">
+    <div class="ph-head"><div class="ph-num">1</div><div><p class="ph-tt">Intake foundations &amp; type generalization</p><p class="ph-goal">Make the GLP1-only model type-driven so any service flows through it.</p></div></div>
+    <div class="ph-tasks">
+      <div class="task"><div><h4>Generalize ReadyToAssign to any intake type</h4><p>Make the existing <code>category</code> column a first-class driver so non-GLP1 records queue, review, and route the same way.</p></div><span class="eff M">MED</span></div>
+      <div class="task"><div><h4>Intake-type taxonomy config (GLP1 + non-GLP1)</h4><p>Config table defining each type's workflow — statuses, questionnaire, eligibility rules — so new service lines are configured, not coded.</p></div><span class="eff M">MED</span></div>
+      <div class="task"><div><h4>Unified intake record keyed by member + type</h4><p>Generalize GLP1_Intake so one member can hold multiple concurrent intakes (GLP1 <em>and</em> non-GLP1) without collision.</p></div><span class="eff L">LARGE</span></div>
+      <div class="task"><div><h4>Migrate GLP1 intake into the unified model</h4><p>Move existing GLP1 intake / questionnaire / contact-log data over, keeping current screens working.</p></div><span class="eff M">MED</span></div>
+      <div class="task"><div><h4>Unify the concierge/person model</h4><p>GLP1 assigns from <code>Users</code>; PBM intake from <code>tp_staff</code>. Pick one canonical assignee model so assignment is consistent everywhere.</p></div><span class="eff M">MED</span></div>
+      <div class="task"><div><h4>De-hardcode "GLP1" from the intake pages</h4><p>Ready-to-assign / assigned / record / call-center pages all hardcode the category — drive them from the intake type.</p></div><span class="eff M">MED</span></div>
+    </div>
+  </div>
+
+  <div class="phase">
+    <div class="ph-head"><div class="ph-num">2</div><div><p class="ph-tt">Review &amp; assign — AMT / Manager workspace</p><p class="ph-goal">Let AMT and managers analyze claims/eligibility and assign it by type.</p></div></div>
+    <div class="ph-tasks">
+      <div class="task"><div><h4>Manager review workspace over claims &amp; eligibility</h4><p>Analyze incoming claims and eligibility — vet duplicates, blanks, and eligibility — before anything reaches a concierge.</p></div><span class="eff L">LARGE</span></div>
+      <div class="task"><div><h4>Assign records to concierges (single + bulk) with type tag</h4><p>Assign individually or in bulk, tagging GLP1 vs non-GLP1, writing assigned_to / assigned_by / assigned_at.</p></div><span class="eff M">MED</span></div>
+      <div class="task"><div><h4>Assignment rules &amp; workload balancing</h4><p>Prevent duplicate assignment of the same member; show per-CC workload; support round-robin / manual balancing.</p></div><span class="eff M">MED</span></div>
+      <div class="task"><div><h4>Auto-create the typed intake record on assignment</h4><p>Assigning creates the intake record of the correct type for the CC to work — as GLP1 does today.</p></div><span class="eff M">MED</span></div>
+      <div class="task"><div><h4>Unassigned queue + assignment metrics</h4><p>Manager view of the backlog by type/group, plus throughput and aging.</p></div><span class="eff M">MED</span></div>
+      <div class="task"><div><h4>Wire PBM intake review into the assignment engine</h4><p>PBM intake review (New→Verified→Assigned) exists but dead-ends — connect it so a verified/assigned intake becomes a real intake the CC works.</p></div><span class="eff M">MED</span></div>
+      <div class="task"><div><h4>Restrict assignment to AMT/Managers (server-side)</h4><p>Formalize the assignment permission server-side across all intake types.</p></div><span class="eff S">SMALL</span></div>
+    </div>
+  </div>
+
+  <div class="phase">
+    <div class="ph-head"><div class="ph-num">3</div><div><p class="ph-tt">Non-GLP1 intake processing</p><p class="ph-goal">Build the non-GLP1 processing that mirrors GLP1 but fits non-GLP1 services.</p></div></div>
+    <div class="ph-tasks">
+      <div class="task"><div><h4>Non-GLP1 intake status lifecycle</h4><p>Define non-GLP1 statuses / sub-statuses appropriate to the service (analogous to GLP1's In Progress → Outreach → Submitted).</p></div><span class="eff M">MED</span></div>
+      <div class="task"><div><h4>Non-GLP1 concierge working surface</h4><p>The non-GLP1 record page: status controls, notes, contact log, next-step tasks.</p></div><span class="eff L">LARGE</span></div>
+      <div class="task"><div><h4>Non-GLP1 questionnaire / eligibility checks</h4><p>A non-GLP1 questionnaire and qualification checks, like GLP1's with disqualification handling.</p></div><span class="eff M">MED</span></div>
+      <div class="task"><div><h4>Unified member view showing both intake types</h4><p>One profile surfacing GLP1 and non-GLP1 intakes side by side so a CC sees the whole member.</p></div><span class="eff M">MED</span></div>
+      <div class="task"><div><h4>Eligibility → member demographics on the record</h4><p>Replace the stubbed demographics with real data from eligibility so CCs see accurate member info.</p></div><span class="eff M">MED</span></div>
+    </div>
+  </div>
+
+  <div class="phase">
+    <div class="ph-head"><div class="ph-num">4</div><div><p class="ph-tt">Concierge dashboard &amp; work queue</p><p class="ph-goal">Give each CC a role-aware landing and a worklist of their assigned intakes.</p></div></div>
+    <div class="ph-tasks">
+      <div class="task"><div><h4>CC login landing: "My Assigned Intakes"</h4><p>On login a concierge lands on their queue (GLP1 + non-GLP1) by status, follow-up, priority — not the generic company dashboard.</p></div><span class="eff L">LARGE</span></div>
+      <div class="task"><div><h4>Worklist filters &amp; quick actions</h4><p>Filter by type/status/group/priority with quick actions: log contact, advance status, set reminder.</p></div><span class="eff M">MED</span></div>
+      <div class="task"><div><h4>Reminders / tasks tie-in for assigned intakes</h4><p>Surface the CC's reminders and tasks tied to their assigned intakes.</p></div><span class="eff M">MED</span></div>
+      <div class="task"><div><h4>Role-aware dashboards (CC vs Manager vs AMT)</h4><p>Use the existing role / nav_access to show the right landing per role.</p></div><span class="eff M">MED</span></div>
+    </div>
+  </div>
+
+  <div class="phase">
+    <div class="ph-head"><div class="ph-num">5</div><div><p class="ph-tt">Procurement hand-off</p><p class="ph-goal">Connect a member to procurement once registered for services.</p></div></div>
+    <div class="ph-tasks">
+      <div class="task"><div><h4>Define "Registered for Services" intake state</h4><p>A terminal intake state marking the member enrolled and ready for procurement.</p></div><span class="eff S">SMALL</span></div>
+      <div class="task"><div><h4>Hand off to procurement on registration</h4><p>Reaching Registered creates the procurement order/batch and notifies procurement — connecting CC to the Procurement workflow.</p></div><span class="eff L">LARGE</span></div>
+      <div class="task"><div><h4>Reflect order status back on the intake</h4><p>Show procurement/order status (ordered, tracking, delivered) on the member's intake for one view.</p></div><span class="eff M">MED</span></div>
+    </div>
+  </div>
+
+  <div class="phase">
+    <div class="ph-head"><div class="ph-num">6</div><div><p class="ph-tt">Reporting, audit &amp; controls</p><p class="ph-goal">Measure and safeguard the assignment/intake pipeline.</p></div></div>
+    <div class="ph-tasks">
+      <div class="task"><div><h4>Assignment &amp; intake KPIs</h4><p>Per-CC and per-type volume, throughput, aging, and conversion to registered.</p></div><span class="eff M">MED</span></div>
+      <div class="task"><div><h4>Audit trail on assignment &amp; status changes</h4><p>Immutable history of who assigned/reassigned and every status change.</p></div><span class="eff M">MED</span></div>
+      <div class="task"><div><h4>Aging / escalation alerts for stalled intakes</h4><p>Alert managers when intakes stall beyond thresholds.</p></div><span class="eff S">SMALL</span></div>
+      <div class="task"><div><h4>Server-side role-based authorization</h4><p>Enforce CC/AMT/Manager permissions in the APIs, not just hidden in the nav.</p></div><span class="eff M">MED</span></div>
+    </div>
+  </div>
+
+  <div class="legend">
+    <span><span class="k eff S">SMALL</span> quick</span>
+    <span><span class="k eff M">MED</span> moderate</span>
+    <span><span class="k eff L">LARGE</span> substantial</span>
+  </div>
+
+  <footer>
+    <b>43 tasks</b> — 14 in the <b>Data Foundations &amp; Masters</b> project (Phase 0) and 29 across the six
+    intake phases under <b>Client Concierge</b> (Project Management). Built on the existing GLP1 assignment
+    model, the PBM intake review flow, the Unifeyed masters, and the Client Concierge / Call Center SOPs.
+    Phase 0 foundations unlock everything after — including Procurement and Finance — but tasks can be re-prioritized.
+  </footer>
+
+</div>
