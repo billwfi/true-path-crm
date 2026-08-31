@@ -213,6 +213,17 @@ def main():
             except Exception as e:  # noqa: BLE001
                 print(f"  {client} reconcile error: {e}")
 
+        # Non-GLP1 "Ready to Assign" build — claims -> active eligibility -> client-approved
+        # formulary. Runs after reconcile so ClaimsData_Prod + eligibility are current. Peer
+        # of the existing GLP1 eligibility->claims feed; inserts category='NONGLP1' rows.
+        print("Building non-GLP1 ready-to-assign…")
+        try:
+            np = subprocess.run([sys.executable, os.path.join(here, "nonglp1", "build_ready_to_assign.py")],
+                                capture_output=True, text=True, timeout=3600)
+            print((np.stdout or "") + (np.stderr or ""))
+        except Exception as e:  # noqa: BLE001
+            print(f"  build_ready_to_assign error: {e}")
+
         # GLP-1 -> OnBase export (BRIDGE until full cutover): email the OnBase load
         # team (techsupport@) a CSV of new GLP-1 members not yet in OnBase.
         print("Running GLP-1 OnBase export…")

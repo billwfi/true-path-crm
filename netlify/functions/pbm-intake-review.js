@@ -23,9 +23,11 @@ exports.handler = async function (event) {
         return ok(out);
       }
       if (resource === 'concierges') {
+        // Unified concierge source: dbo.Users with the Client Concierge role — the same
+        // people table the GLP1 / AMT & Assignment flow uses (was dbo.tp_staff).
         const r = await mssql(
           `SELECT id, LTRIM(RTRIM(CONCAT(firstname,' ',lastname))) AS name
-           FROM dbo.tp_staff WHERE active = 1 ORDER BY firstname, lastname`);
+           FROM dbo.Users WHERE active = 1 AND role = 'Client Concierge' ORDER BY firstname, lastname`);
         return ok(r.recordset);
       }
       const r = await mssql(
@@ -53,7 +55,7 @@ exports.handler = async function (event) {
       const cid = parseInt(b.assigned_concierge_id, 10) || null;
       if (cid) {
         const c = (await mssql(
-          `SELECT LTRIM(RTRIM(CONCAT(firstname,' ',lastname))) AS name FROM dbo.tp_staff WHERE id=@id`, { id: cid })).recordset[0];
+          `SELECT LTRIM(RTRIM(CONCAT(firstname,' ',lastname))) AS name FROM dbo.Users WHERE id=@id`, { id: cid })).recordset[0];
         conciergeName = c ? c.name : null;
       }
       // Status: explicit, else derive (assigning => Assigned).
