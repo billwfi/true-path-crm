@@ -41,6 +41,7 @@
             Current Medications <span id="cur-count" class="text-slate-400 text-sm ml-1"></span>
             <span class="text-xs text-slate-400 ml-2 font-normal">— actively prescribed</span></div>
           <div class="card-body">
+            <p id="cur-note" class="text-xs text-slate-500 mb-3" style="display:none"></p>
             <div style="overflow-x:auto"><table class="data-table">
               <thead><tr><th>Medication</th><th>Strength</th><th>NDC</th><th>Day Supply</th><th>Refills</th><th>Next Fill</th></tr></thead>
               <tbody id="cur-meds"></tbody></table></div>
@@ -154,10 +155,19 @@
       field('Eligible thru', m.eligible_thru);
 
     const meds = m.medications || [];
-    const current = meds.filter(x => !x.inactive);
+    // "Current" = actively prescribed AND not being worked through an intake; "Past" = discontinued.
+    const current = meds.filter(x => !x.inactive && !x.in_intake);
+    const inIntake = meds.filter(x => !x.inactive && x.in_intake);
     const past = meds.filter(x => x.inactive);
     document.getElementById('cur-count').textContent = current.length ? '· ' + current.length : '';
     document.getElementById('past-count').textContent = past.length ? '· ' + past.length : '';
+    const note = document.getElementById('cur-note');
+    if (inIntake.length) {
+      note.style.display = '';
+      note.innerHTML = `<i class="fa-solid fa-circle-info text-slate-400"></i> ${inIntake.length} `
+        + `medication${inIntake.length === 1 ? '' : 's'} being handled through an intake `
+        + `(${inIntake.map(x => escv(x.short_name) || escv(x.label)).join(', ')}) — see <b>Intakes in Process</b>.`;
+    } else { note.style.display = 'none'; }
     document.getElementById('cur-meds').innerHTML = current.length
       ? current.map(medRow).join('')
       : '<tr><td colspan="6" class="text-center py-6 text-slate-400">No current medications on file</td></tr>';

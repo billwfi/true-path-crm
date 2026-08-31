@@ -48,6 +48,27 @@ exports.handler = async function (event) {
          FROM dbo.tp_member_medications md
          LEFT JOIN dbo.tp_products p ON p.source_id=md.product_source_id
          WHERE md.member_source_id=@id ORDER BY md.inactive, p.short_name`, { id: parseInt(id, 10) })).recordset;
+
+      // Flag medications the member is currently working through an intake (a ReadyToAssign
+      // row for their Member ID), matched by NDC digits or the leading drug-name token, so the
+      // UI can keep them out of "current medications".
+      const mid = (m.member_id || '').toString().trim();
+      if (mid) {
+        const ra = (await mssql(
+          `SELECT DISTINCT NDC, Drug_Name FROM dbo.ReadyToAssign WHERE LTRIM(RTRIM(Member_ID)) = @mid`,
+          { mid })).recordset;
+        const ndcSet = new Set(), nameSet = new Set();
+        const baseName = s => (s || '').toString().trim().split(/\s+/)[0].toUpperCase();
+        for (const r of ra) {
+          const n = (r.NDC || '').replace(/\D/g, ''); if (n) ndcSet.add(n);
+          const b = baseName(r.Drug_Name); if (b.length > 2) nameSet.add(b);
+        }
+        for (const md of m.medications) {
+          const mn = ((md.ndc_comp || md.ndc_code) || '').replace(/\D/g, '');
+          const bn = baseName(md.short_name || md.label);
+          md.in_intake = ((mn && ndcSet.has(mn)) || (bn.length > 2 && nameSet.has(bn))) ? 1 : 0;
+        }
+      }
       return ok(m);
     }
 
