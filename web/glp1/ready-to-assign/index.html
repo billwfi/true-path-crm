@@ -15,6 +15,8 @@
     <main class="flex-1 overflow-y-auto p-6">
 
       <div class="search-bar">
+        <select id="category-filter" class="form-control" style="max-width:150px" onchange="changeCategory()">
+          <option value="GLP1">GLP-1</option><option value="NONGLP1">Non-GLP-1</option></select>
         <input type="text" id="search" class="form-control" placeholder="Search patient, member ID, drug…" oninput="debounceLoad()">
         <select id="group-filter" class="form-control" style="max-width:240px" onchange="load()"><option value="">All Groups</option></select>
         <select id="drug-filter" class="form-control" style="max-width:200px" onchange="load()"><option value="">All Drugs</option></select>
@@ -96,8 +98,11 @@
     }
   }
 
+  function curCategory(){ const el=document.getElementById('category-filter'); return (el && el.value) || 'GLP1'; }
+  function changeCategory(){ loadDrugs(); loadStats(); load(); }
+
   async function loadDrugs() {
-    const list = await apiGet('/glp1?drugs=1&status=' + encodeURIComponent('Ready to Assign')) || [];
+    const list = await apiGet('/glp1?drugs=1&category=' + curCategory() + '&status=' + encodeURIComponent('Ready to Assign')) || [];
     const df = document.getElementById('drug-filter');
     const cur = df.value;
     df.innerHTML = '<option value="">All Drugs</option>' +
@@ -106,7 +111,7 @@
   }
 
   async function loadStats() {
-    const stats = await apiGet('/glp1?stats=1&latest_per_member=1') || [];
+    const stats = await apiGet('/glp1?stats=1&latest_per_member=1&category=' + curCategory()) || [];
     const ready = {};
     let total = 0;
     stats.forEach(s => { if (s.status === 'Ready to Assign') { ready[s.Group_Name] = s.n; total += s.n; } });
@@ -126,7 +131,7 @@
     const search = document.getElementById('search').value;
     const group = document.getElementById('group-filter').value;
     const drug = document.getElementById('drug-filter').value;
-    let url = '/glp1?status=' + encodeURIComponent('Ready to Assign') + '&latest_per_member=1';
+    let url = '/glp1?status=' + encodeURIComponent('Ready to Assign') + '&latest_per_member=1&category=' + curCategory();
     if (group) url += `&group=${encodeURIComponent(group)}`;
     if (drug) url += `&drug=${encodeURIComponent(drug)}`;
     if (search) url += `&search=${encodeURIComponent(search)}`;
@@ -178,7 +183,7 @@
   async function doAssign() {
     const concierge = document.getElementById('f-concierge').value;
     if (!concierge) { showToast('Select a Client Concierge', 'error'); return; }
-    const res = await apiPatch('/glp1', { indxs: Array.from(selected), assigned_to: parseInt(concierge) });
+    const res = await apiPatch('/glp1?category=' + curCategory(), { indxs: Array.from(selected), assigned_to: parseInt(concierge) });
     if (res && res.ok) {
       showToast(`Assigned ${selected.size} record(s)`, 'success');
       closeModal('assign-modal');

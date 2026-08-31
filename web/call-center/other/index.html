@@ -67,7 +67,7 @@
   async function load() {
     const search = document.getElementById('search').value;
     const group = document.getElementById('group-filter').value;
-    let url = '/glp1?status=' + encodeURIComponent('Assigned') + '&latest_per_member=1&assigned_to=' + encodeURIComponent(me.id);
+    let url = '/glp1?status=' + encodeURIComponent('Assigned') + '&latest_per_member=1&category=all&assigned_to=' + encodeURIComponent(me.id);
     if (group) url += `&group=${encodeURIComponent(group)}`;
     if (search) url += `&search=${encodeURIComponent(search)}`;
     const all = await apiGet(url) || [];

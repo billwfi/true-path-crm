@@ -147,6 +147,7 @@
   const params = new URLSearchParams(location.search);
   const indx = params.get('indx');
   let record = null, memberKey = null, contacts = [], intake = null, qData = null;
+  const trackCat = () => (record && record.category) || 'GLP1';  // intake type of this record
 
   function opt(v, sel) { return `<option ${v === sel ? 'selected' : ''}>${esc(v)}</option>`; }
   function dInput(d) { return d ? String(d).slice(0, 10) : ''; }
@@ -210,7 +211,7 @@
   }
 
   async function loadTracking() {
-    const data = await apiGet(`/glp1-tracking?member=${encodeURIComponent(memberKey)}`) || {};
+    const data = await apiGet(`/glp1-tracking?member=${encodeURIComponent(memberKey)}&category=${encodeURIComponent(trackCat())}`) || {};
     contacts = data.contacts || [];
     intake = data.intake;
     qData = data.questionnaire;
@@ -241,7 +242,7 @@
       status_date: document.getElementById('i-status-date').value || null,
       sub_status: status === WELLSYNC ? document.getElementById('i-sub-status').value : null,
     };
-    const res = await apiPatch(`/glp1-tracking?member=${encodeURIComponent(memberKey)}&action=intake`, body);
+    const res = await apiPatch(`/glp1-tracking?member=${encodeURIComponent(memberKey)}&category=${encodeURIComponent(trackCat())}&action=intake`, body);
     if (res && res.ok) { showToast('Intake saved', 'success'); await loadTracking(); }
     else showToast('Save failed', 'error');
   }
@@ -304,7 +305,7 @@
     if (!body.contact_date) { showToast('Date is required', 'error'); return; }
     const res = id
       ? await apiPatch(`/glp1-tracking?contact_id=${id}`, body)
-      : await apiPost(`/glp1-tracking?member=${encodeURIComponent(memberKey)}`, body);
+      : await apiPost(`/glp1-tracking?member=${encodeURIComponent(memberKey)}&category=${encodeURIComponent(trackCat())}`, body);
     if (res && res.ok) { showToast(id ? 'Contact updated' : 'Contact added', 'success'); closeModal('contact-modal'); await loadTracking(); }
     else { const e = res ? await res.json().catch(() => ({})) : {}; showToast(e.error || 'Save failed', 'error'); }
   }
@@ -499,7 +500,7 @@
   async function saveQuestionnaire() {
     const answers = collectQuestionnaire();
     const disqualified = computeDQ(answers).length > 0;
-    const res = await apiPatch(`/glp1-tracking?member=${encodeURIComponent(memberKey)}&action=questionnaire`,
+    const res = await apiPatch(`/glp1-tracking?member=${encodeURIComponent(memberKey)}&category=${encodeURIComponent(trackCat())}&action=questionnaire`,
       { answers, disqualified });
     if (res && res.ok) {
       qData = { answers, disqualified, updated_at: new Date().toISOString() };

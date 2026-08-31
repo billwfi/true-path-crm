@@ -60,7 +60,7 @@ exports.handler = async function (event) {
         const countExpr = onePerMember ? `COUNT(DISTINCT ${MEMBER_KEY})` : 'COUNT(*)';
         const r = await mssql(
           `SELECT Group_Name, status, ${countExpr} AS n
-           FROM dbo.ReadyToAssign WHERE category = @category
+           FROM dbo.ReadyToAssign WHERE (@category = 'all' OR category = @category)
            GROUP BY Group_Name, status ORDER BY Group_Name`,
           { category: cat });
         return ok(r.recordset);
@@ -95,7 +95,7 @@ exports.handler = async function (event) {
         return ok(r.recordset);
       }
 
-      const where = `category = @category
+      const where = `(@category = 'all' OR category = @category)
            AND (@status IS NULL OR status = @status)
            AND (@group IS NULL OR Group_Name = @group)
            AND (@drug IS NULL OR ${DRUG_BASE} = @drug)
@@ -112,7 +112,9 @@ exports.handler = async function (event) {
       const listSql = `
         SELECT b.*, gi.status AS intake_status, gi.sub_status AS intake_sub_status
         FROM (${base}) b
-        LEFT JOIN dbo.tp_member_intakes gi ON gi.intake_type = @category AND gi.member_key = b.member_key
+        LEFT JOIN dbo.tp_member_intakes gi
+          ON gi.intake_type = CASE WHEN @category = 'all' THEN b.category ELSE @category END
+         AND gi.member_key = b.member_key
         ${onePerMember ? 'WHERE b.rn = 1' : ''}
         ORDER BY b.Group_Name, b.Last_Name, b.First_Name`;
       const r = await mssql(listSql,

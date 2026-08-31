@@ -89,8 +89,9 @@
       list.map(s => `<option value="${s.id}">${esc(staffMap[s.id])}</option>`).join('');
   }
 
+  const catOf = (indx) => { const r = (rows||[]).find(x => String(x.indx) === String(indx)); return (r && r.category) || 'GLP1'; };
   async function loadGroups() {
-    const stats = await apiGet('/glp1?stats=1') || [];
+    const stats = await apiGet('/glp1?stats=1&category=all') || [];
     const groups = [...new Set(stats.filter(s => s.status === 'Assigned').map(s => s.Group_Name))].sort();
     const gf = document.getElementById('group-filter');
     const cur = gf.value;
@@ -101,7 +102,7 @@
   async function load() {
     const search = document.getElementById('search').value;
     const group = document.getElementById('group-filter').value;
-    let url = '/glp1?status=' + encodeURIComponent('Assigned') + '&latest_per_member=1';
+    let url = '/glp1?status=' + encodeURIComponent('Assigned') + '&latest_per_member=1&category=all';
     if (group) url += `&group=${encodeURIComponent(group)}`;
     if (search) url += `&search=${encodeURIComponent(search)}`;
     rows = await apiGet(url) || [];
@@ -143,14 +144,14 @@
     const indx = document.getElementById('reassign-indx').value;
     const concierge = document.getElementById('f-concierge').value;
     if (!concierge) { showToast('Select a Client Concierge', 'error'); return; }
-    const res = await apiPatch(`/glp1?indx=${indx}`, { assigned_to: parseInt(concierge) });
+    const res = await apiPatch(`/glp1?indx=${indx}&category=${encodeURIComponent(catOf(indx))}`, { assigned_to: parseInt(concierge) });
     if (res && res.ok) { showToast('Reassigned', 'success'); closeModal('assign-modal'); load(); }
     else showToast('Reassign failed', 'error');
   }
 
   async function doUnassign(indx) {
     if (!confirm2('Unassign this record? It will return to Ready to Assign.')) return;
-    const res = await apiPatch(`/glp1?indx=${indx}&action=unassign`, {});
+    const res = await apiPatch(`/glp1?indx=${indx}&category=${encodeURIComponent(catOf(indx))}&action=unassign`, {});
     if (res && res.ok) { showToast('Returned to Ready to Assign', 'success'); load(); }
     else showToast('Unassign failed', 'error');
   }
