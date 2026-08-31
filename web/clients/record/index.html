@@ -166,6 +166,11 @@
           <input type="date" id="cl-from" class="form-control" style="max-width:165px">
           <label class="text-sm text-slate-500">to</label>
           <input type="date" id="cl-to" class="form-control" style="max-width:165px">
+          <select id="cl-category" class="form-control" style="max-width:150px" onchange="loadClaims()">
+            <option value="">All types</option>
+            <option value="GLP1">GLP-1</option>
+            <option value="NONGLP1">Non-GLP-1</option>
+          </select>
           <input type="text" id="cl-drug" class="form-control" style="max-width:220px" placeholder="Drug name contains…" oninput="debounceClaims()">
           <button class="btn btn-primary" onclick="loadClaims()"><i class="fa-solid fa-filter"></i> Apply</button>
           <span class="text-sm text-slate-500 ml-auto" id="cl-meta"></span>
@@ -853,7 +858,10 @@
     }
     const from = document.getElementById('cl-from').value, to = document.getElementById('cl-to').value;
     const drug = document.getElementById('cl-drug').value.trim();
-    const qs = `carrier=${encodeURIComponent(clientIrxId)}&from=${from}&to=${to}${drug ? '&drug=' + encodeURIComponent(drug) : ''}`;
+    const category = document.getElementById('cl-category').value;
+    const qs = `carrier=${encodeURIComponent(clientIrxId)}&from=${from}&to=${to}`
+      + (drug ? '&drug=' + encodeURIComponent(drug) : '')
+      + (category ? '&category=' + category : '');
     const data = await apiGet(`/claims?${qs}`);
     claimsLoaded = true;
     if (!data) { showToast('Failed to load claims', 'error'); return; }

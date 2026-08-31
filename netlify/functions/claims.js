@@ -49,7 +49,21 @@ const SOURCES = {
   // Harrison Beverage: Millennium "Claims Detail Report" loaded straight into
   // ClaimsData_Prod (no cost columns) via the claims_loader alias map.
   '2871':{ table: 'ClaimsData_Prod', idCol: 'clientid', layout: 'prod', dates: 'us' },
+  // TruePath Test — demo client; test claims live in ClaimsData_Prod so the Claims
+  // tab shows the same rows that drive the GLP-1 / non-GLP-1 assignment process.
+  'TPTEST':{ table: 'ClaimsData_Prod', idCol: 'clientid', layout: 'prod', dates: 'us' },
 };
+
+// Drug-name markers for the GLP-1 / non-GLP-1 claims toggle (constants, safe to inline).
+const GLP1_LIKE = ['ozempic', 'wegovy', 'mounjaro', 'zepbound', 'trulicity', 'rybelsus', 'victoza',
+  'saxenda', 'byetta', 'bydureon', 'soliqua', 'xultophy', 'semaglutide', 'tirzepatide',
+  'dulaglutide', 'liraglutide', 'exenatide'];
+const glp1Clause = (col) => '(' + GLP1_LIKE.map(g => `LOWER(${col}) LIKE '%${g}%'`).join(' OR ') + ')';
+// Push a GLP-1 / non-GLP-1 filter onto a conditions list for the given drug-name column.
+function pushCategory(conds, category, col) {
+  if (category === 'GLP1') conds.push(glp1Clause(col));
+  else if (category === 'NONGLP1') conds.push('NOT ' + glp1Clause(col));
+}
 const DEFAULT_SOURCE = { table: 'ClaimsData', idCol: 'Client ID', profile: 'std', dates: 'native' };
 const resolveSource = (carrier) => SOURCES[carrier] || DEFAULT_SOURCE;
 
@@ -73,6 +87,7 @@ function buildFilter(q, idCol, D) {
   if (q.from) { conds.push(`${D} >= @from`); params.from = q.from; }
   if (q.to)   { conds.push(`${D} <= @to`);   params.to = q.to; }
   if (q.drug) { conds.push('[Drug Name] LIKE @drug'); params.drug = `%${q.drug}%`; }
+  pushCategory(conds, q.category, '[Drug Name]');
   return { where: conds.join(' AND '), params };
 }
 
@@ -219,6 +234,7 @@ async function claimsProd(q) {
   if (q.from) { conds.push(`${D} >= @from`); params.from = q.from; }
   if (q.to)   { conds.push(`${D} <= @to`);   params.to = q.to; }
   if (q.drug) { conds.push('drugname LIKE @drug'); params.drug = `%${q.drug}%`; }
+  pushCategory(conds, q.category, 'drugname');
   const where = conds.join(' AND ');
 
   const SUMMARY = `SELECT COUNT(*) AS claim_count,
