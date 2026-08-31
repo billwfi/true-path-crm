@@ -54,7 +54,7 @@ exports.handler = async function (event) {
                 CONVERT(varchar(10), end_date, 23)   AS end_date
          FROM dbo.Projects ORDER BY sort_order, name`)).recordset;
       const cats = (await mssql(
-        `SELECT id, code, title, goal, sort_order, [plan], project_id, lead, dev_lead,
+        `SELECT id, code, title, goal, status, sort_order, [plan], project_id, lead, dev_lead,
                 CONVERT(varchar(10), start_date, 23) AS start_date,
                 CONVERT(varchar(10), end_date, 23)   AS end_date
          FROM dbo.Project_Categories ORDER BY sort_order, code`)).recordset;
@@ -176,6 +176,7 @@ exports.handler = async function (event) {
       if (isCategory) {
         await mssql(
           `UPDATE dbo.Project_Categories SET title=COALESCE(@title,title), goal=@goal,
+             status=CASE WHEN @st_set=1 THEN @status ELSE status END,
              sort_order=COALESCE(@sort,sort_order), [plan]=COALESCE(@plan,[plan]),
              start_date=CASE WHEN @sd_set=1 THEN @sd ELSE start_date END,
              end_date=CASE WHEN @ed_set=1 THEN @ed ELSE end_date END,
@@ -184,6 +185,7 @@ exports.handler = async function (event) {
            WHERE id=@id`,
           { title: b.title || null, goal: b.goal ?? null, sort: b.sort_order ?? null,
             plan: b.plan || null,
+            st_set: b.status !== undefined ? 1 : 0, status: b.status ?? null,
             sd_set: b.start_date !== undefined ? 1 : 0, sd: b.start_date || null,
             ed_set: b.end_date !== undefined ? 1 : 0, ed: b.end_date || null,
             lead_set: b.lead !== undefined ? 1 : 0, lead: b.lead || null,
