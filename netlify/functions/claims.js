@@ -229,7 +229,12 @@ exports.handler = async function (event) {
 async function claimsProd(q) {
   const T = 'dbo.ClaimsData_Prod';
   const D = `COALESCE(TRY_CONVERT(date, dateofservice, 101), TRY_CONVERT(date, LEFT(dateofservice, 10), 23), TRY_CONVERT(date, dateofservice))`;
-  const conds = [`REPLACE(LTRIM(RTRIM(clientid)), '''', '') = @carrier`];
+  // Sargable clientid match so the query SEEKS the clientid index instead of scanning the
+  // whole 309k-row heap (which evaluates the parsed-date predicate per row and times out).
+  // The driver binds the parameter as NVARCHAR; clientid is VARCHAR, and that implicit
+  // Unicode->ANSI conversion alone defeats the index — so convert the parameter to VARCHAR.
+  // Prod-mapped clients all store a clean clientid (SQL's '=' ignores trailing spaces).
+  const conds = ['clientid = CONVERT(varchar(50), @carrier)'];
   const params = { carrier: q.carrier };
   if (q.from) { conds.push(`${D} >= @from`); params.from = q.from; }
   if (q.to)   { conds.push(`${D} <= @to`);   params.to = q.to; }
