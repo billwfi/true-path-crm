@@ -22,13 +22,20 @@ exports.handler = async function (event) {
       if (!member) return badRequest('member is required');
       if (resource === 'intakes') {
         // All intake records this member holds — one per intake_type (GLP1, non-GLP1, …),
-        // each with its type label/color and the questionnaire flag, for the record page's
-        // intake selector.
+        // each with its type label/color, the questionnaire flag, and the concierge the
+        // member is assigned to for that track (from the latest matching ReadyToAssign row).
         const rows = (await mssql(
           `SELECT mi.intake_type, mi.status, mi.sub_status, mi.status_date, mi.updated_at,
-                  t.name, t.color, t.is_glp1
+                  t.name, t.color, t.is_glp1,
+                  asg.assigned_to, LTRIM(RTRIM(CONCAT(u.firstname,' ',u.lastname))) AS assigned_name
            FROM dbo.tp_member_intakes mi
            LEFT JOIN dbo.tp_intake_types t ON t.code = mi.intake_type
+           OUTER APPLY (SELECT TOP 1 r.assigned_to FROM dbo.ReadyToAssign r
+             WHERE r.category = mi.intake_type
+               AND COALESCE(NULLIF(r.Member_ID,''), CAST(r.indx AS VARCHAR(50))) = mi.member_key
+               AND r.assigned_to IS NOT NULL
+             ORDER BY r.assigned_at DESC) asg
+           LEFT JOIN dbo.Users u ON u.id = asg.assigned_to
            WHERE mi.member_key = @member
            ORDER BY t.sort_order, mi.intake_type`, { member })).recordset;
         return ok(rows);

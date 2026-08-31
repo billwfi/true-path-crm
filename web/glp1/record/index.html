@@ -19,21 +19,10 @@
         <span class="ml-2 text-lg font-semibold" id="member-name">—</span>
       </div>
 
-      <!-- Intake selector: the member's intake tracks (one per type). Selecting one loads its
-           contact tracking / status / questionnaire below. -->
-      <div class="flex flex-wrap items-center gap-2 mb-4" id="intake-bar">
-        <span class="text-xs uppercase tracking-wide text-slate-400 mr-1">Intakes</span>
-        <div id="intake-pills" class="flex flex-wrap gap-2"></div>
-        <button class="btn btn-outline btn-sm" onclick="openAddIntake()"><i class="fa-solid fa-plus"></i> Add Intake</button>
-      </div>
-
       <!-- Tabs -->
       <div id="tabbar" class="flex gap-6 border-b border-slate-200 mb-4 px-1">
         <button class="tab-btn" data-tab="demographics" onclick="showTab('demographics')">Demographics</button>
-        <button class="tab-btn" data-tab="contact" onclick="showTab('contact')">
-          Contact Tracking <span id="tab-attempts" class="badge badge-blue ml-1">0</span></button>
         <button class="tab-btn" data-tab="intake" onclick="showTab('intake')">Intake Status</button>
-        <button class="tab-btn" data-tab="questionnaire" onclick="showTab('questionnaire')">Intake Questionnaire</button>
       </div>
 
       <!-- Demographics panel -->
@@ -48,68 +37,95 @@
         </div>
       </div>
 
-      <!-- Contact Tracking panel -->
-      <div class="tab-panel" data-panel="contact" style="display:none">
-        <div class="card">
-          <div class="card-header flex items-center">
-            <span><i class="fa-solid fa-comments text-slate-400"></i> Contact Tracking</span>
-            <span class="badge badge-blue ml-2" id="attempts-badge">0 attempts</span>
-            <button class="btn btn-primary btn-sm ml-auto" onclick="openContact()"><i class="fa-solid fa-plus"></i> Add Contact</button>
-          </div>
-          <div class="card-body">
-            <div id="outreach-prompt" class="flex items-center justify-between bg-amber-50 border border-amber-300 text-amber-800 rounded-md px-4 py-3 mb-3 text-sm" style="display:none">
-              <span><i class="fa-solid fa-triangle-exclamation"></i>
-                4+ outreach attempts logged and all are closed. Mark intake as <strong>Outreach Completed</strong>?</span>
-              <button class="btn btn-sm btn-primary ml-3" onclick="markOutreachCompleted()">Mark Outreach Completed</button>
-            </div>
-            <table class="data-table">
-              <thead><tr>
-                <th>Date</th><th>Type</th><th>Notes</th><th>Follow-up</th><th>Status</th><th></th>
-              </tr></thead>
-              <tbody id="contacts-body"></tbody>
-            </table>
-          </div>
-        </div>
-      </div>
-
-      <!-- Intake Status panel -->
+      <!-- Intake Status panel: master list of the member's intakes, drilling into one. -->
       <div class="tab-panel" data-panel="intake" style="display:none">
-        <div class="card">
-          <div class="card-header flex items-center">
-            <span><i class="fa-solid fa-clipboard-check text-slate-400"></i> <span id="i-title">Intake Status</span></span>
-            <button class="btn btn-danger btn-sm ml-auto" onclick="deleteIntake()"><i class="fa-solid fa-trash"></i> Delete Intake</button>
-          </div>
-          <div class="card-body form-pad">
-            <div class="flex flex-wrap items-end gap-4">
-              <div class="form-group mb-0">
-                <label class="form-label">Status</label>
-                <select class="form-control" id="i-status" onchange="onIntakeStatusChange()"></select>
-              </div>
-              <div class="form-group mb-0">
-                <label class="form-label">Status Date</label>
-                <input type="date" class="form-control" id="i-status-date">
-              </div>
-              <div class="form-group mb-0" id="i-sub-wrap" style="display:none">
-                <label class="form-label">Sub-Status</label>
-                <select class="form-control" id="i-sub-status"></select>
-              </div>
-              <button class="btn btn-primary" onclick="saveIntake()"><i class="fa-solid fa-floppy-disk"></i> Save</button>
-              <span class="text-xs text-slate-400 ml-auto" id="i-updated"></span>
+
+        <!-- LIST: every intake this member holds -->
+        <div id="intake-list">
+          <div class="card">
+            <div class="card-header flex items-center">
+              <span><i class="fa-solid fa-clipboard-check text-slate-400"></i> Intakes</span>
+              <button class="btn btn-outline btn-sm ml-auto" onclick="openAddIntake()"><i class="fa-solid fa-plus"></i> Add Intake</button>
+            </div>
+            <div class="card-body">
+              <table class="data-table">
+                <thead><tr>
+                  <th>Category</th><th>Status</th><th>Status Date</th><th>Sub-Status</th><th>Assigned To</th><th></th>
+                </tr></thead>
+                <tbody id="intake-list-body"></tbody>
+              </table>
             </div>
           </div>
         </div>
-      </div>
 
-      <!-- Intake Questionnaire panel -->
-      <div class="tab-panel" data-panel="questionnaire" style="display:none">
-        <div id="q-dq-banner" class="flex items-center gap-2 bg-red-50 border border-red-300 text-red-700 rounded-md px-4 py-3 mb-4 text-sm" style="display:none">
-          <i class="fa-solid fa-triangle-exclamation"></i>
-          <span><strong>Possible disqualification.</strong> <span id="q-dq-reasons"></span></span>
-        </div>
-        <div id="q-form"></div>
-        <div class="flex items-center gap-3 mt-2">
-          <button class="btn btn-primary" onclick="saveQuestionnaire()"><i class="fa-solid fa-floppy-disk"></i> Save Questionnaire</button>
-          <span class="text-xs text-slate-400" id="q-updated"></span>
+        <!-- DETAIL: one intake — its status, contact tracking, and (GLP-1) questionnaire -->
+        <div id="intake-detail" style="display:none">
+          <button class="btn btn-outline btn-sm mb-3" onclick="backToIntakeList()"><i class="fa-solid fa-arrow-left"></i> Back to intakes</button>
+
+          <!-- Status -->
+          <div class="card mb-4">
+            <div class="card-header flex items-center">
+              <span><i class="fa-solid fa-clipboard-check text-slate-400"></i> <span id="i-title">Intake Status</span></span>
+              <button class="btn btn-danger btn-sm ml-auto" onclick="deleteIntake()"><i class="fa-solid fa-trash"></i> Delete Intake</button>
+            </div>
+            <div class="card-body form-pad">
+              <div class="flex flex-wrap items-end gap-4">
+                <div class="form-group mb-0">
+                  <label class="form-label">Status</label>
+                  <select class="form-control" id="i-status" onchange="onIntakeStatusChange()"></select>
+                </div>
+                <div class="form-group mb-0">
+                  <label class="form-label">Status Date</label>
+                  <input type="date" class="form-control" id="i-status-date">
+                </div>
+                <div class="form-group mb-0" id="i-sub-wrap" style="display:none">
+                  <label class="form-label">Sub-Status</label>
+                  <select class="form-control" id="i-sub-status"></select>
+                </div>
+                <button class="btn btn-primary" onclick="saveIntake()"><i class="fa-solid fa-floppy-disk"></i> Save</button>
+                <span class="text-xs text-slate-400 ml-auto" id="i-updated"></span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Contact Tracking -->
+          <div class="card mb-4">
+            <div class="card-header flex items-center">
+              <span><i class="fa-solid fa-comments text-slate-400"></i> Contact Tracking</span>
+              <span class="badge badge-blue ml-2" id="attempts-badge">0 attempts</span>
+              <span id="tab-attempts" class="hidden"></span>
+              <button class="btn btn-primary btn-sm ml-auto" onclick="openContact()"><i class="fa-solid fa-plus"></i> Add Contact</button>
+            </div>
+            <div class="card-body">
+              <div id="outreach-prompt" class="flex items-center justify-between bg-amber-50 border border-amber-300 text-amber-800 rounded-md px-4 py-3 mb-3 text-sm" style="display:none">
+                <span><i class="fa-solid fa-triangle-exclamation"></i>
+                  4+ outreach attempts logged and all are closed. Mark intake as <strong>Outreach Completed</strong>?</span>
+                <button class="btn btn-sm btn-primary ml-3" onclick="markOutreachCompleted()">Mark Outreach Completed</button>
+              </div>
+              <table class="data-table">
+                <thead><tr>
+                  <th>Date</th><th>Type</th><th>Notes</th><th>Follow-up</th><th>Status</th><th></th>
+                </tr></thead>
+                <tbody id="contacts-body"></tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- Intake Questionnaire (GLP-1 intake only) -->
+          <div class="card" id="q-card">
+            <div class="card-header"><i class="fa-solid fa-file-medical text-slate-400"></i> Intake Questionnaire</div>
+            <div class="card-body">
+              <div id="q-dq-banner" class="flex items-center gap-2 bg-red-50 border border-red-300 text-red-700 rounded-md px-4 py-3 mb-4 text-sm" style="display:none">
+                <i class="fa-solid fa-triangle-exclamation"></i>
+                <span><strong>Possible disqualification.</strong> <span id="q-dq-reasons"></span></span>
+              </div>
+              <div id="q-form"></div>
+              <div class="flex items-center gap-3 mt-2">
+                <button class="btn btn-primary" onclick="saveQuestionnaire()"><i class="fa-solid fa-floppy-disk"></i> Save Questionnaire</button>
+                <span class="text-xs text-slate-400" id="q-updated"></span>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     </main>
@@ -245,72 +261,60 @@
     note.innerHTML = '<i class="fa-solid fa-circle-check text-emerald-500"></i> Enriched from the eligibility record.';
   }
 
-  /* ── Intake tracks (one per type; each has its own status, contacts, questionnaire) ── */
+  /* ── Intake tracks: a master list of the member's intakes, drilling into one ── */
   const CAT_COLOR = { GLP1: '#0d9488', NONGLP1: '#1f5f8b' };
   function typeName(i) { return (i && i.name) || (i && i.intake_type === 'NONGLP1' ? 'Non-GLP-1' : 'GLP-1'); }
   function isGlp1(cat) {
     const i = intakes.find(x => x.intake_type === cat);
     return i ? (i.is_glp1 === true || i.is_glp1 === 1) : cat === 'GLP1';
   }
+  function catBadge(i) {
+    const c = (i && i.color) || CAT_COLOR[i && i.intake_type] || '#64748b';
+    return `<span class="badge" style="background:${c}1a;color:${c}">${esc(typeName(i))}</span>`;
+  }
 
   async function loadIntakes() {
     intakes = await apiGet(`/glp1-tracking?member=${encodeURIComponent(memberKey)}&resource=intakes`) || [];
-    const opened = (record && record.category) || null;  // the track this page was opened for
-    activeCat = intakes.length
-      ? (intakes.some(i => i.intake_type === opened) ? opened : intakes[0].intake_type)
-      : null;
-    renderIntakeBar();
-    if (activeCat) await selectIntake(activeCat);
-    else renderNoIntake();
+    renderIntakeList();
+    showIntakeList();
   }
 
-  function renderIntakeBar() {
-    const el = document.getElementById('intake-pills');
-    if (!intakes.length) { el.innerHTML = '<span class="text-sm text-slate-400">No intakes yet — use “Add Intake”.</span>'; return; }
-    el.innerHTML = intakes.map(i => {
-      const active = i.intake_type === activeCat;
-      const color = i.color || CAT_COLOR[i.intake_type] || '#64748b';
-      const style = active ? `background:${color};color:#fff;border-color:${color}`
-                           : `background:#fff;color:#334155;border-color:#cbd5e1`;
-      return `<button onclick="selectIntake('${i.intake_type}')"
-        class="px-3 py-1.5 rounded-full text-sm border flex items-center gap-2 ${active ? 'font-semibold' : ''}" style="${style}">
-        ${esc(typeName(i))}
-        <span class="text-xs ${active ? 'opacity-90' : 'text-slate-400'}">${esc(i.status || '—')}</span>
-      </button>`;
-    }).join('');
+  function renderIntakeList() {
+    const body = document.getElementById('intake-list-body');
+    body.innerHTML = intakes.length
+      ? intakes.map(i => `<tr>
+          <td>${catBadge(i)}</td>
+          <td class="font-medium">${esc(i.status) || '—'}</td>
+          <td class="text-xs text-slate-500">${i.status_date ? fmtDate(i.status_date) : '—'}</td>
+          <td>${esc(i.sub_status) || '<span class="text-slate-400">—</span>'}</td>
+          <td>${esc(i.assigned_name) || '<span class="text-slate-400">Unassigned</span>'}</td>
+          <td class="text-right whitespace-nowrap">
+            <button class="btn btn-primary btn-sm" onclick="openIntakeDetail('${i.intake_type}')"><i class="fa-solid fa-folder-open"></i> Open</button>
+          </td>
+        </tr>`).join('')
+      : '<tr><td colspan="6" class="text-center py-8 text-slate-400">No intakes yet — use “Add Intake”.</td></tr>';
   }
 
-  async function selectIntake(cat) {
+  function showIntakeList() {
+    document.getElementById('intake-list').style.display = '';
+    document.getElementById('intake-detail').style.display = 'none';
+  }
+
+  async function openIntakeDetail(cat) {
     activeCat = cat;
     activeType = intakes.find(i => i.intake_type === cat) || null;
-    renderIntakeBar();
-    updateQuestionnaireTab();
     document.getElementById('i-title').textContent = `Intake Status — ${typeName(activeType)}`;
+    document.getElementById('q-card').style.display = isGlp1(cat) ? '' : 'none';  // questionnaire = GLP-1 only
+    document.getElementById('intake-list').style.display = 'none';
+    document.getElementById('intake-detail').style.display = '';
     await loadTracking();
   }
 
-  function updateQuestionnaireTab() {
-    // The intake questionnaire belongs to the GLP-1 intake only.
-    const show = isGlp1(activeCat);
-    const btn = document.querySelector('.tab-btn[data-tab="questionnaire"]');
-    if (btn) btn.style.display = show ? '' : 'none';
-    if (!show) {
-      const a = document.querySelector('.tab-btn.active');
-      if (a && a.dataset.tab === 'questionnaire') showTab('intake');
-    }
-  }
-
-  function renderNoIntake() {
-    document.getElementById('i-title').textContent = 'Intake Status';
-    contacts = []; intake = null; qData = null;
-    renderIntake(); renderContacts(); renderQuestionnaire();
-    updateQuestionnaireTab();
-  }
-
-  async function refreshIntakeBar() {
+  async function backToIntakeList() {
+    // Refresh so a status/contact change just made is reflected in the list.
     intakes = await apiGet(`/glp1-tracking?member=${encodeURIComponent(memberKey)}&resource=intakes`) || [];
-    activeType = intakes.find(i => i.intake_type === activeCat) || activeType;
-    renderIntakeBar();
+    renderIntakeList();
+    showIntakeList();
   }
 
   async function openAddIntake() {
@@ -329,7 +333,7 @@
     const res = await apiPatch(`/glp1-tracking?member=${encodeURIComponent(memberKey)}&category=${encodeURIComponent(cat)}&action=add-intake`, {});
     if (res && res.ok) {
       showToast('Intake added', 'success'); closeModal('addintake-modal');
-      await loadIntakes(); await selectIntake(cat);
+      await loadIntakes(); await openIntakeDetail(cat);
     } else showToast('Add failed', 'error');
   }
 
@@ -374,7 +378,7 @@
       sub_status: status === WELLSYNC ? document.getElementById('i-sub-status').value : null,
     };
     const res = await apiPatch(`/glp1-tracking?member=${encodeURIComponent(memberKey)}&category=${encodeURIComponent(trackCat())}&action=intake`, body);
-    if (res && res.ok) { showToast('Intake saved', 'success'); await loadTracking(); await refreshIntakeBar(); }
+    if (res && res.ok) { showToast('Intake saved', 'success'); await loadTracking(); }
     else showToast('Save failed', 'error');
   }
   async function markOutreachCompleted() {
