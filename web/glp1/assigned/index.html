@@ -24,7 +24,7 @@
         <div class="card-body">
           <table class="data-table">
             <thead><tr>
-              <th>Patient</th><th>Group</th><th>Member ID</th><th>Drug</th>
+              <th>Patient</th><th>Type</th><th>Group</th><th>Member ID</th><th>Drug</th>
               <th>Assigned To</th><th>Assigned</th><th>Intake Status</th><th></th>
             </tr></thead>
             <tbody id="tbl-body"></tbody>
@@ -68,6 +68,10 @@
   function cleanDrug(d) { return (d || '').replace(/\s+/g, ' ').trim(); }
   function fullName(r) { return `${esc(r.Last_Name || '')}, ${esc(r.First_Name || '')}`.replace(/^, |, $/, ''); }
   function staffName(id) { return id != null && staffMap[id] ? staffMap[id] : '—'; }
+  function catBadge(c) {
+    const nong = String(c || '').toUpperCase() === 'NONGLP1';
+    return `<span class="badge badge-${nong ? 'purple' : 'blue'}">${nong ? 'Non-GLP-1' : 'GLP-1'}</span>`;
+  }
   const INTAKE_COLORS = { 'In Progress': 'blue', 'Outreach Completed': 'green', 'Submitted to WellSync': 'purple' };
   function intakeBadge(r) {
     if (!r.intake_status) return '<span class="text-slate-400">—</span>';
@@ -115,6 +119,7 @@
     document.getElementById('tbl-body').innerHTML = view.length
       ? view.map(r => `<tr>
           <td class="font-medium">${fullName(r)}</td>
+          <td>${catBadge(r.category)}</td>
           <td>${esc(r.Group_Name) || '—'}</td>
           <td class="font-mono text-xs">${esc(r.Member_ID) || '—'}</td>
           <td>${esc(cleanDrug(r.Drug_Name)) || '—'}</td>
@@ -127,7 +132,7 @@
             <button class="btn btn-outline btn-sm" title="Reassign" onclick='openReassign(${r.indx})'><i class="fa-solid fa-rotate"></i></button>
             <button class="btn btn-danger btn-sm" title="Unassign" onclick='doUnassign(${r.indx})'><i class="fa-solid fa-xmark"></i></button>` : ''}</td>
         </tr>`).join('')
-      : '<tr><td colspan="8" class="text-center py-10 text-slate-400">No assigned records</td></tr>';
+      : '<tr><td colspan="9" class="text-center py-10 text-slate-400">No assigned records</td></tr>';
   }
 
   function openReassign(indx) {

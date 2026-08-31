@@ -49,9 +49,12 @@ exports.handler = async function (event) {
       }
 
       if (indx) {
+        // indx is the unique identity PK — look up by it alone (no category filter) so the
+        // record page can open a member's GLP1 OR non-GLP1 record; the row's own category
+        // column then drives which intake_type the record page tracks.
         const r = await mssql(
-          `SELECT ${LIST_COLS} FROM dbo.ReadyToAssign WHERE indx = @indx AND category = @category`,
-          { indx: parseInt(indx, 10), category: cat });
+          `SELECT ${LIST_COLS} FROM dbo.ReadyToAssign WHERE indx = @indx`,
+          { indx: parseInt(indx, 10) });
         return r.recordset[0] ? ok(r.recordset[0]) : notFound();
       }
 
@@ -104,9 +107,11 @@ exports.handler = async function (event) {
                 OR Member_ID LIKE @search OR Drug_Name LIKE @search)`;
       // Base rows (+ member_key, and rn when deduping), wrapped so the intake LEFT JOIN
       // can attach each member's intake status without colliding with ReadyToAssign.status.
+      // Dedup is per member AND category, so a member assigned in BOTH tracks (GLP1 +
+      // non-GLP1) keeps one row per category instead of collapsing to a single row.
       const base = `SELECT ${LIST_COLS}, ${MEMBER_KEY} AS member_key${
         onePerMember ? `,
-               ROW_NUMBER() OVER (PARTITION BY ${MEMBER_KEY}
+               ROW_NUMBER() OVER (PARTITION BY category, ${MEMBER_KEY}
                  ORDER BY Date_of_Service DESC, indx DESC) AS rn` : ''}
              FROM dbo.ReadyToAssign WHERE ${where}`;
       const listSql = `
