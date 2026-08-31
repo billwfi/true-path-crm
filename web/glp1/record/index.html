@@ -19,6 +19,14 @@
         <span class="ml-2 text-lg font-semibold" id="member-name">—</span>
       </div>
 
+      <!-- Intake selector: the member's intake tracks (one per type). Selecting one loads its
+           contact tracking / status / questionnaire below. -->
+      <div class="flex flex-wrap items-center gap-2 mb-4" id="intake-bar">
+        <span class="text-xs uppercase tracking-wide text-slate-400 mr-1">Intakes</span>
+        <div id="intake-pills" class="flex flex-wrap gap-2"></div>
+        <button class="btn btn-outline btn-sm" onclick="openAddIntake()"><i class="fa-solid fa-plus"></i> Add Intake</button>
+      </div>
+
       <!-- Tabs -->
       <div id="tabbar" class="flex gap-6 border-b border-slate-200 mb-4 px-1">
         <button class="tab-btn" data-tab="demographics" onclick="showTab('demographics')">Demographics</button>
@@ -67,7 +75,10 @@
       <!-- Intake Status panel -->
       <div class="tab-panel" data-panel="intake" style="display:none">
         <div class="card">
-          <div class="card-header"><i class="fa-solid fa-clipboard-check text-slate-400"></i> Intake Status</div>
+          <div class="card-header flex items-center">
+            <span><i class="fa-solid fa-clipboard-check text-slate-400"></i> <span id="i-title">Intake Status</span></span>
+            <button class="btn btn-danger btn-sm ml-auto" onclick="deleteIntake()"><i class="fa-solid fa-trash"></i> Delete Intake</button>
+          </div>
           <div class="card-body form-pad">
             <div class="flex flex-wrap items-end gap-4">
               <div class="form-group mb-0">
@@ -102,6 +113,27 @@
         </div>
       </div>
     </main>
+  </div>
+</div>
+
+<!-- Add intake modal -->
+<div id="addintake-modal" class="modal-backdrop hidden">
+  <div class="modal">
+    <div class="modal-header">
+      <span class="modal-title">Add Intake</span>
+      <button class="modal-close" onclick="closeModal('addintake-modal')">×</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label class="form-label">Intake Type *</label>
+        <select class="form-control" id="ai-type"><option value="">— Select —</option></select>
+        <p class="text-xs text-slate-400 mt-1">Only types this member doesn't already have are listed.</p>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeModal('addintake-modal')">Cancel</button>
+      <button class="btn btn-primary" onclick="addIntake()">Add Intake</button>
+    </div>
   </div>
 </div>
 
@@ -147,7 +179,10 @@
   const params = new URLSearchParams(location.search);
   const indx = params.get('indx');
   let record = null, memberKey = null, contacts = [], intake = null, qData = null;
-  const trackCat = () => (record && record.category) || 'GLP1';  // intake type of this record
+  // The member can hold several intakes (one per type). `intakes` is the full set; `activeCat`
+  // is the one currently open in the tabs below.
+  let intakes = [], activeCat = null, activeType = null, allTypes = [];
+  const trackCat = () => activeCat || (record && record.category) || 'GLP1';  // active intake type
 
   function opt(v, sel) { return `<option ${v === sel ? 'selected' : ''}>${esc(v)}</option>`; }
   function dInput(d) { return d ? String(d).slice(0, 10) : ''; }
@@ -210,6 +245,102 @@
     note.innerHTML = '<i class="fa-solid fa-circle-check text-emerald-500"></i> Enriched from the eligibility record.';
   }
 
+  /* ── Intake tracks (one per type; each has its own status, contacts, questionnaire) ── */
+  const CAT_COLOR = { GLP1: '#0d9488', NONGLP1: '#1f5f8b' };
+  function typeName(i) { return (i && i.name) || (i && i.intake_type === 'NONGLP1' ? 'Non-GLP-1' : 'GLP-1'); }
+  function isGlp1(cat) {
+    const i = intakes.find(x => x.intake_type === cat);
+    return i ? (i.is_glp1 === true || i.is_glp1 === 1) : cat === 'GLP1';
+  }
+
+  async function loadIntakes() {
+    intakes = await apiGet(`/glp1-tracking?member=${encodeURIComponent(memberKey)}&resource=intakes`) || [];
+    const opened = (record && record.category) || null;  // the track this page was opened for
+    activeCat = intakes.length
+      ? (intakes.some(i => i.intake_type === opened) ? opened : intakes[0].intake_type)
+      : null;
+    renderIntakeBar();
+    if (activeCat) await selectIntake(activeCat);
+    else renderNoIntake();
+  }
+
+  function renderIntakeBar() {
+    const el = document.getElementById('intake-pills');
+    if (!intakes.length) { el.innerHTML = '<span class="text-sm text-slate-400">No intakes yet — use “Add Intake”.</span>'; return; }
+    el.innerHTML = intakes.map(i => {
+      const active = i.intake_type === activeCat;
+      const color = i.color || CAT_COLOR[i.intake_type] || '#64748b';
+      const style = active ? `background:${color};color:#fff;border-color:${color}`
+                           : `background:#fff;color:#334155;border-color:#cbd5e1`;
+      return `<button onclick="selectIntake('${i.intake_type}')"
+        class="px-3 py-1.5 rounded-full text-sm border flex items-center gap-2 ${active ? 'font-semibold' : ''}" style="${style}">
+        ${esc(typeName(i))}
+        <span class="text-xs ${active ? 'opacity-90' : 'text-slate-400'}">${esc(i.status || '—')}</span>
+      </button>`;
+    }).join('');
+  }
+
+  async function selectIntake(cat) {
+    activeCat = cat;
+    activeType = intakes.find(i => i.intake_type === cat) || null;
+    renderIntakeBar();
+    updateQuestionnaireTab();
+    document.getElementById('i-title').textContent = `Intake Status — ${typeName(activeType)}`;
+    await loadTracking();
+  }
+
+  function updateQuestionnaireTab() {
+    // The intake questionnaire belongs to the GLP-1 intake only.
+    const show = isGlp1(activeCat);
+    const btn = document.querySelector('.tab-btn[data-tab="questionnaire"]');
+    if (btn) btn.style.display = show ? '' : 'none';
+    if (!show) {
+      const a = document.querySelector('.tab-btn.active');
+      if (a && a.dataset.tab === 'questionnaire') showTab('intake');
+    }
+  }
+
+  function renderNoIntake() {
+    document.getElementById('i-title').textContent = 'Intake Status';
+    contacts = []; intake = null; qData = null;
+    renderIntake(); renderContacts(); renderQuestionnaire();
+    updateQuestionnaireTab();
+  }
+
+  async function refreshIntakeBar() {
+    intakes = await apiGet(`/glp1-tracking?member=${encodeURIComponent(memberKey)}&resource=intakes`) || [];
+    activeType = intakes.find(i => i.intake_type === activeCat) || activeType;
+    renderIntakeBar();
+  }
+
+  async function openAddIntake() {
+    if (!allTypes.length) allTypes = await apiGet('/intake-types') || [];
+    const have = new Set(intakes.map(i => i.intake_type));
+    const avail = allTypes.filter(t => (t.active === undefined || t.active) && !have.has(t.code));
+    if (!avail.length) { showToast('This member already has every intake type'); return; }
+    document.getElementById('ai-type').innerHTML = '<option value="">— Select —</option>' +
+      avail.map(t => `<option value="${esc(t.code)}">${esc(t.name || t.code)}</option>`).join('');
+    openModal('addintake-modal');
+  }
+
+  async function addIntake() {
+    const cat = document.getElementById('ai-type').value;
+    if (!cat) { showToast('Select an intake type', 'error'); return; }
+    const res = await apiPatch(`/glp1-tracking?member=${encodeURIComponent(memberKey)}&category=${encodeURIComponent(cat)}&action=add-intake`, {});
+    if (res && res.ok) {
+      showToast('Intake added', 'success'); closeModal('addintake-modal');
+      await loadIntakes(); await selectIntake(cat);
+    } else showToast('Add failed', 'error');
+  }
+
+  async function deleteIntake() {
+    if (!activeCat) return;
+    if (!confirm2(`Delete the ${typeName(activeType)} intake for this member? This removes its status, questionnaire and contact log. The assignment itself is not changed.`)) return;
+    const res = await apiDelete(`/glp1-tracking?member=${encodeURIComponent(memberKey)}&category=${encodeURIComponent(activeCat)}&action=delete-intake`);
+    if (res && res.ok) { showToast('Intake deleted', 'success'); await loadIntakes(); }
+    else showToast('Delete failed', 'error');
+  }
+
   async function loadTracking() {
     const data = await apiGet(`/glp1-tracking?member=${encodeURIComponent(memberKey)}&category=${encodeURIComponent(trackCat())}`) || {};
     contacts = data.contacts || [];
@@ -243,7 +374,7 @@
       sub_status: status === WELLSYNC ? document.getElementById('i-sub-status').value : null,
     };
     const res = await apiPatch(`/glp1-tracking?member=${encodeURIComponent(memberKey)}&category=${encodeURIComponent(trackCat())}&action=intake`, body);
-    if (res && res.ok) { showToast('Intake saved', 'success'); await loadTracking(); }
+    if (res && res.ok) { showToast('Intake saved', 'success'); await loadTracking(); await refreshIntakeBar(); }
     else showToast('Save failed', 'error');
   }
   async function markOutreachCompleted() {
@@ -322,6 +453,7 @@
   }
 
   document.getElementById('contact-modal').addEventListener('click', e => { if (e.target === e.currentTarget) closeModal('contact-modal'); });
+  document.getElementById('addintake-modal').addEventListener('click', e => { if (e.target === e.currentTarget) closeModal('addintake-modal'); });
 
   /* ── Intake Questionnaire ──
      Schema-driven so the question set can grow without reworking the markup.
@@ -510,7 +642,7 @@
   }
 
   showTab('demographics');
-  (async () => { if (await loadRecord()) await loadTracking(); })();
+  (async () => { if (await loadRecord()) await loadIntakes(); })();
 </script>
 </body>
 </html>

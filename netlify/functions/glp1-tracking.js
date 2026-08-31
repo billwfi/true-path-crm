@@ -14,12 +14,25 @@ exports.handler = async function (event) {
   const user = verifyToken(event);
   if (!user) return unauthorized();
 
-  const { member, contact_id, action, category } = event.queryStringParameters || {};
+  const { member, contact_id, action, category, resource } = event.queryStringParameters || {};
   const cat = category || 'GLP1';
 
   try {
     if (event.httpMethod === 'GET') {
       if (!member) return badRequest('member is required');
+      if (resource === 'intakes') {
+        // All intake records this member holds — one per intake_type (GLP1, non-GLP1, …),
+        // each with its type label/color and the questionnaire flag, for the record page's
+        // intake selector.
+        const rows = (await mssql(
+          `SELECT mi.intake_type, mi.status, mi.sub_status, mi.status_date, mi.updated_at,
+                  t.name, t.color, t.is_glp1
+           FROM dbo.tp_member_intakes mi
+           LEFT JOIN dbo.tp_intake_types t ON t.code = mi.intake_type
+           WHERE mi.member_key = @member
+           ORDER BY t.sort_order, mi.intake_type`, { member })).recordset;
+        return ok(rows);
+      }
       const contacts = await mssql(
         `SELECT id, member_key, contact_date, contact_type, notes, followup_date,
                 contact_status, created_by, created_at
@@ -70,6 +83,22 @@ exports.handler = async function (event) {
     }
 
     if (event.httpMethod === 'PATCH') {
+      if (action === 'add-intake') {
+        // Start a new intake track for this member (one per intake_type). No-op if it
+        // already exists, so the button is idempotent.
+        if (!member) return badRequest('member is required');
+        const t = (await mssql('SELECT code FROM dbo.tp_intake_types WHERE code=@c AND active=1', { c: cat })).recordset[0];
+        if (!t) return badRequest('unknown intake_type');
+        const r = await mssql(
+          `SET NOCOUNT ON;
+           IF NOT EXISTS (SELECT 1 FROM dbo.tp_member_intakes WHERE member_key=@member AND intake_type=@category)
+             INSERT INTO dbo.tp_member_intakes (member_key, intake_type, status, status_date, updated_by)
+             VALUES (@member, @category, 'In Progress', CAST(GETDATE() AS DATE), @by);
+           SELECT @@ROWCOUNT AS added;`,
+          { member, category: cat, by: user.id || null });
+        return ok({ ok: true, intake_type: cat, added: (r.recordset[0] || {}).added || 0 });
+      }
+
       if (action === 'questionnaire') {
         // Upsert the member's intake questionnaire (answers stored as JSON).
         if (!member) return badRequest('member is required');
@@ -148,6 +177,16 @@ exports.handler = async function (event) {
     }
 
     if (event.httpMethod === 'DELETE') {
+      if (action === 'delete-intake') {
+        // Remove an entire intake track for this member: its status/questionnaire record
+        // plus its contact log. Leaves any assignment (ReadyToAssign) untouched.
+        if (!member) return badRequest('member is required');
+        await mssql('DELETE FROM dbo.GLP1_ContactLog WHERE member_key=@member AND category=@category',
+          { member, category: cat });
+        const r = await mssql('DELETE FROM dbo.tp_member_intakes WHERE member_key=@member AND intake_type=@category',
+          { member, category: cat });
+        return ok({ deleted: r.rowsAffected[0] || 0 });
+      }
       const cid = parseInt(contact_id, 10);
       if (!cid) return badRequest('contact_id is required');
       const r = await mssql('DELETE FROM dbo.GLP1_ContactLog WHERE id=@id', { id: cid });
