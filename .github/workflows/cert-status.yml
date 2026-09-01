@@ -1,0 +1,29 @@
+name: Cert Status
+
+# Read-only: show the current provisioning state of the managed cert for
+# app.truepathsourcing.com and the app's current domain bindings.
+on:
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  status:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      - name: Status
+        run: |
+          az extension add --upgrade --name containerapp -y 2>/dev/null || true
+          echo "=== managed certs in cae-tpcrm-jobs ==="
+          az containerapp env certificate list -n cae-tpcrm-jobs -g rg-tpcrm-prod --managed-certificates-only \
+            --query "[].{name:name, subject:properties.subjectName, state:properties.provisioningState}" -o jsonc || true
+          echo "=== ca-tpcrm-web domain bindings ==="
+          az containerapp show -n ca-tpcrm-web -g rg-tpcrm-prod \
+            --query "properties.configuration.ingress.customDomains[].{name:name, binding:bindingType}" -o jsonc || true
