@@ -161,11 +161,12 @@ def parse_file(data, cfg):
     else:
         text = data.decode("utf-8-sig", errors="replace")
         rows = list(csv.reader(io.StringIO(text), delimiter=(cfg.get("delimiter") or ",")))
-    # Diagnostic: preview the top rows so a shifted header (vendor preamble/banner rows)
-    # is visible in the logs and header_row can be set correctly.
-    for _i, _r in enumerate(rows[:10]):
-        print(f"  preview row{_i + 1}: {[('' if c is None else str(c))[:22] for c in list(_r)[:12]]}",
-              file=sys.stderr)
+    # Diagnostic (opt-in via IMPORT_PREVIEW=1): preview the top rows so a shifted header
+    # (vendor preamble/banner rows) is visible in the logs and header_row can be set.
+    if os.environ.get("IMPORT_PREVIEW"):
+        for _i, _r in enumerate(rows[:12]):
+            print(f"  preview row{_i + 1}: {[('' if c is None else str(c))[:22] for c in list(_r)[:12]]}",
+                  file=sys.stderr)
     return split_rows(rows, cfg["has_header"], cfg.get("header_row") or 1, **opts)
 
 
@@ -205,7 +206,7 @@ def import_rows(cur, target_table, maps, header, data_rows, truncate):
     # loads as NULL (pos=None) instead of failing the whole feed — so a vendor dropping
     # or renaming one column doesn't break the load. The actual header is logged so the
     # map can be corrected if a column was renamed rather than removed.
-    resolved, missing = [], []
+    resolved, missing, real_hits = [], [], 0
     for m in maps:
         src = m["source_column"]
         pos = idx.get(src)
@@ -213,11 +214,15 @@ def import_rows(cur, target_table, maps, header, data_rows, truncate):
             pos = int(src) - 1  # 1-based index fallback
         if pos is None and src:  # blank source_column is intentionally a NULL column
             missing.append(src)
+        if pos is not None and src:  # a real (non-blank) source column actually matched
+            real_hits += 1
         resolved.append((pos, m["target_column"], m.get("data_type")))
 
     if missing:
-        # Nothing matched at all => almost certainly the wrong file; fail loudly.
-        if all(p is None for p, _, _ in resolved):
+        # No REAL (non-blank) source column matched => wrong file or a shifted header
+        # (a lone blank-source mapping must not count as a match). Fail loudly so the
+        # feed errors instead of staging all-NULL rows (and archiving a bad file).
+        if real_hits == 0:
             raise ValueError(f"no mapped source columns found in file header: {header}")
         print(f"  WARN: source column(s) {missing} not in file header {header} — loading as NULL",
               file=sys.stderr)
