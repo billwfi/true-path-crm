@@ -196,16 +196,26 @@ def coerce(value, dtype):
 # ── Import one file ─────────────────────────────────────────────────────────
 def import_rows(cur, target_table, maps, header, data_rows, truncate):
     idx = {name: i for i, name in enumerate(header)}
-    # Resolve each mapping's source position; warn-skip mappings whose source is absent.
-    resolved = []
+    # Resolve each mapping's source position; a mapping whose source header is absent
+    # loads as NULL (pos=None) instead of failing the whole feed — so a vendor dropping
+    # or renaming one column doesn't break the load. The actual header is logged so the
+    # map can be corrected if a column was renamed rather than removed.
+    resolved, missing = [], []
     for m in maps:
         src = m["source_column"]
         pos = idx.get(src)
         if pos is None and src.isdigit():
             pos = int(src) - 1  # 1-based index fallback
-        if pos is None:
-            raise ValueError(f"source column '{src}' not found in file header")
+        if pos is None and src:  # blank source_column is intentionally a NULL column
+            missing.append(src)
         resolved.append((pos, m["target_column"], m.get("data_type")))
+
+    if missing:
+        # Nothing matched at all => almost certainly the wrong file; fail loudly.
+        if all(p is None for p, _, _ in resolved):
+            raise ValueError(f"no mapped source columns found in file header: {header}")
+        print(f"  WARN: source column(s) {missing} not in file header {header} — loading as NULL",
+              file=sys.stderr)
 
     target_cols = [t for _, t, _ in resolved]
     collist = ", ".join(f"[{c}]" for c in target_cols)
@@ -214,7 +224,8 @@ def import_rows(cur, target_table, maps, header, data_rows, truncate):
     out = []
     for r in data_rows:
         out.append(tuple(
-            coerce(r[pos] if pos < len(r) else None, dt) for pos, _, dt in resolved
+            coerce((r[pos] if (pos is not None and pos < len(r)) else None), dt)
+            for pos, _, dt in resolved
         ))
 
     if truncate:

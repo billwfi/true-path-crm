@@ -1,0 +1,68 @@
+name: Run Import Config
+
+# Run a single dbo.Import_Configs feed on demand. Briefly repoints the SFTP-import
+# job (which carries IMPORT_CRYPT_KEY + SFTP creds + NAT egress) to PIPELINE=worker
+# with WORKER_ARGS, runs it, and ALWAYS restores PIPELINE.
+on:
+  workflow_dispatch:
+    inputs:
+      config:
+        description: 'Import_Configs id'
+        required: true
+        default: '3'
+      force:
+        description: 'Ignore schedule (true/false)'
+        required: false
+        default: 'true'
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  JOB: caj-tpcrm-import-monday-nat
+  RG: rg-tpcrm-prod
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      - name: Repoint, run config, capture status
+        id: run
+        run: |
+          az extension add --upgrade --name containerapp -y 2>/dev/null || true
+          ORIG=$(az containerapp job show -n "$JOB" -g "$RG" \
+            --query "properties.template.containers[0].env[?name=='PIPELINE'].value | [0]" -o tsv)
+          ORIG=${ORIG:-monday}
+          echo "orig_pipeline=$ORIG" >> "$GITHUB_OUTPUT"
+          echo "Original PIPELINE=$ORIG"
+
+          ARGS="--config ${{ inputs.config }}"
+          [ "${{ inputs.force }}" = "true" ] && ARGS="$ARGS --force"
+          echo "WORKER_ARGS=$ARGS"
+          az containerapp job update -n "$JOB" -g "$RG" -o none \
+            --set-env-vars PIPELINE=worker WORKER_ARGS="$ARGS"
+
+          EXEC=$(az containerapp job start -n "$JOB" -g "$RG" --query name -o tsv)
+          echo "Started execution: $EXEC"
+          for i in $(seq 1 50); do
+            ST=$(az containerapp job execution list -n "$JOB" -g "$RG" \
+                   --query "[?name=='$EXEC'].properties.status | [0]" -o tsv 2>/dev/null)
+            echo "  [$i] status: ${ST:-<pending>}"
+            case "$ST" in Succeeded|Failed|Degraded) break;; esac
+            sleep 15
+          done
+          echo "Final status: $ST"
+          [ "$ST" = "Succeeded" ]
+      - name: Restore PIPELINE (always)
+        if: always()
+        run: |
+          ORIG="${{ steps.run.outputs.orig_pipeline }}"; ORIG=${ORIG:-monday}
+          az containerapp job update -n "$JOB" -g "$RG" -o none \
+            --set-env-vars PIPELINE="$ORIG" WORKER_ARGS=""
+          echo "Restored PIPELINE=$ORIG"

@@ -26,6 +26,10 @@ if [ "$PIPELINE" = "import-email" ]; then
   # optional; blank = yesterday.
   exec python scripts/import_daily_email.py ${EMAIL_DATE:+--date "$EMAIL_DATE"}
 fi
+if [ "$PIPELINE" = "worker" ]; then
+  # Run the config-driven import worker on demand. WORKER_ARGS e.g. "--config 3 --force".
+  exec python scripts/import_worker.py ${WORKER_ARGS:-}
+fi
 # Monday orchestrator: run every due Import_Configs loader, then email a summary
 # report (per-loader results + folders/files with no loader). REPORT_ONLY=1 skips
 # the loading and just scans + emails.
