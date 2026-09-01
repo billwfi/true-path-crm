@@ -11,3 +11,8 @@ deploy/azure/env.dev
 deploy/azure/env.staging
 deploy/azure/env.prod
 deploy/azure/env.jobs
+
+# Never commit PGP private keys / passphrases
+*PRIVATE.asc
+*-private-key*
+*.passphrase.txt
