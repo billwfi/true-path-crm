@@ -1,0 +1,31 @@
+name: Cutover Info
+
+# Read-only: values needed to point app.truepathsourcing.com at the new NAT-env app.
+on:
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  info:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      - name: Info
+        run: |
+          az extension add --upgrade --name containerapp -y 2>/dev/null || true
+          echo "=== new app ca-tpcrm-web ==="
+          az containerapp show -n ca-tpcrm-web -g rg-tpcrm-prod --query "{
+            fqdn: properties.configuration.ingress.fqdn,
+            domainVerificationId: properties.customDomainVerificationId,
+            outboundIps: properties.outboundIpAddresses,
+            provisioning: properties.provisioningState
+          }" -o jsonc || true
+          echo "=== jobs env inbound static IP ==="
+          az containerapp env show -n cae-tpcrm-jobs -g rg-tpcrm-prod --query "properties.staticIp" -o tsv || true
