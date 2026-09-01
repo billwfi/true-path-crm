@@ -161,6 +161,11 @@ def parse_file(data, cfg):
     else:
         text = data.decode("utf-8-sig", errors="replace")
         rows = list(csv.reader(io.StringIO(text), delimiter=(cfg.get("delimiter") or ",")))
+    # Diagnostic: preview the top rows so a shifted header (vendor preamble/banner rows)
+    # is visible in the logs and header_row can be set correctly.
+    for _i, _r in enumerate(rows[:10]):
+        print(f"  preview row{_i + 1}: {[('' if c is None else str(c))[:22] for c in list(_r)[:12]]}",
+              file=sys.stderr)
     return split_rows(rows, cfg["has_header"], cfg.get("header_row") or 1, **opts)
 
 
