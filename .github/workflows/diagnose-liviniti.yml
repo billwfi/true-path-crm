@@ -1,0 +1,40 @@
+name: Diagnose Liviniti Job
+
+# Read-only: show the Liviniti SFTP job's schedule/config, its recent executions
+# (to explain a stuck "Running"), and the environment's NAT egress public IP.
+on:
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  JOB: caj-tpcrm-liviniti-nat
+  RG: rg-tpcrm-prod
+
+jobs:
+  diag:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      - name: Show schedule, executions, egress IP
+        run: |
+          az extension add --upgrade --name containerapp -y 2>/dev/null || true
+          echo "===== JOB CONFIG ====="
+          az containerapp job show -n "$JOB" -g "$RG" --query "{trigger:properties.configuration.triggerType, cron:properties.configuration.scheduleTriggerConfig.cronExpression, timeoutSec:properties.configuration.replicaTimeout, retries:properties.configuration.replicaRetryLimit, image:properties.template.containers[0].image, env:properties.environmentId}" -o jsonc
+
+          echo "===== RECENT EXECUTIONS (newest first) ====="
+          az containerapp job execution list -n "$JOB" -g "$RG" \
+            --query "reverse(sort_by([].{name:name, status:properties.status, start:properties.startTime, end:properties.endTime}, &start))[:8]" -o table
+
+          echo "===== NAT EGRESS PUBLIC IP ====="
+          # The jobs env uses a VNet + NAT gateway; the NAT's public IP is the egress IP.
+          echo "-- public IPs (subscription) matching NAT/egress --"
+          az network public-ip list --query "[?contains(name,'nat') || contains(name,'egress') || ipAddress=='104.46.113.57'].{name:name, ip:ipAddress, rg:resourceGroup}" -o table 2>/dev/null || true
+          echo "-- NAT gateways (subscription) --"
+          az network nat gateway list --query "[].{name:name, rg:resourceGroup}" -o table 2>/dev/null || true
