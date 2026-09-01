@@ -29,13 +29,9 @@ jobs:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
-      - name: Start one-off import-email execution
+      - name: Inspect job container spec (diagnostic)
         run: |
-          az extension add --upgrade --name containerapp -y 2>/dev/null || az extension update --name containerapp 2>/dev/null || true
-          echo "=== supported job start params ==="
-          az containerapp job start --help 2>/dev/null | grep -iE "^\s*--(command|args|env-vars|image|yaml)" || true
-          DATE="${{ github.event.inputs.date }}"
-          if [ -n "$DATE" ]; then CMD="python scripts/import_daily_email.py --date $DATE"; else CMD="python scripts/import_daily_email.py"; fi
-          echo "Command: $CMD"
-          az containerapp job start -n "$JOB" -g "$RG" \
-            --command "/bin/sh" --args "-c" "$CMD" -o table
+          az extension add --upgrade --name containerapp -y 2>/dev/null || true
+          echo "=== $JOB container[0] command/args/image ==="
+          az containerapp job show -n "$JOB" -g "$RG" \
+            --query "properties.template.containers[0].{command:command, args:args, image:image}" -o json
