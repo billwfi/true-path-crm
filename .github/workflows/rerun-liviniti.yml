@@ -1,0 +1,38 @@
+name: Rerun Liviniti Feed
+
+# Start the Liviniti RxCompass SFTP eligibility feed on demand (normal
+# PIPELINE=liviniti run) and wait for it to finish.
+on:
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  JOB: caj-tpcrm-liviniti-nat
+  RG: rg-tpcrm-prod
+
+jobs:
+  rerun:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      - name: Start feed and wait
+        run: |
+          az extension add --upgrade --name containerapp -y 2>/dev/null || true
+          EXEC=$(az containerapp job start -n "$JOB" -g "$RG" --query name -o tsv)
+          echo "Started execution: $EXEC"
+          for i in $(seq 1 70); do
+            ST=$(az containerapp job execution list -n "$JOB" -g "$RG" \
+                   --query "[?name=='$EXEC'].properties.status | [0]" -o tsv 2>/dev/null)
+            echo "  [$i] status: ${ST:-<pending>}"
+            case "$ST" in Succeeded|Failed|Degraded) break;; esac
+            sleep 20
+          done
+          echo "Final status: $ST"
+          [ "$ST" = "Succeeded" ]
