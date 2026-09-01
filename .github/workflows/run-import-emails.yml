@@ -16,6 +16,10 @@ env:
   JOB: caj-tpcrm-liviniti-nat
   RG: rg-tpcrm-prod
 
+permissions:
+  id-token: write
+  contents: read
+
 jobs:
   send:
     runs-on: ubuntu-latest
