@@ -1,0 +1,55 @@
+name: Migrate Web App to NAT env
+
+# Build a PARALLEL web app (ca-tpcrm-web) in the VNet/NAT environment cae-tpcrm-jobs
+# so it egresses from the static IP 104.46.113.57 (already allowlisted on the SQL
+# server — all jobs connect through it). Clones ca-tpcrm-prod's image + env + scale.
+# NON-DESTRUCTIVE: the live app ca-tpcrm-prod and the DNS for app.truepathsourcing.com
+# are left untouched. Cutover (DNS + custom domain) is a separate, deliberate step.
+on:
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  RG: rg-tpcrm-prod
+  SRC: ca-tpcrm-prod
+  NEW: ca-tpcrm-web
+  JOBS_ENV: cae-tpcrm-jobs
+  ACR: acrtpcrm
+
+jobs:
+  migrate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      - name: Clone into NAT env
+        run: |
+          set -e
+          az extension add --upgrade --name containerapp -y 2>/dev/null || true
+          pip install pyyaml -q
+
+          JOBS_ENV_ID=$(az containerapp env show -n "$JOBS_ENV" -g "$RG" --query id -o tsv)
+          LOC=$(az containerapp show -n "$SRC" -g "$RG" --query location -o tsv)
+
+          # ACR admin creds (enable admin if needed) — avoids a managed-identity role grant.
+          az acr update -n "$ACR" --admin-enabled true -o none
+          ACR_USER=$(az acr credential show -n "$ACR" --query username -o tsv)
+          ACR_PW=$(az acr credential show -n "$ACR" --query "passwords[0].value" -o tsv)
+
+          # Source containers (image + env values + resources) — runner-only, never printed.
+          az containerapp show -n "$SRC" -g "$RG" --query "properties.template.containers" -o json > containers.json
+
+          python3 scripts/migrate/clone_app_yaml.py "$JOBS_ENV_ID" "$LOC" "$ACR_USER" "$ACR_PW" containers.json new.yaml
+
+          az containerapp create -n "$NEW" -g "$RG" --yaml new.yaml -o none
+          rm -f new.yaml containers.json
+          FQDN=$(az containerapp show -n "$NEW" -g "$RG" --query "properties.configuration.ingress.fqdn" -o tsv)
+          echo "NEW_FQDN=$FQDN"
+          echo "created $NEW in $JOBS_ENV — test at https://$FQDN"
