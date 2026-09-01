@@ -173,6 +173,7 @@
           </select>
           <input type="text" id="cl-drug" class="form-control" style="max-width:220px" placeholder="Drug name contains…" oninput="debounceClaims()">
           <button class="btn btn-primary" onclick="loadClaims()"><i class="fa-solid fa-filter"></i> Apply</button>
+          <button class="btn btn-outline" id="cl-export" onclick="exportClaims()" style="display:none"><i class="fa-solid fa-file-excel"></i> Export to XLS</button>
           <span class="text-sm text-slate-500 ml-auto" id="cl-meta"></span>
         </div>
         <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4" id="cl-cards"></div>
@@ -189,6 +190,7 @@
                 <tbody id="cl-body"></tbody>
               </table>
             </div>
+            <div id="cl-pager" class="flex items-center justify-between flex-wrap gap-3 mt-3"></div>
           </div>
         </div>
       </div>
@@ -362,6 +364,7 @@
   let contacts = [], contracts = [];
   let clientIrxId = null, eligLoaded = false, eligDebounce, eligRows = [];
   let claimsLoaded = false, reportingLoaded = false, claimsDebounce;
+  let clPage = 1, clTotal = 0; const CL_PAGE_SIZE = 100;
   let importsLoaded = false;
   let clientUfCompanyId = null, membersLoaded = false, formularyLoaded = false, cmDeb, cfDeb, cmCache = [], cfCount = 0;
   const CL_PALETTE = ['#2563eb','#16a34a','#d97706','#dc2626','#7c3aed','#0891b2','#db2777','#65a30d','#9333ea','#0d9488','#ca8a04','#0ea5e9'];
@@ -846,37 +849,16 @@
   }
   function debounceClaims() { clearTimeout(claimsDebounce); claimsDebounce = setTimeout(loadClaims, 400); }
 
-  async function loadClaims() {
-    const empty = document.getElementById('cl-empty');
-    const wrap = document.getElementById('cl-table-wrap');
-    const meta = document.getElementById('cl-meta');
-    const cards = document.getElementById('cl-cards');
-    if (!clientIrxId) {
-      claimsLoaded = true; wrap.style.display = 'none'; cards.innerHTML = ''; meta.textContent = '';
-      empty.style.display = ''; empty.textContent = 'Set the iRx Client ID (CARRIER) on the Demographics tab to view claims.';
-      return;
-    }
+  function claimsQuery() {
     const from = document.getElementById('cl-from').value, to = document.getElementById('cl-to').value;
     const drug = document.getElementById('cl-drug').value.trim();
     const category = document.getElementById('cl-category').value;
-    const qs = `carrier=${encodeURIComponent(clientIrxId)}&from=${from}&to=${to}`
+    return `carrier=${encodeURIComponent(clientIrxId)}&from=${from}&to=${to}`
       + (drug ? '&drug=' + encodeURIComponent(drug) : '')
       + (category ? '&category=' + category : '');
-    const data = await apiGet(`/claims?${qs}`);
-    claimsLoaded = true;
-    if (!data) { showToast('Failed to load claims', 'error'); return; }
-    const rows = data.rows || [], s = data.summary || {};
-    cards.innerHTML = claimCard('Claims', clNum(s.claim_count)) + claimCard('Members', clNum(s.members))
-      + claimCard('Plan Paid', fmtCurrency(s.plan_paid || 0)) + claimCard('Gross Cost', fmtCurrency(s.gross_cost || 0));
-    if (!rows.length) {
-      wrap.style.display = 'none'; empty.style.display = '';
-      empty.textContent = drug ? 'No claims match that drug in this period.' : 'No claims for this CARRIER in the selected period.';
-      meta.textContent = '';
-      return;
-    }
-    empty.style.display = 'none'; wrap.style.display = '';
-    meta.textContent = `${clNum(rows.length)}${data.truncated ? '+ (showing first 500)' : ''} claim${rows.length === 1 ? '' : 's'}`;
-    document.getElementById('cl-body').innerHTML = rows.map(r => `<tr>
+  }
+  function claimRowHtml(r) {
+    return `<tr>
       <td class="text-xs whitespace-nowrap">${fmtDOS(r.dos)}</td>
       <td class="font-medium">${esc(r.last_name || '')}, ${esc(r.first_name || '')}</td>
       <td>${esc(r.drug) || '—'}</td>
@@ -886,7 +868,90 @@
       <td class="text-xs">${esc(r.pharmacy) || '—'}</td>
       <td class="text-right">${r.plan_paid == null ? '—' : fmtCurrency(r.plan_paid)}</td>
       <td class="text-right">${r.copay == null ? '—' : fmtCurrency(r.copay)}</td>
-    </tr>`).join('');
+    </tr>`;
+  }
+  function renderClaimsPager() {
+    const pager = document.getElementById('cl-pager');
+    const pages = Math.max(1, Math.ceil(clTotal / CL_PAGE_SIZE));
+    if (clPage > pages) clPage = pages;
+    const start = (clPage - 1) * CL_PAGE_SIZE + 1;
+    const end = Math.min(clPage * CL_PAGE_SIZE, clTotal);
+    pager.innerHTML = `
+      <span class="text-sm text-slate-500">Showing ${clNum(start)}–${clNum(end)} of ${clNum(clTotal)}</span>
+      <div class="flex items-center gap-2">
+        <button class="btn btn-outline btn-sm" ${clPage <= 1 ? 'disabled' : ''} onclick="loadClaims(1)" title="First page">&laquo;</button>
+        <button class="btn btn-outline btn-sm" ${clPage <= 1 ? 'disabled' : ''} onclick="loadClaims(${clPage - 1})">Prev</button>
+        <span class="text-sm">Page ${clNum(clPage)} of ${clNum(pages)}</span>
+        <button class="btn btn-outline btn-sm" ${clPage >= pages ? 'disabled' : ''} onclick="loadClaims(${clPage + 1})">Next</button>
+        <button class="btn btn-outline btn-sm" ${clPage >= pages ? 'disabled' : ''} onclick="loadClaims(${pages})" title="Last page">&raquo;</button>
+      </div>`;
+  }
+
+  // page: pager buttons pass a page number; filter actions call with no arg -> reset to 1.
+  async function loadClaims(page) {
+    clPage = (typeof page === 'number' && page > 0) ? page : 1;
+    const empty = document.getElementById('cl-empty');
+    const wrap = document.getElementById('cl-table-wrap');
+    const meta = document.getElementById('cl-meta');
+    const cards = document.getElementById('cl-cards');
+    const pager = document.getElementById('cl-pager');
+    const exportBtn = document.getElementById('cl-export');
+    if (!clientIrxId) {
+      claimsLoaded = true; wrap.style.display = 'none'; cards.innerHTML = ''; meta.textContent = '';
+      pager.innerHTML = ''; exportBtn.style.display = 'none';
+      empty.style.display = ''; empty.textContent = 'Set the iRx Client ID (CARRIER) on the Demographics tab to view claims.';
+      return;
+    }
+    const data = await apiGet(`/claims?${claimsQuery()}&page=${clPage}&pageSize=${CL_PAGE_SIZE}`);
+    claimsLoaded = true;
+    if (!data) { showToast('Failed to load claims', 'error'); return; }
+    const rows = data.rows || [], s = data.summary || {};
+    clTotal = Number(data.total != null ? data.total : (s.claim_count || 0));
+    cards.innerHTML = claimCard('Claims', clNum(s.claim_count)) + claimCard('Members', clNum(s.members))
+      + claimCard('Plan Paid', fmtCurrency(s.plan_paid || 0)) + claimCard('Gross Cost', fmtCurrency(s.gross_cost || 0));
+    if (!clTotal) {
+      wrap.style.display = 'none'; empty.style.display = ''; pager.innerHTML = ''; exportBtn.style.display = 'none';
+      const drug = document.getElementById('cl-drug').value.trim();
+      empty.textContent = drug ? 'No claims match that drug in this period.' : 'No claims for this CARRIER in the selected period.';
+      meta.textContent = '';
+      return;
+    }
+    empty.style.display = 'none'; wrap.style.display = ''; exportBtn.style.display = '';
+    meta.textContent = `${clNum(clTotal)} claim${clTotal === 1 ? '' : 's'}`;
+    document.getElementById('cl-body').innerHTML = rows.map(claimRowHtml).join('');
+    renderClaimsPager();
+  }
+
+  // Export the full result set (all pages) for the current filter to an .xlsx.
+  async function exportClaims() {
+    if (!clientIrxId || !clTotal) return;
+    const btn = document.getElementById('cl-export');
+    const orig = btn.innerHTML;
+    btn.disabled = true; btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Exporting…';
+    try {
+      const data = await apiGet(`/claims?${claimsQuery()}&export=1`);
+      const rows = (data && data.rows) || [];
+      if (!rows.length) { showToast('Nothing to export', 'error'); return; }
+      const sheet = rows.map(r => ({
+        'Service Date': fmtDOS(r.dos), 'Last Name': r.last_name || '', 'First Name': r.first_name || '',
+        'Drug': r.drug || '', 'Drug Group': r.drug_group || '',
+        'Qty': r.qty == null ? '' : r.qty, 'Days Supply': r.days_supply == null ? '' : r.days_supply,
+        'Pharmacy': r.pharmacy || '',
+        'Gross Cost': r.gross_cost == null ? '' : r.gross_cost,
+        'Plan Paid': r.plan_paid == null ? '' : r.plan_paid,
+        'Copay': r.copay == null ? '' : r.copay,
+      }));
+      const ws = XLSX.utils.json_to_sheet(sheet);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, 'Claims');
+      const from = document.getElementById('cl-from').value, to = document.getElementById('cl-to').value;
+      XLSX.writeFile(wb, `claims_${clientIrxId || 'export'}_${from || 'all'}_${to || 'all'}.xlsx`);
+      showToast(`Exported ${clNum(rows.length)} claim${rows.length === 1 ? '' : 's'}`, 'success');
+    } catch (e) {
+      showToast('Export failed', 'error');
+    } finally {
+      btn.disabled = false; btn.innerHTML = orig;
+    }
   }
 
   function upsertChart(id, cfg) {

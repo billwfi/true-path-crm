@@ -15,6 +15,20 @@ const { verifyToken, unauthorized, ok, badRequest, serverError, options } = requ
 //   GET ?carrier=X&from=&to=&drug=&report=1   -> aggregates for the Reporting tab
 
 const ROW_LIMIT = 500;
+const PAGE_SIZE_DEFAULT = 100;
+const PAGE_SIZE_MAX = 500;
+const EXPORT_MAX = 50000; // safety cap on a single export pull
+
+// Paging/export shape for the claims list. page/pageSize are parsed to bounded
+// integers (never raw text), so they're safe to inline into ORDER BY … OFFSET/FETCH.
+//   export -> TOP EXPORT_MAX, no offset (all rows for the current filter)
+//   else   -> a single page via OFFSET/FETCH
+function listShape(q) {
+  if (q.export) return { top: `TOP ${EXPORT_MAX}`, suffix: '', page: 1, pageSize: EXPORT_MAX };
+  const page = Math.max(1, parseInt(q.page, 10) || 1);
+  const pageSize = Math.min(PAGE_SIZE_MAX, Math.max(1, parseInt(q.pageSize, 10) || PAGE_SIZE_DEFAULT));
+  return { top: '', suffix: `OFFSET ${(page - 1) * pageSize} ROWS FETCH NEXT ${pageSize} ROWS ONLY`, page, pageSize };
+}
 
 // Only the drug-group and name-type column names differ between the two layouts.
 const PROFILES = {
@@ -190,31 +204,39 @@ exports.handler = async function (event) {
       });
     }
 
-    // Claims list + summary.
+    // Claims list (paged, or all rows for export) + summary.
+    const ls = listShape(q);
+    const listSql =
+      `SELECT ${ls.top}
+              ${D} AS dos,
+              LTRIM(RTRIM([Drug Name])) AS drug,
+              LTRIM(RTRIM([Patient Last Name]))  AS last_name,
+              LTRIM(RTRIM([Patient First Name])) AS first_name,
+              TRY_CONVERT(int, [Quantity Dispensed]) AS qty,
+              TRY_CONVERT(int, [Days Supply]) AS days_supply,
+              LTRIM(RTRIM([Pharmacy Name])) AS pharmacy,
+              LTRIM(RTRIM(${G})) AS drug_group,
+              TRY_CONVERT(decimal(18,2), [Gross Cost]) AS gross_cost,
+              TRY_CONVERT(decimal(18,2), [Plan Paid])  AS plan_paid,
+              TRY_CONVERT(decimal(18,2), [Copay])      AS copay
+       FROM ${T} WHERE ${where}
+       ORDER BY ${D} DESC, [Drug Name], [Patient Last Name] ${ls.suffix}`;
+
+    if (q.export) {
+      const rows = await mssql(listSql, params);
+      return ok({ source: src.table, rows: rows.recordset, total: rows.recordset.length, export: true });
+    }
     const [rows, summary] = await Promise.all([
-      mssql(
-        `SELECT TOP ${ROW_LIMIT}
-                ${D} AS dos,
-                LTRIM(RTRIM([Drug Name])) AS drug,
-                LTRIM(RTRIM([Patient Last Name]))  AS last_name,
-                LTRIM(RTRIM([Patient First Name])) AS first_name,
-                TRY_CONVERT(int, [Quantity Dispensed]) AS qty,
-                TRY_CONVERT(int, [Days Supply]) AS days_supply,
-                LTRIM(RTRIM([Pharmacy Name])) AS pharmacy,
-                LTRIM(RTRIM(${G})) AS drug_group,
-                TRY_CONVERT(decimal(18,2), [Gross Cost]) AS gross_cost,
-                TRY_CONVERT(decimal(18,2), [Plan Paid])  AS plan_paid,
-                TRY_CONVERT(decimal(18,2), [Copay])      AS copay
-         FROM ${T} WHERE ${where}
-         ORDER BY ${D} DESC`, params),
+      mssql(listSql, params),
       mssql(`${SUMMARY_SELECT} FROM ${T} WHERE ${where}`, params),
     ]);
-
     return ok({
       source: src.table,
       rows: rows.recordset,
       summary: summary.recordset[0],
-      truncated: rows.recordset.length === ROW_LIMIT,
+      total: summary.recordset[0] ? summary.recordset[0].claim_count : rows.recordset.length,
+      page: ls.page,
+      pageSize: ls.pageSize,
     });
   } catch (err) {
     return serverError(err);
@@ -281,25 +303,33 @@ async function claimsProd(q) {
     });
   }
 
+  const ls = listShape(q);
+  const listSql =
+    `SELECT ${ls.top} ${D} AS dos,
+            LTRIM(RTRIM(drugname)) AS drug,
+            LTRIM(RTRIM(patientlastname))  AS last_name,
+            LTRIM(RTRIM(patientfirstname)) AS first_name,
+            TRY_CONVERT(int, quantitydispensed) AS qty,
+            TRY_CONVERT(int, dayssupply) AS days_supply,
+            LTRIM(RTRIM(pharmacyname)) AS pharmacy,
+            LTRIM(RTRIM(gpi02)) AS drug_group,
+            TRY_CONVERT(decimal(18,2), grosscost) AS gross_cost,
+            TRY_CONVERT(decimal(18,2), planpaid)  AS plan_paid,
+            TRY_CONVERT(decimal(18,2), copay)     AS copay
+     FROM ${T} WHERE ${where} ORDER BY ${D} DESC, drugname, patientid ${ls.suffix}`;
+
+  if (q.export) {
+    const rows = await mssql(listSql, params);
+    return ok({ source: 'ClaimsData_Prod', hasCost: true, rows: rows.recordset, total: rows.recordset.length, export: true });
+  }
   const [rows, summary] = await Promise.all([
-    mssql(
-      `SELECT TOP ${ROW_LIMIT} ${D} AS dos,
-              LTRIM(RTRIM(drugname)) AS drug,
-              LTRIM(RTRIM(patientlastname))  AS last_name,
-              LTRIM(RTRIM(patientfirstname)) AS first_name,
-              TRY_CONVERT(int, quantitydispensed) AS qty,
-              TRY_CONVERT(int, dayssupply) AS days_supply,
-              LTRIM(RTRIM(pharmacyname)) AS pharmacy,
-              LTRIM(RTRIM(gpi02)) AS drug_group,
-              TRY_CONVERT(decimal(18,2), grosscost) AS gross_cost,
-              TRY_CONVERT(decimal(18,2), planpaid)  AS plan_paid,
-              TRY_CONVERT(decimal(18,2), copay)     AS copay
-       FROM ${T} WHERE ${where} ORDER BY ${D} DESC`, params),
+    mssql(listSql, params),
     mssql(`${SUMMARY} FROM ${T} WHERE ${where}`, params),
   ]);
   return ok({
     source: 'ClaimsData_Prod', hasCost: true,
     rows: rows.recordset, summary: summary.recordset[0],
-    truncated: rows.recordset.length === ROW_LIMIT,
+    total: summary.recordset[0] ? summary.recordset[0].claim_count : rows.recordset.length,
+    page: ls.page, pageSize: ls.pageSize,
   });
 }
