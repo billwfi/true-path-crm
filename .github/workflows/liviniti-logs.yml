@@ -1,0 +1,50 @@
+name: Liviniti Failure Logs
+
+# Read-only: pull the console logs for a Liviniti job execution from the
+# environment's Log Analytics workspace to find why a run failed.
+on:
+  workflow_dispatch:
+    inputs:
+      execution:
+        description: 'Execution name'
+        required: false
+        default: 'caj-tpcrm-liviniti-nat-29802960'
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  JOB: caj-tpcrm-liviniti-nat
+  RG: rg-tpcrm-prod
+  CAE: cae-tpcrm-jobs
+
+jobs:
+  logs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      - name: Query console logs
+        run: |
+          az extension add --upgrade --name containerapp -y 2>/dev/null || true
+          az extension add --name log-analytics -y 2>/dev/null || true
+          EXEC="${{ inputs.execution }}"
+          echo "===== execution $EXEC ====="
+          az containerapp job execution list -n "$JOB" -g "$RG" \
+            --query "[?name=='$EXEC'].{status:properties.status,start:properties.startTime,end:properties.endTime}" -o jsonc || true
+
+          WS=$(az containerapp env show -n "$CAE" -g "$RG" \
+            --query "properties.appLogsConfiguration.logAnalyticsConfiguration.customerId" -o tsv)
+          echo "workspace customerId: $WS"
+
+          echo "===== console logs for $EXEC (chronological) ====="
+          Q="ContainerAppConsoleLogs_CL | where ContainerGroupName_s startswith '$EXEC' or ContainerGroupName_s contains '$EXEC' | project TimeGenerated, Log_s | order by TimeGenerated asc | take 400"
+          az monitor log-analytics query -w "$WS" --analytics-query "$Q" -o tsv 2>&1 | sed 's/\t/  /' | head -300 || true
+
+          echo "===== error/traceback lines only (last 3 days, this job) ====="
+          Q2="ContainerAppConsoleLogs_CL | where ContainerImageName_s contains 'tpcrm-jobs' | where TimeGenerated > ago(3d) | where Log_s has_any ('Traceback','Error','Exception','timed out','timeout','refused','Errno','Auth','Permission','SFTP','paramiko','pyodbc','Killed','MemoryError') | project TimeGenerated, ContainerGroupName_s, Log_s | order by TimeGenerated asc | take 200"
+          az monitor log-analytics query -w "$WS" --analytics-query "$Q2" -o tsv 2>&1 | sed 's/\t/  /' | head -200 || true
