@@ -24,6 +24,7 @@ import csv
 import fnmatch
 import io
 import os
+import posixpath
 import re
 import sys
 from datetime import datetime, date
@@ -60,6 +61,8 @@ CLIENTS = {
                 "table": "ClaimsData_MCRHotels",
                 # groupid = SUBSTRING([group id], 1, 8)
                 "computed": {"groupid": ("group id", lambda v: (v or "")[:8] or None)},
+                # Never process this specific converted file — it's a bad/duplicate drop.
+                "skip": ["MCRINVESTORS_CDL1052226-Converted file (1).xlsx"],
             },
         ],
     },
@@ -132,16 +135,46 @@ def sftp_connect(cfg):
     return paramiko.SFTPClient.from_transport(transport), transport
 
 
-def newest_match(sftp, remote_dir, pattern):
-    """Return (filename, bytes) of the most recently modified file matching pattern."""
+def newest_match(sftp, remote_dir, pattern, skip=()):
+    """Return (filename, bytes) of the most recently modified file matching pattern,
+    excluding any name in `skip` (exact, case-insensitive) or matching a skip glob."""
+    skips = [s.lower() for s in (skip or ())]
+
+    def excluded(fn):
+        low = fn.lower()
+        return any(low == s or fnmatch.fnmatch(low, s) for s in skips)
+
     attrs = [a for a in sftp.listdir_attr(remote_dir)
-             if fnmatch.fnmatch(a.filename, pattern)]
+             if fnmatch.fnmatch(a.filename, pattern) and not excluded(a.filename)]
     if not attrs:
         return None, None
     attrs.sort(key=lambda a: a.st_mtime or 0, reverse=True)
     name = attrs[0].filename
     with sftp.open(remote_dir.rstrip("/") + "/" + name, "rb") as fh:
         return name, fh.read()
+
+
+def archive_file(sftp, remote_dir, name, archive_dir="Archive"):
+    """Move a processed file into an Archive subfolder on the SFTP (created if missing),
+    so it isn't re-processed. Non-fatal: logs and continues on any error."""
+    try:
+        arch = posixpath.join(remote_dir.rstrip("/"), archive_dir)
+        try:
+            sftp.stat(arch)
+        except IOError:
+            sftp.mkdir(arch)
+        src = posixpath.join(remote_dir.rstrip("/"), name)
+        dst = posixpath.join(arch, name)
+        try:
+            sftp.remove(dst)  # overwrite a same-named prior archive so rename can't fail
+        except IOError:
+            pass
+        sftp.rename(src, dst)
+        print(f"  archived -> {archive_dir}/{name}")
+        return True
+    except Exception as e:  # noqa: BLE001
+        print(f"  WARN: could not archive {name}: {e}", file=sys.stderr)
+        return False
 
 
 # ── XLSX parsing ──────────────────────────────────────────────────────────────
@@ -348,7 +381,7 @@ def run_client(client_key, only_feed=None, recreate=False):
         for feed in cfg["feeds"]:
             if only_feed and feed["name"].lower() != only_feed.lower():
                 continue
-            name, data = newest_match(sftp, cfg["remote_dir"], feed["pattern"])
+            name, data = newest_match(sftp, cfg["remote_dir"], feed["pattern"], feed.get("skip"))
             log_id = log_start(logcur, client_key, cfg, group_id, group_name, feed, name)
             if not name:
                 print(f"  [{feed['name']}] no file matching {feed['pattern']}")
@@ -357,8 +390,11 @@ def run_client(client_key, only_feed=None, recreate=False):
             try:
                 n = load_feed(cur, cfg, feed, name, data, recreate)
                 cn.commit()
+                # Move the processed file into the Archive folder so it isn't re-loaded.
+                archived = archive_file(sftp, cfg["remote_dir"], name, cfg.get("archive_dir", "Archive"))
                 log_finish(logcur, log_id, "Success", rows=n,
-                           message=f"loaded {n} rows into dbo.{feed['table']}")
+                           message=f"loaded {n} rows into dbo.{feed['table']}"
+                                   + (" — archived" if archived else ""))
                 total += n
             except Exception as e:  # record the failure, keep going with other feeds
                 cn.rollback()

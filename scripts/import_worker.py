@@ -381,6 +381,24 @@ def sftp_connect(cfg):
 
 
 # ── Run a single config ─────────────────────────────────────────────────────
+def sftp_archive(sftp, remote_path, archive_dir, name):
+    """Move a processed file into archive_dir on the SFTP, creating the folder if it
+    doesn't exist. Non-fatal — the load already succeeded, so never raise from here."""
+    try:
+        try:
+            sftp.stat(archive_dir)
+        except IOError:
+            sftp.mkdir(archive_dir)
+        dst = posixpath.join(archive_dir, name)
+        try:
+            sftp.remove(dst)  # clear a same-named prior archive so rename can't fail
+        except IOError:
+            pass
+        sftp.rename(remote_path, dst)
+    except Exception:  # noqa: BLE001
+        pass
+
+
 def run_config(cn, cfg):
     cur = cn.cursor()
     cur.execute(
@@ -463,10 +481,7 @@ def run_config(cn, cfg):
                 if cfg["after_import"] == "delete":
                     sftp.remove(remote_path)
                 elif cfg["after_import"] == "archive" and cfg.get("archive_dir"):
-                    try:
-                        sftp.rename(remote_path, posixpath.join(cfg["archive_dir"], name))
-                    except IOError:
-                        pass
+                    sftp_archive(sftp, remote_path, cfg["archive_dir"], name)
             sftp.close(); transport.close()
 
             # Optional post-stage SQL: derive a keying column that a plain computed
@@ -517,10 +532,7 @@ def run_config(cn, cfg):
             if cfg["after_import"] == "delete":
                 sftp.remove(remote_path)
             elif cfg["after_import"] == "archive" and cfg.get("archive_dir"):
-                try:
-                    sftp.rename(remote_path, posixpath.join(cfg["archive_dir"], name))
-                except IOError:
-                    pass
+                sftp_archive(sftp, remote_path, cfg["archive_dir"], name)
 
         sftp.close(); transport.close()
         finish("Success", file_name=(last_file if len(todo) == 1 else f"{len(todo)} files"),
