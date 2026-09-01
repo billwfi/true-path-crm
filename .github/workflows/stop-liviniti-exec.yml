@@ -1,0 +1,39 @@
+name: Stop Liviniti Execution
+
+# Stop a stuck/running Liviniti job execution (e.g. one hung on a full disk).
+on:
+  workflow_dispatch:
+    inputs:
+      execution:
+        description: 'Execution name to stop'
+        required: true
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  JOB: caj-tpcrm-liviniti-nat
+  RG: rg-tpcrm-prod
+
+jobs:
+  stop:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      - name: Stop execution
+        run: |
+          az extension add --upgrade --name containerapp -y 2>/dev/null || true
+          az containerapp job stop -n "$JOB" -g "$RG" --job-execution-name "${{ inputs.execution }}" -o table
+          echo "stop requested for ${{ inputs.execution }}"
+          for i in $(seq 1 12); do
+            ST=$(az containerapp job execution list -n "$JOB" -g "$RG" \
+                   --query "[?name=='${{ inputs.execution }}'].properties.status | [0]" -o tsv 2>/dev/null)
+            echo "  status: ${ST:-<gone>}"
+            case "$ST" in Succeeded|Failed|Degraded|Stopped) break;; esac
+            sleep 10
+          done
