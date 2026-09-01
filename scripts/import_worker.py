@@ -25,7 +25,9 @@ import fnmatch
 import io
 import os
 import posixpath
+import subprocess
 import sys
+import tempfile
 from datetime import date as _date, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 
@@ -80,6 +82,59 @@ def decrypt(blob):
     tag = bytes.fromhex(parts[2])
     ct = bytes.fromhex(parts[3])
     return AESGCM(key).decrypt(iv, ct + tag, None).decode("utf-8")
+
+
+# ── PGP file decryption ─────────────────────────────────────────────────────
+# Some vendors PGP-encrypt each file to our public key before SFTP upload (e.g. the
+# Protein Management Group feed). Files arriving with a .gpg/.pgp/.asc extension are
+# transparently decrypted here, using our private key + passphrase supplied via env
+# (PGP_PRIVATE_KEY armored, PGP_PASSPHRASE). gpg is present in the jobs image; we run
+# it in a throwaway keyring so nothing persists on disk between files.
+PGP_EXTS = (".gpg", ".pgp", ".asc")
+
+
+def is_pgp_name(name):
+    return name.lower().endswith(PGP_EXTS)
+
+
+def pgp_decrypt_bytes(data):
+    key = os.environ.get("PGP_PRIVATE_KEY")
+    passphrase = os.environ.get("PGP_PASSPHRASE", "")
+    if not key:
+        raise RuntimeError("PGP-encrypted file received but PGP_PRIVATE_KEY is not set")
+    with tempfile.TemporaryDirectory(prefix="pgp-") as gh:
+        try:
+            os.chmod(gh, 0o700)
+        except OSError:
+            pass
+        env = {**os.environ, "GNUPGHOME": gh}
+        keyfile = os.path.join(gh, "priv.asc")
+        with open(keyfile, "w", encoding="utf-8") as f:
+            f.write(key)
+        imp = subprocess.run(["gpg", "--batch", "--import", keyfile],
+                             env=env, capture_output=True)
+        if imp.returncode != 0:
+            raise RuntimeError("gpg key import failed: " + imp.stderr.decode(errors="replace")[-300:])
+        args = ["gpg", "--batch", "--yes", "--pinentry-mode", "loopback"]
+        if passphrase:
+            pf = os.path.join(gh, "pp")
+            with open(pf, "w", encoding="utf-8") as f:
+                f.write(passphrase)
+            args += ["--passphrase-file", pf]
+        args += ["--decrypt"]
+        res = subprocess.run(args, input=data, env=env, capture_output=True)
+        if res.returncode != 0:
+            raise RuntimeError("gpg decrypt failed: " + res.stderr.decode(errors="replace")[-300:])
+        return res.stdout
+
+
+def read_remote(sftp, remote_path, name):
+    """Read a file from SFTP, decrypting it first if it is PGP-armored/binary."""
+    with sftp.open(remote_path, "rb") as fh:
+        data = fh.read()
+    if is_pgp_name(name):
+        data = pgp_decrypt_bytes(data)
+    return data
 
 
 # ── Schedule ────────────────────────────────────────────────────────────────
@@ -491,8 +546,7 @@ def run_config(cn, cfg):
             staged = 0
             for i, name in enumerate(todo):
                 remote_path = posixpath.join(cfg["remote_dir"] or "/", name)
-                with sftp.open(remote_path, "rb") as fh:
-                    data = fh.read()
+                data = read_remote(sftp, remote_path, name)
                 header, body = parse_file(data, cfg)
                 staged += import_rows(cur, cfg["target_table"], maps, header, body, truncate=(i == 0))
                 cur.execute("DELETE FROM dbo.Import_Processed_Files WHERE config_id=? AND file_name=?", cfg["id"], name)
@@ -538,8 +592,7 @@ def run_config(cn, cfg):
         last_file = None
         for name in todo:
             remote_path = posixpath.join(cfg["remote_dir"] or "/", name)
-            with sftp.open(remote_path, "rb") as fh:
-                data = fh.read()
+            data = read_remote(sftp, remote_path, name)
             header, body = parse_file(data, cfg)
             n = import_rows(cur, cfg["target_table"], maps, header, body,
                             cfg["truncate_before"] and name == todo[0])
