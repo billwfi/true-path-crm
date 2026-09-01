@@ -234,6 +234,16 @@ def main():
         except Exception as e:  # noqa: BLE001
             print(f"  glp1_onbase_export error: {e}")
 
+        # Per-client SFTP-import notification — one ACS email per client processed today.
+        print("Sending per-client import emails…")
+        try:
+            today = datetime.now().strftime("%Y-%m-%d")
+            ep = subprocess.run([sys.executable, os.path.join(here, "import_daily_email.py"), "--date", today],
+                                capture_output=True, text=True, timeout=900)
+            print((ep.stdout or "") + (ep.stderr or ""))
+        except Exception as e:  # noqa: BLE001
+            print(f"  import_daily_email error: {e}")
+
     cn = db(); cur = cn.cursor()
     configs = load_configs(cur)
     cur.execute("SELECT config_id, file_name FROM dbo.Import_Processed_Files")
