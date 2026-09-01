@@ -31,6 +31,9 @@ jobs:
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
       - name: Start one-off import-email execution
         run: |
+          az extension add --upgrade --name containerapp -y 2>/dev/null || az extension update --name containerapp 2>/dev/null || true
+          echo "=== supported job start params ==="
+          az containerapp job start --help 2>/dev/null | grep -iE "^\s*--(command|args|env-vars|image|yaml)" || true
           DATE="${{ github.event.inputs.date }}"
           if [ -n "$DATE" ]; then CMD="python scripts/import_daily_email.py --date $DATE"; else CMD="python scripts/import_daily_email.py"; fi
           echo "Command: $CMD"
