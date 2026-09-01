@@ -1,0 +1,34 @@
+name: Run Import Emails
+
+# Manually send the per-client SFTP-import notification emails (via ACS) for a given
+# date. Runs scripts/import_daily_email.py as a one-off execution on an existing jobs
+# container that already carries ACS + DB credentials (caj-tpcrm-liviniti-nat), using
+# the MFA-exempt service principal.
+on:
+  workflow_dispatch:
+    inputs:
+      date:
+        description: 'Processed-files date YYYY-MM-DD (blank = yesterday)'
+        required: false
+        default: ''
+
+env:
+  JOB: caj-tpcrm-liviniti-nat
+  RG: rg-tpcrm-prod
+
+jobs:
+  send:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      - name: Start one-off import-email execution
+        run: |
+          DATE="${{ github.event.inputs.date }}"
+          if [ -n "$DATE" ]; then CMD="python scripts/import_daily_email.py --date $DATE"; else CMD="python scripts/import_daily_email.py"; fi
+          echo "Command: $CMD"
+          az containerapp job start -n "$JOB" -g "$RG" \
+            --command "/bin/sh" --args "-c" "$CMD" -o table
