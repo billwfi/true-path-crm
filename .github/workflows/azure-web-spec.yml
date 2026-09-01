@@ -1,0 +1,35 @@
+name: Azure Web App Spec
+
+# Read-only: non-sensitive spec of ca-tpcrm-prod needed to replicate it in the
+# VNet/NAT jobs environment (image, resources, scale, ingress). Env/secret VALUES
+# are intentionally NOT printed.
+on:
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  spec:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      - name: Spec
+        run: |
+          az extension add --upgrade --name containerapp -y 2>/dev/null || true
+          az containerapp show -n ca-tpcrm-prod -g rg-tpcrm-prod --query "{
+            image: properties.template.containers[0].image,
+            cpu: properties.template.containers[0].resources.cpu,
+            memory: properties.template.containers[0].resources.memory,
+            minReplicas: properties.template.scale.minReplicas,
+            maxReplicas: properties.template.scale.maxReplicas,
+            targetPort: properties.configuration.ingress.targetPort,
+            transport: properties.configuration.ingress.transport,
+            activeRevision: properties.latestRevisionName,
+            registries: properties.configuration.registries
+          }" -o jsonc || true
