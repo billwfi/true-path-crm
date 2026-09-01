@@ -34,9 +34,9 @@ jobs:
           echo "=== add hostname (ownership via asuid TXT) ==="
           az containerapp hostname add -n "$APP" -g "$RG" --hostname "$HOST" -o table || true
 
-          echo "=== bind + issue managed certificate (TXT validation) ==="
+          echo "=== bind + issue managed certificate (CNAME validation; CNAME now points here) ==="
           az containerapp hostname bind -n "$APP" -g "$RG" --hostname "$HOST" \
-            --environment "$ENVN" --validation-method TXT -o table
+            --environment "$ENVN" --validation-method CNAME -o table
 
           echo "=== resulting hostname bindings ==="
           az containerapp show -n "$APP" -g "$RG" \
