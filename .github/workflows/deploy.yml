@@ -86,9 +86,9 @@ jobs:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
-      - name: Update ca-tpcrm-prod
+      - name: Update ca-tpcrm-web (prod, in the VNet/NAT env for static SQL egress)
         run: |
-          az containerapp update -n ca-tpcrm-prod -g rg-tpcrm-prod \
+          az containerapp update -n ca-tpcrm-web -g rg-tpcrm-prod \
             --image "$ACR_LOGIN_SERVER/$IMAGE_REPO:${{ needs.build.outputs.tag }}"
 
   # Point every Container Apps Job at the freshly-built jobs image. Runs after prod
