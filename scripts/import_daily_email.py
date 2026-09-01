@@ -9,7 +9,7 @@ Env:
   IRX_DB_PWD              SQL password (user claudeservices)
   ACS_CONNECTION_STRING   Azure Communication Services connection string
   EMAIL_FROM              verified sender (default noreply@truepathsourcing.com)
-  REPORT_TO               recipient (default bill@workflowinnovators.com)
+  IMPORT_EMAIL_TO         recipient (default amtfileloads@truepathsourcing.com)
 
 Usage:
   python scripts/import_daily_email.py                 # yesterday
@@ -134,7 +134,7 @@ def send(client, items, d, to, dry):
 def main():
     ds = arg('--date')
     d = datetime.strptime(ds, '%Y-%m-%d').date() if ds else (date.today() - timedelta(days=1))
-    to = arg('--to') or os.environ.get('REPORT_TO', 'bill@workflowinnovators.com')
+    to = arg('--to') or os.environ.get('IMPORT_EMAIL_TO', 'amtfileloads@truepathsourcing.com')
     dry = '--dry-run' in sys.argv
 
     cur = db().cursor()
