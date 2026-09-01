@@ -1,0 +1,63 @@
+name: Rebind Cert Fresh
+
+# The managed cert got stuck "Pending" (created before the CNAME was flipped). Delete
+# it and issue a fresh managed cert now that app.truepathsourcing.com points at the new
+# app, then poll to Succeeded and bind.
+on:
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  RG: rg-tpcrm-prod
+  APP: ca-tpcrm-web
+  ENVN: cae-tpcrm-jobs
+  HOST: app.truepathsourcing.com
+
+jobs:
+  rebind:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      - name: Delete stuck cert, reissue, poll, bind
+        run: |
+          set -e
+          az extension add --upgrade --name containerapp -y 2>/dev/null || true
+
+          OLD=$(az containerapp env certificate list -n "$ENVN" -g "$RG" --managed-certificates-only \
+                  --query "[?properties.subjectName=='$HOST'].name | [0]" -o tsv)
+          if [ -n "$OLD" ]; then
+            echo "deleting stuck cert $OLD"
+            az containerapp env certificate delete -n "$ENVN" -g "$RG" --certificate "$OLD" --yes -o none || true
+            sleep 10
+          fi
+
+          echo "=== reissue managed cert via CNAME validation (may report provisioning) ==="
+          az containerapp hostname bind -n "$APP" -g "$RG" --hostname "$HOST" \
+            --environment "$ENVN" --validation-method CNAME -o table || echo "(bind will complete once cert succeeds)"
+
+          echo "=== poll fresh cert to Succeeded ==="
+          NEW=""
+          for i in $(seq 1 40); do
+            NEW=$(az containerapp env certificate list -n "$ENVN" -g "$RG" --managed-certificates-only \
+                    --query "[?properties.subjectName=='$HOST'].name | [0]" -o tsv)
+            ST=$(az containerapp env certificate list -n "$ENVN" -g "$RG" --managed-certificates-only \
+                    --query "[?properties.subjectName=='$HOST'].properties.provisioningState | [0]" -o tsv)
+            echo "  [$i] cert=${NEW:-none} state=${ST:-none}"
+            [ "$ST" = "Succeeded" ] && break
+            case "$ST" in Failed|Canceled|DeleteFailed) echo "provisioning $ST"; exit 1;; esac
+            sleep 20
+          done
+
+          CERTID=$(az containerapp env certificate list -n "$ENVN" -g "$RG" --managed-certificates-only \
+                     --query "[?properties.subjectName=='$HOST'].id | [0]" -o tsv)
+          echo "=== bind $CERTID ==="
+          az containerapp hostname bind -n "$APP" -g "$RG" --hostname "$HOST" --certificate "$CERTID" -o table
+          az containerapp show -n "$APP" -g "$RG" \
+            --query "properties.configuration.ingress.customDomains[].{name:name,binding:bindingType}" -o jsonc
