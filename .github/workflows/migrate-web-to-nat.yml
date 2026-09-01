@@ -43,13 +43,17 @@ jobs:
           ACR_USER=$(az acr credential show -n "$ACR" --query username -o tsv)
           ACR_PW=$(az acr credential show -n "$ACR" --query "passwords[0].value" -o tsv)
 
-          # Source containers (image + env values + resources) — runner-only, never printed.
+          # Source containers + secrets (values) — runner-only, never printed.
           az containerapp show -n "$SRC" -g "$RG" --query "properties.template.containers" -o json > containers.json
+          az containerapp secret show -n "$SRC" -g "$RG" -o json > secrets.json 2>/dev/null || echo '[]' > secrets.json
 
-          python3 scripts/migrate/clone_app_yaml.py "$JOBS_ENV_ID" "$LOC" "$ACR_USER" "$ACR_PW" containers.json new.yaml
+          python3 scripts/migrate/clone_app_yaml.py "$JOBS_ENV_ID" "$LOC" "$ACR_USER" "$ACR_PW" containers.json secrets.json new.yaml
+
+          # Idempotent: remove a prior failed attempt so create can re-run cleanly.
+          az containerapp delete -n "$NEW" -g "$RG" --yes -o none 2>/dev/null || true
 
           az containerapp create -n "$NEW" -g "$RG" --yaml new.yaml -o none
-          rm -f new.yaml containers.json
+          rm -f new.yaml containers.json secrets.json
           FQDN=$(az containerapp show -n "$NEW" -g "$RG" --query "properties.configuration.ingress.fqdn" -o tsv)
           echo "NEW_FQDN=$FQDN"
           echo "created $NEW in $JOBS_ENV — test at https://$FQDN"
