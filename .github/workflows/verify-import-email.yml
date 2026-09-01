@@ -1,0 +1,39 @@
+name: Verify Import Email Logs
+
+# Read-only: pull the console logs of the campaign job's most recent execution
+# (used for the import-email one-off) to confirm what was actually sent.
+on:
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  JOB: caj-tpcrm-campaign
+  RG: rg-tpcrm-prod
+  CAE: cae-tpcrm-jobs
+
+jobs:
+  logs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      - name: Latest execution + console logs
+        run: |
+          az extension add --upgrade --name containerapp -y 2>/dev/null || true
+          az extension add --name log-analytics -y 2>/dev/null || true
+          EXEC=$(az containerapp job execution list -n "$JOB" -g "$RG" \
+                   --query "reverse(sort_by([].{n:name,s:properties.startTime}, &s))[0].n" -o tsv)
+          echo "latest execution: $EXEC"
+          az containerapp job execution list -n "$JOB" -g "$RG" \
+            --query "[?name=='$EXEC'].{status:properties.status,start:properties.startTime,end:properties.endTime}" -o jsonc || true
+          WS=$(az containerapp env show -n "$CAE" -g "$RG" \
+            --query "properties.appLogsConfiguration.logAnalyticsConfiguration.customerId" -o tsv)
+          echo "===== console logs for $EXEC ====="
+          Q="ContainerAppConsoleLogs_CL | where ContainerGroupName_s startswith '$EXEC' | project TimeGenerated, Log_s | order by TimeGenerated asc | take 200"
+          az monitor log-analytics query -w "$WS" --analytics-query "$Q" -o tsv 2>&1 | sed 's/\t/  /' | head -200 || true
