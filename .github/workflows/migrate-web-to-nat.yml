@@ -45,7 +45,8 @@ jobs:
 
           # Source containers + secrets (values) — runner-only, never printed.
           az containerapp show -n "$SRC" -g "$RG" --query "properties.template.containers" -o json > containers.json
-          az containerapp secret show -n "$SRC" -g "$RG" -o json > secrets.json 2>/dev/null || echo '[]' > secrets.json
+          az containerapp secret show -n "$SRC" -g "$RG" -o json > secrets.json
+          echo "source secret names: $(python3 -c 'import json;print(",".join(s["name"] for s in json.load(open("secrets.json"))))')"
 
           python3 scripts/migrate/clone_app_yaml.py "$JOBS_ENV_ID" "$LOC" "$ACR_USER" "$ACR_PW" containers.json secrets.json new.yaml
 
