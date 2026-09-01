@@ -45,8 +45,14 @@ jobs:
 
           # Source containers + secrets (values) — runner-only, never printed.
           az containerapp show -n "$SRC" -g "$RG" --query "properties.template.containers" -o json > containers.json
-          az containerapp secret list -n "$SRC" -g "$RG" -o json > secrets.json
-          echo "source secret names: $(python3 -c 'import json;d=json.load(open("secrets.json"));print(",".join(s["name"] for s in d)," | values_present=",all("value" in s and s["value"] for s in d) if d else "NONE")')"
+          # Copy each source secret's value (readable via `secret show`, unlike `list`)
+          # into secrets.json — values pass through env vars, never echoed or logged.
+          echo '[]' > secrets.json
+          for S in acs-connection-string admin-password import-crypt-key jwt-secret sqlserver-password pbm-intake-key; do
+            SECVAL=$(az containerapp secret show -n "$SRC" -g "$RG" --secret-name "$S" --query value -o tsv)
+            SN="$S" SECVAL="$SECVAL" python3 -c "import os,json; d=json.load(open('secrets.json')); d.append({'name':os.environ['SN'],'value':os.environ['SECVAL']}); json.dump(d,open('secrets.json','w'))"
+          done
+          echo "collected $(python3 -c 'import json;print(len(json.load(open("secrets.json"))))') source secret values"
 
           python3 scripts/migrate/clone_app_yaml.py "$JOBS_ENV_ID" "$LOC" "$ACR_USER" "$ACR_PW" containers.json secrets.json new.yaml
 
