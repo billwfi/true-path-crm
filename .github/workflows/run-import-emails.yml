@@ -1,9 +1,9 @@
 name: Run Import Emails
 
-# Manually send the per-client SFTP-import notification emails (via ACS) for a given
-# date. Runs scripts/import_daily_email.py as a one-off execution on an existing jobs
-# container that already carries ACS + DB credentials (caj-tpcrm-liviniti-nat), using
-# the MFA-exempt service principal.
+# Send the per-client SFTP-import notification emails (via ACS) for a given date.
+# Container Apps job start can't override command/env, and only ACS-enabled jobs carry
+# the ACS connection string, so we briefly repoint an ACS-enabled job (caj-tpcrm-campaign)
+# to PIPELINE=import-email, run it, and ALWAYS revert PIPELINE afterwards.
 on:
   workflow_dispatch:
     inputs:
@@ -13,7 +13,7 @@ on:
         default: ''
 
 env:
-  JOB: caj-tpcrm-liviniti-nat
+  JOB: caj-tpcrm-campaign
   RG: rg-tpcrm-prod
 
 permissions:
@@ -29,9 +29,41 @@ jobs:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
-      - name: Inspect job container spec (diagnostic)
+
+      - name: Repoint job, run one-off, capture status
+        id: run
         run: |
           az extension add --upgrade --name containerapp -y 2>/dev/null || true
-          echo "=== $JOB container[0] command/args/image ==="
-          az containerapp job show -n "$JOB" -g "$RG" \
-            --query "properties.template.containers[0].{command:command, args:args, image:image}" -o json
+          # Capture the job's current PIPELINE so we can restore it no matter what.
+          ORIG=$(az containerapp job show -n "$JOB" -g "$RG" \
+            --query "properties.template.containers[0].env[?name=='PIPELINE'].value | [0]" -o tsv)
+          ORIG=${ORIG:-campaign}
+          echo "orig_pipeline=$ORIG" >> "$GITHUB_OUTPUT"
+          echo "Original PIPELINE=$ORIG"
+
+          DATE="${{ github.event.inputs.date }}"
+          az containerapp job update -n "$JOB" -g "$RG" -o none \
+            --set-env-vars PIPELINE=import-email EMAIL_DATE="$DATE"
+
+          EXEC=$(az containerapp job start -n "$JOB" -g "$RG" --query name -o tsv)
+          echo "Started execution: $EXEC"
+
+          # Poll until the execution leaves Running.
+          for i in $(seq 1 40); do
+            ST=$(az containerapp job execution list -n "$JOB" -g "$RG" \
+                   --query "[?name=='$EXEC'].properties.status | [0]" -o tsv 2>/dev/null)
+            echo "  execution status: ${ST:-<pending>}"
+            case "$ST" in Succeeded|Failed|Degraded) break;; esac
+            sleep 10
+          done
+          echo "final=$ST" >> "$GITHUB_OUTPUT"
+          [ "$ST" = "Succeeded" ]
+
+      - name: Restore PIPELINE (always)
+        if: always()
+        run: |
+          ORIG="${{ steps.run.outputs.orig_pipeline }}"
+          ORIG=${ORIG:-campaign}
+          az containerapp job update -n "$JOB" -g "$RG" -o none \
+            --set-env-vars PIPELINE="$ORIG" EMAIL_DATE=""
+          echo "Restored PIPELINE=$ORIG"

@@ -21,6 +21,11 @@ fi
 if [ "$PIPELINE" = "liviniti" ]; then
   exec python scripts/liviniti_import.py
 fi
+if [ "$PIPELINE" = "import-email" ]; then
+  # Per-client SFTP-import notification emails via ACS. EMAIL_DATE (YYYY-MM-DD)
+  # optional; blank = yesterday.
+  exec python scripts/import_daily_email.py ${EMAIL_DATE:+--date "$EMAIL_DATE"}
+fi
 # Monday orchestrator: run every due Import_Configs loader, then email a summary
 # report (per-loader results + folders/files with no loader). REPORT_ONLY=1 skips
 # the loading and just scans + emails.
