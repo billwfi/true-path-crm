@@ -1,0 +1,43 @@
+name: Bind Hostname to Web App
+
+# Bind app.truepathsourcing.com to the new NAT-env app ca-tpcrm-web and issue a
+# managed TLS cert via TXT validation (the asuid.app TXT is already in DNS). This
+# does NOT move live traffic — the main CNAME still points at the old app until you
+# flip it. Prepares the cert so the eventual cutover has no SSL gap.
+on:
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  RG: rg-tpcrm-prod
+  APP: ca-tpcrm-web
+  ENVN: cae-tpcrm-jobs
+  HOST: app.truepathsourcing.com
+
+jobs:
+  bind:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      - name: Add hostname + managed cert (TXT validation)
+        run: |
+          set -e
+          az extension add --upgrade --name containerapp -y 2>/dev/null || true
+
+          echo "=== add hostname (ownership via asuid TXT) ==="
+          az containerapp hostname add -n "$APP" -g "$RG" --hostname "$HOST" -o table || true
+
+          echo "=== bind + issue managed certificate (TXT validation) ==="
+          az containerapp hostname bind -n "$APP" -g "$RG" --hostname "$HOST" \
+            --environment "$ENVN" --validation-method TXT -o table
+
+          echo "=== resulting hostname bindings ==="
+          az containerapp show -n "$APP" -g "$RG" \
+            --query "properties.configuration.ingress.customDomains[].{name:name, binding:bindingType, cert:certificateId}" -o jsonc || true
