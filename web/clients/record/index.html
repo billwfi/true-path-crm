@@ -155,6 +155,7 @@
                 <tbody id="elig-body"></tbody>
               </table>
             </div>
+            <div id="elig-pager" class="flex items-center justify-between flex-wrap gap-3 mt-3"></div>
           </div>
         </div>
       </div>
@@ -363,6 +364,7 @@
   let clientId = parseInt(params.get('id'), 10) || null;
   let contacts = [], contracts = [];
   let clientIrxId = null, eligLoaded = false, eligDebounce, eligRows = [];
+  let eligPage = 1, eligTotal = 0; const ELIG_PAGE_SIZE = 100;
   let claimsLoaded = false, reportingLoaded = false, claimsDebounce;
   let clPage = 1, clTotal = 0; const CL_PAGE_SIZE = 100;
   let importsLoaded = false;
@@ -549,30 +551,56 @@
   /* ── Eligibility (read-only from irx.dbo.eligibility, matched on CARRIER) ── */
   function debounceElig() { clearTimeout(eligDebounce); eligDebounce = setTimeout(loadEligibility, 350); }
 
-  async function loadEligibility() {
+  function eligQuery() {
+    const search = document.getElementById('elig-search').value;
+    return `resource=eligibility&carrier=${encodeURIComponent(clientIrxId)}${
+      search ? '&search=' + encodeURIComponent(search) : ''}`;
+  }
+  function renderEligPager() {
+    const pager = document.getElementById('elig-pager');
+    const pages = Math.max(1, Math.ceil(eligTotal / ELIG_PAGE_SIZE));
+    if (eligPage > pages) eligPage = pages;
+    const start = (eligPage - 1) * ELIG_PAGE_SIZE + 1;
+    const end = Math.min(eligPage * ELIG_PAGE_SIZE, eligTotal);
+    pager.innerHTML = `
+      <span class="text-sm text-slate-500">Showing ${start.toLocaleString()}–${end.toLocaleString()} of ${eligTotal.toLocaleString()}</span>
+      <div class="flex items-center gap-2">
+        <button class="btn btn-outline btn-sm" ${eligPage <= 1 ? 'disabled' : ''} onclick="loadEligibility(1)" title="First page">&laquo;</button>
+        <button class="btn btn-outline btn-sm" ${eligPage <= 1 ? 'disabled' : ''} onclick="loadEligibility(${eligPage - 1})">Prev</button>
+        <span class="text-sm">Page ${eligPage.toLocaleString()} of ${pages.toLocaleString()}</span>
+        <button class="btn btn-outline btn-sm" ${eligPage >= pages ? 'disabled' : ''} onclick="loadEligibility(${eligPage + 1})">Next</button>
+        <button class="btn btn-outline btn-sm" ${eligPage >= pages ? 'disabled' : ''} onclick="loadEligibility(${pages})" title="Last page">&raquo;</button>
+      </div>`;
+  }
+
+  // page: pager buttons pass a page number; search/typing calls with no arg -> reset to 1.
+  async function loadEligibility(page) {
+    eligPage = (typeof page === 'number' && page > 0) ? page : 1;
     const empty = document.getElementById('elig-empty');
     const wrap = document.getElementById('elig-table-wrap');
     const meta = document.getElementById('elig-meta');
     const exportBtn = document.getElementById('elig-export');
+    const pager = document.getElementById('elig-pager');
     if (!clientIrxId) {
       eligLoaded = true; eligRows = [];
-      wrap.style.display = 'none'; meta.textContent = ''; exportBtn.style.display = 'none';
+      wrap.style.display = 'none'; meta.textContent = ''; exportBtn.style.display = 'none'; pager.innerHTML = '';
       empty.style.display = ''; empty.textContent = 'Set the iRx Client ID (CARRIER) on the Demographics tab to view eligibility.';
       return;
     }
     const search = document.getElementById('elig-search').value;
-    const url = `/client-detail?resource=eligibility&carrier=${encodeURIComponent(clientIrxId)}${
-      search ? '&search=' + encodeURIComponent(search) : ''}`;
-    const rows = await apiGet(url) || [];
+    const resp = await apiGet(`/client-detail?${eligQuery()}&page=${eligPage}&pageSize=${ELIG_PAGE_SIZE}`);
+    const rows = Array.isArray(resp) ? resp : ((resp && resp.rows) || []);
+    eligTotal = Array.isArray(resp) ? rows.length : Number((resp && resp.total) || rows.length);
     eligLoaded = true; eligRows = rows;
-    if (!rows.length) {
-      wrap.style.display = 'none'; exportBtn.style.display = 'none';
+    if (!eligTotal) {
+      wrap.style.display = 'none'; exportBtn.style.display = 'none'; pager.innerHTML = '';
       empty.style.display = ''; empty.textContent = search ? 'No matching members.' : 'No eligibility records for this CARRIER.';
       meta.textContent = '';
       return;
     }
     empty.style.display = 'none'; wrap.style.display = ''; exportBtn.style.display = '';
-    meta.textContent = `${rows.length}${rows.length === 1000 ? '+ (showing first 1000)' : ''} member${rows.length === 1 ? '' : 's'}`;
+    meta.textContent = `${eligTotal.toLocaleString()} member${eligTotal === 1 ? '' : 's'}`;
+    renderEligPager();
     document.getElementById('elig-body').innerHTML = rows.map(r => `<tr>
       <td class="font-mono text-xs">${esc(r.MEMBER_ID) || '—'}</td>
       <td class="font-medium">${esc(r.LAST_NAME || '')}, ${esc(r.FIRST_NAME || '')}</td>
@@ -600,21 +628,35 @@
       + `background:${inactive ? '#fee2e2' : '#dcfce7'};color:${inactive ? '#991b1b' : '#166534'}">${esc(s)}</span>`;
   }
 
-  function exportEligibility() {
-    if (!eligRows.length) return;
-    const data = eligRows.map(r => ({
-      'Member ID': r.MEMBER_ID || '', 'Last Name': r.LAST_NAME || '', 'First Name': r.FIRST_NAME || '',
-      'DOB': r.DATE_OF_BIRTH || '', 'Sex': r.SEX || '', 'Relationship': r.RELATIONSHIP_CODE || '',
-      'Type': r.MEMBER_TYPE || '', 'Group': r.GroupName || r.GRP || '', 'Effective': r.MEMBER_FROM_DATE || '',
-      'Term': r.MEMBER_THRU_DATE || '', 'Status': r.AccountStatus || '',
-      'Address 1': r.ADDRESS_1 || '', 'Address 2': r.ADDRESS_2 || '', 'City': r.CITY || '',
-      'State': r.STATE || '', 'Zip': r.ZIP || '', 'Phone': r.PHONE || '', 'Email': r.EMail_Address || '',
-    }));
-    const ws = XLSX.utils.json_to_sheet(data);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, 'Eligibility');
-    const stamp = new Date().toISOString().slice(0, 10);
-    XLSX.writeFile(wb, `eligibility_${clientIrxId || 'export'}_${stamp}.xlsx`);
+  // Export the full roster (all pages) for the current search to an .xlsx.
+  async function exportEligibility() {
+    if (!clientIrxId || !eligTotal) return;
+    const btn = document.getElementById('elig-export');
+    const orig = btn.innerHTML;
+    btn.disabled = true; btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Exporting…';
+    try {
+      const resp = await apiGet(`/client-detail?${eligQuery()}&export=1`);
+      const rows = Array.isArray(resp) ? resp : ((resp && resp.rows) || []);
+      if (!rows.length) { showToast('Nothing to export', 'error'); return; }
+      const data = rows.map(r => ({
+        'Member ID': r.MEMBER_ID || '', 'Last Name': r.LAST_NAME || '', 'First Name': r.FIRST_NAME || '',
+        'DOB': r.DATE_OF_BIRTH || '', 'Sex': r.SEX || '', 'Relationship': r.RELATIONSHIP_CODE || '',
+        'Type': r.MEMBER_TYPE || '', 'Group': r.GroupName || r.GRP || '', 'Effective': r.MEMBER_FROM_DATE || '',
+        'Term': r.MEMBER_THRU_DATE || '', 'Status': r.AccountStatus || '',
+        'Address 1': r.ADDRESS_1 || '', 'Address 2': r.ADDRESS_2 || '', 'City': r.CITY || '',
+        'State': r.STATE || '', 'Zip': r.ZIP || '', 'Phone': r.PHONE || '', 'Email': r.EMail_Address || '',
+      }));
+      const ws = XLSX.utils.json_to_sheet(data);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, 'Eligibility');
+      const stamp = new Date().toISOString().slice(0, 10);
+      XLSX.writeFile(wb, `eligibility_${clientIrxId || 'export'}_${stamp}.xlsx`);
+      showToast(`Exported ${rows.length.toLocaleString()} member${rows.length === 1 ? '' : 's'}`, 'success');
+    } catch (e) {
+      showToast('Export failed', 'error');
+    } finally {
+      btn.disabled = false; btn.innerHTML = orig;
+    }
   }
 
   function renderContacts() {

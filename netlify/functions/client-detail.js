@@ -53,18 +53,33 @@ exports.handler = async function (event) {
       if (resource === 'eligibility') {
         // Read-only eligibility roster from irx.dbo.eligibility, matched on CARRIER
         // (the client's irx_client_id). GROUP is a reserved word -> bracketed.
+        // Paged by default ({rows,total,page,pageSize}); export=1 returns all rows
+        // (capped) for an XLS export. page/pageSize are bounded ints, safe to inline.
         if (!carrier) return badRequest('carrier is required');
-        const r = await mssql(
-          `SELECT TOP 1000 MEMBER_ID, LAST_NAME, FIRST_NAME, DATE_OF_BIRTH, SEX,
+        const p = event.queryStringParameters || {};
+        const cols = `MEMBER_ID, LAST_NAME, FIRST_NAME, DATE_OF_BIRTH, SEX,
                   RELATIONSHIP_CODE, MEMBER_TYPE, CARRIER, ACCOUNT, [GROUP] AS GRP, GroupName,
                   MEMBER_FROM_DATE, MEMBER_THRU_DATE, ADDRESS_1, ADDRESS_2, CITY, STATE, ZIP, PHONE, EMail_Address,
-                  AccountStatus
-           FROM dbo.eligibility
-           WHERE CARRIER = @carrier
-             AND (@search IS NULL OR LAST_NAME LIKE @search OR FIRST_NAME LIKE @search OR MEMBER_ID LIKE @search)
-           ORDER BY LAST_NAME, FIRST_NAME`,
-          { carrier, search: search ? `%${search}%` : null });
-        return ok(r.recordset);
+                  AccountStatus`;
+        const where = `CARRIER = @carrier
+             AND (@search IS NULL OR LAST_NAME LIKE @search OR FIRST_NAME LIKE @search OR MEMBER_ID LIKE @search)`;
+        const params = { carrier, search: search ? `%${search}%` : null };
+
+        if (p.export === '1' || p.export === 'true') {
+          const r = await mssql(
+            `SELECT TOP 50000 ${cols} FROM dbo.eligibility WHERE ${where} ORDER BY LAST_NAME, FIRST_NAME, MEMBER_ID`,
+            params);
+          return ok({ rows: r.recordset, total: r.recordset.length, export: true });
+        }
+        const page = Math.max(1, parseInt(p.page, 10) || 1);
+        const pageSize = Math.min(1000, Math.max(1, parseInt(p.pageSize, 10) || 100));
+        const [rows, cnt] = await Promise.all([
+          mssql(`SELECT ${cols} FROM dbo.eligibility WHERE ${where}
+                 ORDER BY LAST_NAME, FIRST_NAME, MEMBER_ID
+                 OFFSET ${(page - 1) * pageSize} ROWS FETCH NEXT ${pageSize} ROWS ONLY`, params),
+          mssql(`SELECT COUNT(*) AS total FROM dbo.eligibility WHERE ${where}`, params),
+        ]);
+        return ok({ rows: rows.recordset, total: cnt.recordset[0].total, page, pageSize });
       }
 
       const cid = parseInt(client_id, 10);
