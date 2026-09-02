@@ -1,0 +1,32 @@
+name: Job Exec Logs
+
+on:
+  workflow_dispatch:
+    inputs:
+      job:
+        description: 'job name'
+        required: true
+        default: 'caj-tpcrm-liviniti-nat'
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  logs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      - name: Latest execution logs
+        run: |
+          az extension add --upgrade --name containerapp -y 2>/dev/null || true
+          J="${{ inputs.job }}"
+          EXEC=$(az containerapp job execution list -n "$J" -g rg-tpcrm-prod \
+                   --query "reverse(sort_by([].{n:name,s:properties.startTime}, &s))[0].n" -o tsv)
+          C=$(az containerapp job show -n "$J" -g rg-tpcrm-prod --query "properties.template.containers[0].name" -o tsv)
+          echo "job=$J exec=$EXEC container=$C"
+          az containerapp job logs show -n "$J" -g rg-tpcrm-prod --container "$C" --execution "$EXEC" --tail 120 --format text 2>&1 | tail -80 || true
