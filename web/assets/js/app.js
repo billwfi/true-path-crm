@@ -236,7 +236,7 @@ document.addEventListener('click', () => {
   if (m && !m.classList.contains('hidden')) m.classList.add('hidden');
 });
 
-/* ── Feedback widget (floating, every page) ── */
+/* ── Feedback widget: point-and-pin annotations (multiple per screen) ── */
 const H2C_SRC = 'https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js';
 function loadScript(src) {
   return new Promise((resolve, reject) => {
@@ -246,56 +246,137 @@ function loadScript(src) {
     document.head.appendChild(s);
   });
 }
+let __fbBase = null;   // captured page screenshot (canvas)
+let __fbPins = [];     // [{id, x, y, fx, fy, note}]
+let __fbSeq = 0;
+function fbEsc(s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+
 function initFeedback() {
   if (document.getElementById('feedback-fab')) return;
   const fab = document.createElement('button');
-  fab.id = 'feedback-fab'; fab.className = 'feedback-fab'; fab.title = 'Send feedback';
+  fab.id = 'feedback-fab'; fab.className = 'feedback-fab'; fab.title = 'Pin feedback on this screen';
   fab.innerHTML = '<i class="fa-solid fa-comment-dots"></i> Feedback';
-  fab.onclick = openFeedback;
+  fab.onclick = startPinFeedback;
   document.body.appendChild(fab);
-
-  const modal = document.createElement('div');
-  modal.id = 'feedback-modal'; modal.className = 'feedback-modal hidden';
-  modal.innerHTML = `
-    <div class="fb-head"><b>Send feedback</b>
-      <button class="fb-x" onclick="closeFeedback()" title="Close">&times;</button></div>
-    <div class="fb-shot"><img id="fb-preview" alt="Page screenshot"><span id="fb-capturing">Capturing screen…</span></div>
-    <textarea id="fb-text" class="form-control" rows="4"
-      placeholder="What should change or improve on this page?"></textarea>
-    <div class="fb-actions">
-      <span class="fb-note"><i class="fa-solid fa-paperclip"></i> Screenshot of this page attached</span>
-      <button class="btn btn-primary btn-sm" onclick="submitFeedback()">Send</button>
-    </div>`;
-  document.body.appendChild(modal);
 }
-async function openFeedback() {
+
+// Capture the page once, then drop as many pins as needed and annotate each.
+async function startPinFeedback() {
+  if (document.getElementById('fb-overlay')) return;   // already in pin mode
   const fab = document.getElementById('feedback-fab');
-  const modal = document.getElementById('feedback-modal');
-  const preview = document.getElementById('fb-preview');
-  const capturing = document.getElementById('fb-capturing');
-  document.getElementById('fb-text').value = '';
-  preview.style.display = 'none'; capturing.style.display = ''; window.__fbShot = null;
-  modal.classList.remove('hidden');
+  fab.disabled = true; fab.style.opacity = '.6'; fab.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Capturing…';
   try {
     await loadScript(H2C_SRC);
-    fab.style.visibility = 'hidden'; modal.style.visibility = 'hidden';
-    const canvas = await html2canvas(document.body, { logging: false, useCORS: true, scale: 0.7 });
-    modal.style.visibility = ''; fab.style.visibility = '';
-    window.__fbShot = canvas.toDataURL('image/jpeg', 0.72);
-    preview.src = window.__fbShot; preview.style.display = '';
-  } catch (e) {
-    modal.style.visibility = ''; fab.style.visibility = '';
-  }
-  capturing.style.display = 'none';
+    __fbBase = await html2canvas(document.body, { logging: false, useCORS: true, scale: 0.7 });
+  } catch (e) { __fbBase = null; }
+  fab.disabled = false; fab.style.opacity = ''; fab.innerHTML = '<i class="fa-solid fa-comment-dots"></i> Feedback';
+  __fbPins = []; __fbSeq = 0;
+  buildPinMode();
 }
-function closeFeedback() { document.getElementById('feedback-modal').classList.add('hidden'); }
-async function submitFeedback() {
-  const text = document.getElementById('fb-text').value.trim();
-  if (!text) { showToast('Please enter your feedback first', 'error'); return; }
-  const res = await apiPost('/project-plan?resource=feedback',
-    { text, page_url: location.href, screenshot: window.__fbShot || null });
-  if (res && res.ok) { showToast('Feedback sent — thank you!', 'success'); closeFeedback(); }
-  else { showToast('Could not send feedback', 'error'); }
+
+function fbDocSize() {
+  return {
+    w: Math.max(document.body.scrollWidth, document.documentElement.scrollWidth),
+    h: Math.max(document.body.scrollHeight, document.documentElement.scrollHeight),
+  };
+}
+
+function buildPinMode() {
+  const { w, h } = fbDocSize();
+  const overlay = document.createElement('div');
+  overlay.id = 'fb-overlay';
+  overlay.style.width = w + 'px'; overlay.style.height = h + 'px';
+  overlay.addEventListener('click', onPinClick);
+  document.body.appendChild(overlay);
+
+  const panel = document.createElement('div');
+  panel.id = 'fb-panel';
+  panel.innerHTML = `
+    <div class="fb-head"><b>Pin feedback</b>
+      <button class="fb-x" onclick="cancelPinFeedback()" title="Cancel">&times;</button></div>
+    <div class="fb-hint"><i class="fa-solid fa-location-dot"></i> Click anywhere on the page to drop a pin, then say what should change. Add as many as you like.</div>
+    <div id="fb-pin-list" class="fb-pin-list"></div>
+    <div class="fb-actions">
+      <span class="fb-note"><i class="fa-solid fa-paperclip"></i> Screenshot attached</span>
+      <button id="fb-submit" class="btn btn-primary btn-sm" onclick="submitPins()" disabled>Submit</button>
+    </div>`;
+  document.body.appendChild(panel);
+  document.getElementById('feedback-fab').style.display = 'none';
+  renderPinList();
+}
+
+function onPinClick(e) {
+  const x = e.pageX, y = e.pageY, { w, h } = fbDocSize();
+  const id = ++__fbSeq;
+  __fbPins.push({ id, x, y, fx: x / w, fy: y / h, note: '' });
+  const m = document.createElement('div');
+  m.className = 'fb-pin'; m.id = 'fb-pin-' + id;
+  m.style.left = x + 'px'; m.style.top = y + 'px';
+  document.getElementById('fb-overlay').appendChild(m);
+  renderPinList();
+  const ta = document.querySelector('#fb-pin-row-' + id + ' textarea'); if (ta) ta.focus();
+}
+
+function renderPinList() {
+  const list = document.getElementById('fb-pin-list');
+  if (!list) return;
+  list.innerHTML = __fbPins.length ? __fbPins.map((p, i) => `
+    <div class="fb-pin-row" id="fb-pin-row-${p.id}">
+      <span class="fb-pin-badge">${i + 1}</span>
+      <textarea class="form-control" rows="2" placeholder="What should change here?"
+        oninput="setPinNote(${p.id}, this.value)">${fbEsc(p.note)}</textarea>
+      <button class="fb-pin-rm" onclick="removePin(${p.id})" title="Remove pin">&times;</button>
+    </div>`).join('') : '<div class="fb-empty">No pins yet — click the page to add one.</div>';
+  __fbPins.forEach((p, i) => { const m = document.getElementById('fb-pin-' + p.id); if (m) m.textContent = i + 1; });
+  updateSubmit();
+}
+function setPinNote(id, v) { const p = __fbPins.find(x => x.id === id); if (p) p.note = v; updateSubmit(); }
+function removePin(id) {
+  __fbPins = __fbPins.filter(x => x.id !== id);
+  const m = document.getElementById('fb-pin-' + id); if (m) m.remove();
+  renderPinList();
+}
+function updateSubmit() {
+  const b = document.getElementById('fb-submit'); if (!b) return;
+  const n = __fbPins.filter(p => p.note.trim()).length;
+  b.disabled = n === 0; b.textContent = n ? `Submit ${n}` : 'Submit';
+}
+
+// Draw one pin marker onto a copy of the base screenshot so each feedback item
+// points at exactly its own spot.
+function annotatedShot(pin, num) {
+  if (!__fbBase) return null;
+  const c = document.createElement('canvas'); c.width = __fbBase.width; c.height = __fbBase.height;
+  const ctx = c.getContext('2d'); ctx.drawImage(__fbBase, 0, 0);
+  const x = pin.fx * c.width, y = pin.fy * c.height, r = Math.max(14, c.width * 0.014);
+  ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fillStyle = '#e11d48'; ctx.fill();
+  ctx.lineWidth = Math.max(2, r * 0.18); ctx.strokeStyle = '#fff'; ctx.stroke();
+  ctx.fillStyle = '#fff'; ctx.font = `700 ${Math.round(r * 1.15)}px Arial`;
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(String(num), x, y + 1);
+  return c.toDataURL('image/jpeg', 0.72);
+}
+
+function submitPins() {
+  const pins = __fbPins.filter(p => p.note.trim());
+  if (!pins.length) return;
+  const btn = document.getElementById('fb-submit'); btn.disabled = true; btn.textContent = 'Sending…';
+  let sent = 0;
+  const jobs = pins.map((p, i) => apiPost('/project-plan?resource=feedback', {
+    text: p.note.trim(),
+    page_url: location.href.split('#')[0] + `#pin=${Math.round(p.fx * 100)},${Math.round(p.fy * 100)}`,
+    screenshot: annotatedShot(p, i + 1),
+  }).then(r => { if (r && r.ok) sent++; }).catch(() => {}));
+  Promise.all(jobs).then(() => {
+    showToast(sent === pins.length ? `Sent ${sent} feedback pin${sent === 1 ? '' : 's'} — thank you!`
+      : `Sent ${sent} of ${pins.length} — some failed`, sent ? 'success' : 'error');
+    cancelPinFeedback();
+  });
+}
+
+function cancelPinFeedback() {
+  ['fb-overlay', 'fb-panel'].forEach(id => { const e = document.getElementById(id); if (e) e.remove(); });
+  __fbPins = []; __fbBase = null;
+  const fab = document.getElementById('feedback-fab'); if (fab) fab.style.display = '';
 }
 
 /* ── Modal helpers ── */
