@@ -28,10 +28,22 @@ def arg(name, default=None):
 
 
 def db():
-    return pyodbc.connect(
-        'DRIVER={ODBC Driver 17 for SQL Server};SERVER=tcp:74.117.224.152,1433;DATABASE=iRx;'
-        'UID=claudeservices;PWD=' + os.environ['IRX_DB_PWD'] +
-        ';Encrypt=yes;TrustServerCertificate=yes;Connection Timeout=60', autocommit=True)
+    # The shared SQL server is intermittently slow to accept new logins (its C:/ERRORLOG
+    # disk pressure), so a single fresh connect from a job can time out (HYT00) even while
+    # pooled/warm clients are fine. Retry a few times so a transient login timeout doesn't
+    # kill the run.
+    conn = ('DRIVER={ODBC Driver 17 for SQL Server};SERVER=tcp:74.117.224.152,1433;DATABASE=iRx;'
+            'UID=claudeservices;PWD=' + os.environ['IRX_DB_PWD'] +
+            ';Encrypt=yes;TrustServerCertificate=yes;Connection Timeout=30')
+    last = None
+    for attempt in range(6):
+        try:
+            return pyodbc.connect(conn, autocommit=True)
+        except pyodbc.Error as e:
+            last = e
+            print(f"db connect attempt {attempt + 1}/6 failed: {str(e)[:90]}", flush=True)
+            time.sleep(8 * (attempt + 1))
+    raise last
 
 
 INACT_CAP = 500  # max inactivated members listed per file before we summarise the rest
