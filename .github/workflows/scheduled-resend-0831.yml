@@ -2,11 +2,12 @@ name: Scheduled Resend 08/31 Import Emails
 
 # One-shot: resend the 08/31 per-client import emails after the ACS hourly send
 # quota resets. Now that the "skip spam filtering" mail-flow rule is in place, these
-# should reach every internal member's inbox. Cron is pinned to 2026-09-02 15:17 UTC
-# (fires once this year); also runnable on demand. Delete this file after it fires.
+# should reach every internal member's inbox. Timed for 2026-09-02 17:33 UTC
+# (12:33 CDT) — well after the 10am-CT rebrand campaign so the shared ACS hourly
+# send quota has recovered. Fires once this year; also runnable on demand.
 on:
   schedule:
-    - cron: '17 15 2 9 *'
+    - cron: '33 17 2 9 *'
   workflow_dispatch:
 
 permissions:
