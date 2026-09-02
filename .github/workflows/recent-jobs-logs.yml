@@ -1,0 +1,26 @@
+name: Recent Jobs Logs
+
+on:
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  logs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      - name: Query recent tpcrm-jobs console logs
+        run: |
+          az extension add --upgrade --name containerapp -y 2>/dev/null || true
+          az extension add --name log-analytics -y 2>/dev/null || true
+          WS=$(az containerapp env show -n cae-tpcrm-jobs -g rg-tpcrm-prod \
+                --query "properties.appLogsConfiguration.logAnalyticsConfiguration.customerId" -o tsv)
+          Q="ContainerAppConsoleLogs_CL | where TimeGenerated > ago(30m) | where ContainerGroupName_s startswith 'caj-tpcrm-campaign' | project TimeGenerated, Log_s | order by TimeGenerated asc | take 120"
+          az monitor log-analytics query -w "$WS" --analytics-query "$Q" -o tsv 2>&1 | sed 's/\t/  /' | head -120
