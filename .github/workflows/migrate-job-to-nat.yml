@@ -1,0 +1,77 @@
+name: Migrate Job to NAT env
+
+# Recreate a scheduled Container Apps Job in the VNet/NAT environment cae-tpcrm-jobs
+# so it egresses from the static, SQL-allowlisted 104.46.113.57 (the non-NAT env's
+# rotating egress is intermittently blocked by the SQL firewall). Preserves the
+# Schedule trigger/cron, image, env, secrets, and resources. Same name is kept so
+# deploy.yml's deploy-jobs list and other references still work.
+#
+# NOTE: a job cannot be moved in place — it is deleted and re-created. Jobs are
+# stateless (campaign state lives in the DB), so this is safe. Do NOT run within a
+# few minutes of the job's cron (campaign 15:00 UTC Tue-Thu, bookings 11:00 UTC daily).
+on:
+  workflow_dispatch:
+    inputs:
+      job:
+        description: 'job name to migrate (must currently be in cae-tpcrm-prod)'
+        required: true
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  RG: rg-tpcrm-prod
+  TARGET_ENV: cae-tpcrm-jobs
+  ACR: acrtpcrm
+
+jobs:
+  migrate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      - name: Clone job into NAT env
+        run: |
+          set -e
+          az extension add --upgrade --name containerapp -y 2>/dev/null || true
+          pip install pyyaml -q
+          J="${{ inputs.job }}"
+
+          CUR_ENV=$(az containerapp job show -n "$J" -g "$RG" --query "properties.environmentId" -o tsv)
+          echo "current env: $(basename "$CUR_ENV")"
+          case "$CUR_ENV" in
+            */cae-tpcrm-jobs) echo "already in the NAT env; nothing to do"; exit 0;;
+          esac
+          ENVID=$(az containerapp env show -n "$TARGET_ENV" -g "$RG" --query id -o tsv)
+
+          az containerapp job show -n "$J" -g "$RG" -o json > src.json
+
+          echo '[]' > secrets.json
+          for S in $(az containerapp job show -n "$J" -g "$RG" --query "properties.configuration.secrets[].name" -o tsv); do
+            SECVAL=$(az containerapp job secret show -n "$J" -g "$RG" --secret-name "$S" --query value -o tsv)
+            SN="$S" SECVAL="$SECVAL" python3 -c "import os,json;d=json.load(open('secrets.json'));d.append({'name':os.environ['SN'],'value':os.environ['SECVAL']});json.dump(d,open('secrets.json','w'))"
+          done
+          echo "collected $(python3 -c 'import json;print(len(json.load(open("secrets.json"))))') secret values"
+
+          az acr update -n "$ACR" --admin-enabled true -o none
+          ACR_USER=$(az acr credential show -n "$ACR" --query username -o tsv)
+          ACR_PW=$(az acr credential show -n "$ACR" --query "passwords[0].value" -o tsv)
+
+          python3 scripts/migrate/clone_job_yaml.py "$ENVID" "$ACR_USER" "$ACR_PW" src.json secrets.json new.yaml
+
+          echo "=== target config (secrets redacted) ==="
+          python3 -c "import yaml;d=yaml.safe_load(open('new.yaml'));d['properties']['configuration']['secrets']=[{'name':s['name'],'value':'***'} for s in d['properties']['configuration']['secrets']];print(yaml.safe_dump(d,sort_keys=False))"
+
+          echo "=== deleting old job $J ==="
+          az containerapp job delete -n "$J" -g "$RG" --yes -o none
+          echo "=== creating $J in $TARGET_ENV ==="
+          az containerapp job create -n "$J" -g "$RG" --yaml new.yaml -o none
+          rm -f new.yaml src.json secrets.json
+
+          echo "=== verify ==="
+          az containerapp job show -n "$J" -g "$RG" --query "{env:properties.environmentId, trigger:properties.configuration.triggerType, cron:properties.configuration.scheduleTriggerConfig.cronExpression, image:properties.template.containers[0].image}" -o jsonc
