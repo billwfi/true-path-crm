@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Master Order Report — True Path CRM</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+  <link rel="stylesheet" href="/assets/css/app.css">
+</head>
+<body class="bg-slate-100 text-slate-700">
+<div id="app" class="flex h-screen overflow-hidden">
+  <div id="nav-placeholder"></div>
+  <div class="flex-1 flex flex-col overflow-hidden">
+    <div id="topbar"></div>
+    <main class="flex-1 overflow-y-auto p-6">
+
+      <div class="flex items-center mb-3">
+        <span class="text-lg font-semibold">Master Order Report</span>
+        <span class="ml-2 text-sm text-slate-400">Per-order billing report for a Friday–Thursday period · from Unifeyed</span>
+        <div class="ml-auto flex items-center gap-2">
+          <button class="btn btn-outline" id="btn-detail" onclick="setMode('detail')">Detail</button>
+          <button class="btn btn-outline" id="btn-rollup" onclick="setMode('rollup')">Weekly rollup</button>
+          <button class="btn btn-primary" onclick="exportXlsx()"><i class="fa-solid fa-file-excel"></i> Export to XLSX</button>
+        </div>
+      </div>
+
+      <div class="search-bar flex-wrap gap-2 mb-4">
+        <label class="text-sm text-slate-500">From</label>
+        <input type="date" id="f-from" class="form-control" style="max-width:160px">
+        <label class="text-sm text-slate-500">to</label>
+        <input type="date" id="f-to" class="form-control" style="max-width:160px">
+        <button class="btn btn-outline btn-sm" onclick="thisWeek()" title="Most recent Fri–Thu week">This week</button>
+        <select id="f-company" class="form-control" style="max-width:200px" onchange="reload()"><option value="">All companies</option></select>
+        <select id="f-broker" class="form-control" style="max-width:170px" onchange="reload()"><option value="">All brokers</option></select>
+        <select id="f-status" class="form-control" style="max-width:150px" onchange="reload()"><option value="">All statuses</option></select>
+        <input type="text" id="f-search" class="form-control" style="max-width:220px" placeholder="Patient, order #, drug…" oninput="debounced()">
+        <button class="btn btn-primary" onclick="reload()"><i class="fa-solid fa-filter"></i> Apply</button>
+        <span class="text-sm text-slate-500 ml-auto" id="meta"></span>
+      </div>
+
+      <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
+        <div class="card"><div class="card-body p-4"><div class="text-xs uppercase tracking-wide text-slate-400">Orders</div><div class="text-2xl font-semibold" id="s-orders">—</div></div></div>
+        <div class="card"><div class="card-body p-4"><div class="text-xs uppercase tracking-wide text-slate-400">Subtotal</div><div class="text-2xl font-semibold" id="s-subtotal">—</div></div></div>
+        <div class="card"><div class="card-body p-4"><div class="text-xs uppercase tracking-wide text-slate-400">Total Cost</div><div class="text-2xl font-semibold" id="s-totalcost">—</div></div></div>
+        <div class="card"><div class="card-body p-4"><div class="text-xs uppercase tracking-wide text-slate-400">Companies</div><div class="text-2xl font-semibold" id="s-companies">—</div></div></div>
+      </div>
+
+      <div class="card">
+        <div class="card-body">
+          <div id="empty" class="text-center py-10 text-slate-400" style="display:none"></div>
+          <div id="table-wrap" style="overflow-x:auto">
+            <table class="data-table" id="tbl" style="min-width:1200px"><thead id="thead"></thead><tbody id="tbody"></tbody></table>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+</div>
+
+<script src="/assets/js/app.js"></script>
+<script>
+  initNav('invoices');
+  // Exact column order/names of the old-CRM Master Order Report.
+  const COLS = ["Order Status","Week","Broker ID","Company Name","Company ID","Member ID#","First Name","Last Name",
+    "Date of Birth","Medication Name","Strength","Unit","Reporting Quantity","Day Supply","Order Number","Order Date",
+    "Shipping Amount","Unit Cost","Unit Price","Subtotal","Cost of Goods Sold (COGS)","Total Cost","Plan Paid","Ship Date",
+    "Tracking Number","Date Delivered","Notes","Rebate Amount","Rebate Total","Refill Date","Is Paid","Replacement",
+    "IRX Paid","Client Paid","Vendor Paid"];
+  const num = v => (v == null || v === '') ? 0 : Number(String(v).replace(/[$,]/g, '')) || 0;
+  const money = v => '$' + num(v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  let mode = 'detail', rows = [], filtersLoaded = false, deb;
+  function val(id) { return document.getElementById(id).value; }
+  function debounced() { clearTimeout(deb); deb = setTimeout(reload, 400); }
+
+  function baseQs() {
+    const p = new URLSearchParams();
+    p.set('from', val('f-from')); p.set('to', val('f-to'));
+    if (val('f-company')) p.set('company', val('f-company'));
+    if (val('f-broker')) p.set('broker', val('f-broker'));
+    if (val('f-status')) p.set('status', val('f-status'));
+    if (val('f-search')) p.set('search', val('f-search'));
+    return p;
+  }
+
+  function setMode(m) {
+    mode = m;
+    document.getElementById('btn-detail').className = 'btn ' + (m === 'detail' ? 'btn-primary' : 'btn-outline');
+    document.getElementById('btn-rollup').className = 'btn ' + (m === 'rollup' ? 'btn-primary' : 'btn-outline');
+    reload();
+  }
+
+  async function loadFilters() {
+    if (filtersLoaded) return;
+    const p = new URLSearchParams(); p.set('resource', 'filters'); p.set('from', val('f-from')); p.set('to', val('f-to'));
+    const d = await apiGet('/master-order-report?' + p.toString()).catch(() => null);
+    if (!d) return;
+    filtersLoaded = true;
+    document.getElementById('f-company').innerHTML = '<option value="">All companies</option>' +
+      (d.companies || []).map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('');
+    document.getElementById('f-broker').innerHTML = '<option value="">All brokers</option>' +
+      (d.brokers || []).map(b => `<option value="${b.id}">${esc(b.name)} (${b.id})</option>`).join('');
+    document.getElementById('f-status').innerHTML = '<option value="">All statuses</option>' +
+      (d.statuses || []).map(s => `<option value="${esc(s)}">${esc(s)}</option>`).join('');
+  }
+
+  async function reload() {
+    await loadFilters();
+    const p = baseQs();
+    if (mode === 'rollup') p.set('rollup', '1');
+    const d = await apiGet('/master-order-report?' + p.toString());
+    if (!d) { showToast('Failed to load report', 'error'); return; }
+    rows = d.rows || [];
+    mode === 'rollup' ? renderRollup() : renderDetail(d);
+  }
+
+  function renderDetail(d) {
+    document.getElementById('thead').innerHTML = '<tr>' + COLS.map(c => `<th class="whitespace-nowrap">${c}</th>`).join('') + '</tr>';
+    const moneyCols = new Set(['Shipping Amount','Unit Cost','Unit Price','Subtotal','Cost of Goods Sold (COGS)','Total Cost','Plan Paid','Rebate Amount','Rebate Total','IRX Paid','Client Paid','Vendor Paid']);
+    document.getElementById('tbody').innerHTML = rows.map(r => '<tr>' + COLS.map(c => {
+      let v = r[c]; if (v == null) v = '';
+      const cell = moneyCols.has(c) && v !== '' ? money(v) : esc(String(v));
+      return `<td class="text-xs whitespace-nowrap${moneyCols.has(c) ? ' text-right' : ''}">${cell || '—'}</td>`;
+    }).join('') + '</tr>').join('');
+    const subtotal = rows.reduce((s, r) => s + num(r['Subtotal']), 0);
+    const totalcost = rows.reduce((s, r) => s + num(r['Total Cost']), 0);
+    const companies = new Set(rows.map(r => r['Company Name'])).size;
+    tiles(rows.length, subtotal, totalcost, companies, d.capped);
+    toggleEmpty(rows.length, 'No orders in this period.');
+  }
+
+  function renderRollup() {
+    const H = ['Company Name','Company ID','Broker ID','Orders','Subtotal','COGS','Total Cost','Plan Paid'];
+    document.getElementById('thead').innerHTML = '<tr>' + H.map((c, i) => `<th class="${i > 2 ? 'text-right' : ''}">${c}</th>`).join('') + '</tr>';
+    document.getElementById('tbody').innerHTML = rows.map(r => `<tr>
+      <td class="font-medium">${esc(r.company) || '—'}</td>
+      <td class="text-xs">${esc(r.company_id) || '—'}</td>
+      <td class="text-xs">${esc(r.broker_id) || '—'}</td>
+      <td class="text-right">${(r.orders || 0).toLocaleString()}</td>
+      <td class="text-right">${money(r.subtotal)}</td>
+      <td class="text-right">${money(r.cogs)}</td>
+      <td class="text-right">${money(r.total_cost)}</td>
+      <td class="text-right">${money(r.plan_paid)}</td></tr>`).join('');
+    const orders = rows.reduce((s, r) => s + (r.orders || 0), 0);
+    const subtotal = rows.reduce((s, r) => s + num(r.subtotal), 0);
+    const totalcost = rows.reduce((s, r) => s + num(r.total_cost), 0);
+    tiles(orders, subtotal, totalcost, rows.length, false);
+    toggleEmpty(rows.length, 'No orders in this period.');
+  }
+
+  function tiles(orders, subtotal, totalcost, companies, capped) {
+    document.getElementById('s-orders').textContent = orders.toLocaleString();
+    document.getElementById('s-subtotal').textContent = money(subtotal);
+    document.getElementById('s-totalcost').textContent = money(totalcost);
+    document.getElementById('s-companies').textContent = companies.toLocaleString();
+    document.getElementById('meta').textContent = (mode === 'rollup' ? 'weekly rollup · ' : '') +
+      `${orders.toLocaleString()} order${orders === 1 ? '' : 's'}` + (capped ? ' (capped at 10,000)' : '');
+  }
+  function toggleEmpty(n, msg) {
+    document.getElementById('empty').style.display = n ? 'none' : '';
+    document.getElementById('empty').textContent = msg;
+    document.getElementById('table-wrap').style.display = n ? '' : 'none';
+  }
+
+  // Export matching the old-CRM layout: title row, header row, then data.
+  function exportXlsx() {
+    if (!rows.length) { showToast('Nothing to export', 'error'); return; }
+    const from = val('f-from'), to = val('f-to');
+    let aoa, sheetName;
+    if (mode === 'rollup') {
+      sheetName = 'Weekly Rollup';
+      aoa = [[`Master Order Report (Weekly Rollup) - ${from} - ${to}`],
+        ['Company Name','Company ID','Broker ID','Orders','Subtotal','COGS','Total Cost','Plan Paid'],
+        ...rows.map(r => [r.company || '', r.company_id || '', r.broker_id || '', r.orders || 0,
+          num(r.subtotal), num(r.cogs), num(r.total_cost), num(r.plan_paid)])];
+    } else {
+      sheetName = 'Master Order Report';
+      const moneyCols = new Set(['Shipping Amount','Unit Cost','Unit Price','Subtotal','Cost of Goods Sold (COGS)','Total Cost','Plan Paid','Rebate Amount','Rebate Total','IRX Paid','Client Paid','Vendor Paid']);
+      aoa = [[`Master Order Report - ${from} - ${to}`], COLS,
+        ...rows.map(r => COLS.map(c => moneyCols.has(c) ? num(r[c]) : (r[c] == null ? '' : r[c])))];
+    }
+    const ws = XLSX.utils.aoa_to_sheet(aoa);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, sheetName);
+    const stamp = (from || '').replace(/-/g, '') + ' - ' + (to || '').replace(/-/g, '');
+    XLSX.writeFile(wb, `Master Order Report - ${stamp}.xlsx`);
+  }
+
+  // Default range: the most recent Friday–Thursday week that has data.
+  function fridayThursday(end) {
+    const d = new Date(end + 'T00:00:00');
+    const dow = d.getDay();               // 0 Sun … 6 Sat
+    const backToThu = (dow - 4 + 7) % 7;   // most recent Thursday on/before end
+    const thu = new Date(d); thu.setDate(d.getDate() - backToThu);
+    const fri = new Date(thu); fri.setDate(thu.getDate() - 6);
+    const f = x => x.toISOString().slice(0, 10);
+    return { from: f(fri), to: f(thu) };
+  }
+  function thisWeek() {
+    const to = val('f-to') || new Date().toISOString().slice(0, 10);
+    const w = fridayThursday(to);
+    document.getElementById('f-from').value = w.from; document.getElementById('f-to').value = w.to;
+    filtersLoaded = false; reload();
+  }
+
+  (async function init() {
+    const d = await apiGet('/master-order-report?latest=1').catch(() => null);
+    const latest = (d && d.latest) ? String(d.latest).slice(0, 10) : new Date().toISOString().slice(0, 10);
+    const w = fridayThursday(latest);
+    document.getElementById('f-from').value = w.from;
+    document.getElementById('f-to').value = w.to;
+    setMode('detail');
+  })();
+</script>
+</body>
+</html>
