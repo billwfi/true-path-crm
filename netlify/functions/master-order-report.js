@@ -55,6 +55,38 @@ exports.handler = async function (event) {
       return ok({ companies: companies.recordset, brokers: brokers.recordset, statuses: statuses.recordset.map(s => s.status) });
     }
 
+    // Client-scoped orders summary for the client-record Reporting tab. Ties to the
+    // client via its Unifeyed company id (tp_clients.uf_company_id = tblclients.company_id).
+    if (q.resource === 'client-report') {
+      if (!q.from || !q.to || !q.company) return badRequest('from, to, company (uf_company_id) required');
+      const { where, params } = whereClause({ from: q.from, to: q.to, company: q.company });
+      const [summary, topDrugs, byStatus, byWeek] = await Promise.all([
+        mssql(`SELECT COUNT(*) AS orders,
+                 COUNT(DISTINCT t.customer_id) AS members,
+                 SUM(TRY_CONVERT(decimal(18,2), t.amount))           AS subtotal,
+                 SUM(TRY_CONVERT(decimal(18,2), t.transaction_cost)) AS cogs,
+                 SUM(TRY_CONVERT(decimal(18,2), t.total_cost))       AS total_cost,
+                 SUM(TRY_CONVERT(decimal(18,2), t.amount))           AS plan_paid
+               ${JOINS} WHERE ${where}`, params),
+        mssql(`SELECT TOP 12 COALESCE(pr.label, prd.label) AS drug, COUNT(*) AS orders,
+                 SUM(TRY_CONVERT(decimal(18,2), t.amount)) AS spend
+               ${JOINS} WHERE ${where} AND COALESCE(pr.label, prd.label) IS NOT NULL
+               GROUP BY COALESCE(pr.label, prd.label) ORDER BY spend DESC`, params),
+        mssql(`SELECT t.order_status AS status, COUNT(*) AS orders,
+                 SUM(TRY_CONVERT(decimal(18,2), t.amount)) AS spend
+               ${JOINS} WHERE ${where}
+               GROUP BY t.order_status ORDER BY orders DESC`, params),
+        mssql(`SELECT 'W' + CAST(DATEPART(iso_week, ${D}) AS varchar(2)) + 'Y' + RIGHT(CAST(YEAR(${D}) AS varchar(4)),2) AS wk,
+                 MIN(${D}) AS wk_start, COUNT(*) AS orders,
+                 SUM(TRY_CONVERT(decimal(18,2), t.amount)) AS spend
+               ${JOINS} WHERE ${where}
+               GROUP BY 'W' + CAST(DATEPART(iso_week, ${D}) AS varchar(2)) + 'Y' + RIGHT(CAST(YEAR(${D}) AS varchar(4)),2)
+               ORDER BY wk_start`, params),
+      ]);
+      return ok({ summary: summary.recordset[0], topDrugs: topDrugs.recordset,
+                  byStatus: byStatus.recordset, byWeek: byWeek.recordset });
+    }
+
     if (!q.from || !q.to) return badRequest('from and to (YYYY-MM-DD) required');
     const { where, params } = whereClause(q);
 

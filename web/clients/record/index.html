@@ -229,6 +229,22 @@
                 <tbody id="rp-pharm-body"></tbody></table></div></div>
           </div>
         </div>
+        <!-- Orders / Transactions (from Unifeyed order data, tied by uf_company_id) -->
+        <div id="rp-orders" style="display:none">
+          <div class="flex items-center mt-2 mb-3"><span class="text-base font-semibold text-slate-700">Orders &amp; Transactions</span>
+            <span class="ml-2 text-xs text-slate-400">from Unifeyed order data (by order date)</span></div>
+          <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 mb-4" id="rp-order-cards"></div>
+          <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <div class="card"><div class="card-header"><span class="card-title">Top Drugs by Spend</span></div>
+              <div class="card-body"><table class="data-table">
+                <thead><tr><th>Drug</th><th class="text-right">Orders</th><th class="text-right">Spend</th></tr></thead>
+                <tbody id="rp-order-drug-body"></tbody></table></div></div>
+            <div class="card"><div class="card-header"><span class="card-title">Orders by Status</span></div>
+              <div class="card-body"><table class="data-table">
+                <thead><tr><th>Status</th><th class="text-right">Orders</th><th class="text-right">Spend</th></tr></thead>
+                <tbody id="rp-order-status-body"></tbody></table></div></div>
+          </div>
+        </div>
       </div>
 
       <!-- Invoices panel (generated from completed WellSync transactions, priced by GLP1 benefit rates) -->
@@ -1034,40 +1050,65 @@
   }
 
   async function loadReporting() {
-    const empty = document.getElementById('rp-empty');
-    const result = document.getElementById('rp-result');
-    if (!clientIrxId) {
-      reportingLoaded = true; result.style.display = 'none';
-      empty.style.display = ''; empty.textContent = 'Set the iRx Client ID (CARRIER) on the Demographics tab to view reporting.';
-      return;
-    }
-    const from = document.getElementById('rp-from').value, to = document.getElementById('rp-to').value;
-    const data = await apiGet(`/claims?report=1&carrier=${encodeURIComponent(clientIrxId)}&from=${from}&to=${to}`);
     reportingLoaded = true;
-    if (!data) { showToast('Failed to load reporting', 'error'); return; }
-    const s = data.summary || {};
-    if (!s.claim_count) {
-      result.style.display = 'none'; empty.style.display = '';
-      empty.textContent = 'No claims for this CARRIER in the selected period.';
-      return;
+    const empty = document.getElementById('rp-empty');
+    const claims = document.getElementById('rp-result');
+    const orders = document.getElementById('rp-orders');
+    const from = document.getElementById('rp-from').value, to = document.getElementById('rp-to').value;
+    let any = false;
+
+    // ── Claims (keyed on CARRIER = irx_client_id) ──
+    if (clientIrxId) {
+      const data = await apiGet(`/claims?report=1&carrier=${encodeURIComponent(clientIrxId)}&from=${from}&to=${to}`);
+      const s = (data && data.summary) || {};
+      if (data && s.claim_count) {
+        claims.style.display = ''; any = true;
+        document.getElementById('rp-cards').innerHTML =
+          claimCard('Claims', clNum(s.claim_count)) + claimCard('Members', clNum(s.members)) +
+          claimCard('Plan Paid', fmtCurrency(s.plan_paid || 0)) + claimCard('Gross Cost', fmtCurrency(s.gross_cost || 0)) +
+          claimCard('Copay', fmtCurrency(s.copay || 0)) +
+          claimCard('Avg Days Supply', s.avg_days_supply == null ? '—' : Number(s.avg_days_supply).toFixed(1));
+        renderReportCharts(data);
+        document.getElementById('rp-drug-body').innerHTML = (data.topDrugs || []).map(r => `<tr>
+          <td class="font-medium">${esc(r.drug) || '—'}</td><td class="text-right">${clNum(r.claim_count)}</td>
+          <td class="text-right">${r.plan_paid == null ? '—' : fmtCurrency(r.plan_paid)}</td></tr>`).join('')
+          || '<tr><td colspan="3" class="text-center py-6 text-slate-400">No data</td></tr>';
+        document.getElementById('rp-pharm-body').innerHTML = (data.topPharmacies || []).map(r => `<tr>
+          <td class="font-medium">${esc(r.pharmacy) || '—'}</td><td class="text-right">${clNum(r.claim_count)}</td>
+          <td class="text-right">${r.plan_paid == null ? '—' : fmtCurrency(r.plan_paid)}</td></tr>`).join('')
+          || '<tr><td colspan="3" class="text-center py-6 text-slate-400">No data</td></tr>';
+      } else { claims.style.display = 'none'; }
+    } else { claims.style.display = 'none'; }
+
+    // ── Orders / Transactions (keyed on uf_company_id) ──
+    if (clientUfCompanyId) {
+      const od = await apiGet(`/master-order-report?resource=client-report&company=${encodeURIComponent(clientUfCompanyId)}&from=${from}&to=${to}`);
+      const os = (od && od.summary) || {};
+      if (od && os.orders) {
+        orders.style.display = ''; any = true;
+        document.getElementById('rp-order-cards').innerHTML =
+          claimCard('Orders', clNum(os.orders)) + claimCard('Members', clNum(os.members)) +
+          claimCard('Subtotal', fmtCurrency(os.subtotal || 0)) + claimCard('COGS', fmtCurrency(os.cogs || 0)) +
+          claimCard('Total Cost', fmtCurrency(os.total_cost || 0)) + claimCard('Plan Paid', fmtCurrency(os.plan_paid || 0));
+        document.getElementById('rp-order-drug-body').innerHTML = (od.topDrugs || []).map(r => `<tr>
+          <td class="font-medium">${esc(r.drug) || '—'}</td><td class="text-right">${clNum(r.orders)}</td>
+          <td class="text-right">${fmtCurrency(r.spend || 0)}</td></tr>`).join('')
+          || '<tr><td colspan="3" class="text-center py-6 text-slate-400">No data</td></tr>';
+        document.getElementById('rp-order-status-body').innerHTML = (od.byStatus || []).map(r => `<tr>
+          <td class="font-medium">${esc(r.status) || '—'}</td><td class="text-right">${clNum(r.orders)}</td>
+          <td class="text-right">${fmtCurrency(r.spend || 0)}</td></tr>`).join('')
+          || '<tr><td colspan="3" class="text-center py-6 text-slate-400">No data</td></tr>';
+      } else { orders.style.display = 'none'; }
+    } else { orders.style.display = 'none'; }
+
+    // ── Empty state ──
+    if (any) { empty.style.display = 'none'; }
+    else {
+      claims.style.display = 'none'; orders.style.display = 'none'; empty.style.display = '';
+      empty.textContent = (!clientIrxId && !clientUfCompanyId)
+        ? 'Link this client to claims (set the iRx Client ID / CARRIER on Demographics) or to Unifeyed orders (uf_company_id) to view reporting.'
+        : 'No claims or orders for this client in the selected period.';
     }
-    empty.style.display = 'none'; result.style.display = '';
-    document.getElementById('rp-cards').innerHTML =
-      claimCard('Claims', clNum(s.claim_count)) +
-      claimCard('Members', clNum(s.members)) +
-      claimCard('Plan Paid', fmtCurrency(s.plan_paid || 0)) +
-      claimCard('Gross Cost', fmtCurrency(s.gross_cost || 0)) +
-      claimCard('Copay', fmtCurrency(s.copay || 0)) +
-      claimCard('Avg Days Supply', s.avg_days_supply == null ? '—' : Number(s.avg_days_supply).toFixed(1));
-    renderReportCharts(data);
-    document.getElementById('rp-drug-body').innerHTML = (data.topDrugs || []).map(r => `<tr>
-      <td class="font-medium">${esc(r.drug) || '—'}</td><td class="text-right">${clNum(r.claim_count)}</td>
-      <td class="text-right">${r.plan_paid == null ? '—' : fmtCurrency(r.plan_paid)}</td></tr>`).join('')
-      || '<tr><td colspan="3" class="text-center py-6 text-slate-400">No data</td></tr>';
-    document.getElementById('rp-pharm-body').innerHTML = (data.topPharmacies || []).map(r => `<tr>
-      <td class="font-medium">${esc(r.pharmacy) || '—'}</td><td class="text-right">${clNum(r.claim_count)}</td>
-      <td class="text-right">${r.plan_paid == null ? '—' : fmtCurrency(r.plan_paid)}</td></tr>`).join('')
-      || '<tr><td colspan="3" class="text-center py-6 text-slate-400">No data</td></tr>';
   }
 
   /* ── Invoices ── */
