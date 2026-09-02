@@ -7,7 +7,7 @@ exports.handler = async function (event) {
   if (event.httpMethod === 'OPTIONS') return options();
   if (!verifyToken(event)) return unauthorized();
 
-  const { id, search } = event.queryStringParameters || {};
+  const { id, search, broker, pbm } = event.queryStringParameters || {};
 
   try {
     if (event.httpMethod === 'GET') {
@@ -24,13 +24,19 @@ exports.handler = async function (event) {
       }
       const r = await mssql(
         `SELECT c.id, c.name, c.email, c.phone, c.city, c.state, c.active, c.groups,
-                c.irx_client_id, c.created_at, b.name AS broker, b.id AS broker_id
+                c.irx_client_id, c.created_at, b.name AS broker, b.id AS broker_id,
+                p.name AS pbm, p.id AS pbm_id
          FROM tp_clients c
          LEFT JOIN tp_brokers b ON b.id = c.broker_id
+         LEFT JOIN tp_pbms p ON p.id = c.pbm_id
          WHERE (@search IS NULL OR c.name LIKE @search OR c.email LIKE @search
                 OR c.irx_client_id LIKE @search OR c.city LIKE @search)
+           AND (@broker IS NULL OR c.broker_id = @broker)
+           AND (@pbm IS NULL OR c.pbm_id = @pbm)
          ORDER BY c.name`,
-        { search: search ? `%${search}%` : null });
+        { search: search ? `%${search}%` : null,
+          broker: broker ? parseInt(broker, 10) : null,
+          pbm: pbm ? parseInt(pbm, 10) : null });
       return ok(r.recordset);
     }
 

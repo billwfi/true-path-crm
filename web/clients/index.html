@@ -15,9 +15,16 @@
     <div id="topbar"></div>
     <main class="flex-1 overflow-y-auto p-6">
 
-      <div class="search-bar">
-        <input type="text" id="search" class="form-control" placeholder="Search clients…" oninput="debounceLoad()">
-        <div class="flex items-center gap-2">
+      <div class="search-bar flex-wrap gap-2">
+        <input type="text" id="search" class="form-control" style="max-width:260px" placeholder="Search clients…" oninput="debounceLoad()">
+        <select id="f-broker" class="form-control" style="max-width:190px" onchange="load()">
+          <option value="">All brokers</option>
+        </select>
+        <select id="f-pbm" class="form-control" style="max-width:190px" onchange="load()">
+          <option value="">All PBMs</option>
+        </select>
+        <span class="text-sm text-slate-500" id="clients-count"></span>
+        <div class="flex items-center gap-2 ml-auto">
           <button class="btn btn-outline" onclick="exportClients()"><i class="fa-solid fa-file-excel"></i> Export to XLSX</button>
           <a class="btn btn-primary" href="/clients/record/"><i class="fa-solid fa-plus"></i> New Client</a>
         </div>
@@ -26,7 +33,7 @@
       <div class="card">
         <div class="card-body">
           <table class="data-table">
-            <thead><tr><th>#</th><th>Client Name</th><th>iRx Client ID</th><th>Email</th><th>Phone</th><th>Broker</th><th>Active</th><th>Created</th><th></th></tr></thead>
+            <thead><tr><th>#</th><th>Client Name</th><th>iRx Client ID</th><th>Email</th><th>Phone</th><th>Broker</th><th>PBM</th><th>Active</th><th>Created</th><th></th></tr></thead>
             <tbody id="tbl-body"></tbody>
           </table>
         </div>
@@ -43,12 +50,32 @@
   function openClient(id) { location.href = `/clients/record/?id=${id}`; }
 
   let clientsCache = [];
+  let filtersLoaded = false;
+
+  // Populate the Broker / PBM filter dropdowns once (from the same sources the
+  // client record uses). Lets AMT split the list, e.g. "all Compass/Liviniti clients".
+  async function populateFilters() {
+    if (filtersLoaded) return;
+    filtersLoaded = true;
+    const [brokers, pbms] = await Promise.all([apiGet('/brokers').catch(() => []), apiGet('/pbms').catch(() => [])]);
+    const bsel = document.getElementById('f-broker'), psel = document.getElementById('f-pbm');
+    bsel.innerHTML = '<option value="">All brokers</option>' +
+      (brokers || []).map(b => `<option value="${b.id}">${esc(b.name)}</option>`).join('');
+    psel.innerHTML = '<option value="">All PBMs</option>' +
+      (pbms || []).map(p => `<option value="${p.id}">${esc(p.name)}</option>`).join('');
+  }
 
   async function load() {
+    await populateFilters();
     const search = document.getElementById('search').value;
-    const data = await apiGet(`/clients${search ? '?search=' + encodeURIComponent(search) : ''}`);
+    const broker = document.getElementById('f-broker').value;
+    const pbm = document.getElementById('f-pbm').value;
+    const qs = [search && 'search=' + encodeURIComponent(search), broker && 'broker=' + broker, pbm && 'pbm=' + pbm]
+      .filter(Boolean).join('&');
+    const data = await apiGet(`/clients${qs ? '?' + qs : ''}`);
     if (!data) return;
     clientsCache = data;
+    document.getElementById('clients-count').textContent = `${data.length} client${data.length === 1 ? '' : 's'}`;
     document.getElementById('tbl-body').innerHTML = data.length
       ? data.map(c => `<tr class="clickable" onclick="openClient(${c.id})">
           <td class="text-slate-400 font-mono text-xs">#${c.id}</td>
@@ -57,24 +84,25 @@
           <td>${esc(c.email) || '—'}</td>
           <td>${esc(c.phone) || '—'}</td>
           <td>${esc(c.broker) || '—'}</td>
+          <td>${esc(c.pbm) || '—'}</td>
           <td>${c.active ? '<span class="badge badge-green">Active</span>' : '<span class="badge badge-gray">Inactive</span>'}</td>
           <td class="text-xs text-slate-400">${fmtDate(c.created_at)}</td>
           <td><button class="btn btn-outline btn-sm" onclick="event.stopPropagation();openClient(${c.id})"><i class="fa-solid fa-folder-open"></i> Open</button></td>
         </tr>`).join('')
-      : '<tr><td colspan="9" class="text-center py-10 text-slate-400">No clients found</td></tr>';
+      : '<tr><td colspan="10" class="text-center py-10 text-slate-400">No clients found</td></tr>';
   }
 
   // Export the currently-shown (filtered) clients to an .xlsx workbook.
   function exportClients() {
     const rows = clientsCache || [];
     if (!rows.length) { showToast('Nothing to export', 'error'); return; }
-    const header = ['#', 'Client Name', 'iRx Client ID', 'Email', 'Phone', 'Broker', 'Active', 'Created'];
+    const header = ['#', 'Client Name', 'iRx Client ID', 'Email', 'Phone', 'Broker', 'PBM', 'Active', 'Created'];
     const body = rows.map(c => [
       c.id, c.name || '', c.irx_client_id || '', c.email || '', c.phone || '',
-      c.broker || '', c.active ? 'Active' : 'Inactive', fmtDate(c.created_at),
+      c.broker || '', c.pbm || '', c.active ? 'Active' : 'Inactive', fmtDate(c.created_at),
     ]);
     const ws = XLSX.utils.aoa_to_sheet([header, ...body]);
-    ws['!cols'] = [{wch:6},{wch:30},{wch:14},{wch:26},{wch:16},{wch:16},{wch:9},{wch:12}];
+    ws['!cols'] = [{wch:6},{wch:30},{wch:14},{wch:26},{wch:16},{wch:16},{wch:16},{wch:9},{wch:12}];
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Clients');
     XLSX.writeFile(wb, `clients-${new Date().toISOString().slice(0, 10)}.xlsx`);
