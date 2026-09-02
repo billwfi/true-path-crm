@@ -18,6 +18,7 @@ Usage:
 """
 import os
 import sys
+import time
 import pyodbc
 from datetime import date, datetime, timedelta
 
@@ -201,15 +202,34 @@ def send(client, items, d, to, dry):
     if not cs:
         print(f"no ACS_CONNECTION_STRING; cannot send for {client}"); return False
     from azure.communication.email import EmailClient
+    from azure.core.exceptions import HttpResponseError
     frm = os.environ.get('EMAIL_FROM', 'noreply@truepathsourcing.com')
-    client_acs = EmailClient.from_connection_string(cs)
-    poller = client_acs.begin_send({
+    # retry_total=0 so an ACS 429 (PerSubscriptionPerHour send limit — shared with the
+    # marketing campaign job) surfaces immediately instead of azure-core silently
+    # sleeping on a ~1h Retry-After. These are OPERATIONAL emails, so unlike the
+    # campaign (which defers on 429) we ride the throttle out and retry.
+    client_acs = EmailClient.from_connection_string(cs, retry_total=0)
+    payload = {
         'senderAddress': frm,
         'content': {'subject': subject, 'html': client_html(client, items, d)},
-        'recipients': {'to': [{'address': to}]}})
-    status = poller.result().get('status')
-    print(f"email: {status} -> {to} ({client})")
-    return status == 'Succeeded'
+        'recipients': {'to': [{'address': to}]}}
+    tries = int(os.environ.get('IMPORT_EMAIL_MAX_TRIES', '8'))
+    for attempt in range(tries):
+        try:
+            status = client_acs.begin_send(payload).result().get('status')
+            print(f"email: {status} -> {to} ({client})")
+            return status == 'Succeeded'
+        except HttpResponseError as e:
+            throttled = getattr(e, 'status_code', None) == 429
+            if throttled and attempt < tries - 1:
+                hdrs = getattr(getattr(e, 'response', None), 'headers', {}) or {}
+                wait = int(hdrs.get('Retry-After') or hdrs.get('retry-after') or 60)
+                wait = max(30, min(wait, 90))  # cap so one client can't block the job ~1h
+                print(f"email: 429 throttled -> {to} ({client}); retry {attempt+1}/{tries} in {wait}s")
+                time.sleep(wait)
+                continue
+            print(f"email: FAILED -> {to} ({client}): {str(e)[:140]}")
+            return False
 
 
 def main():
