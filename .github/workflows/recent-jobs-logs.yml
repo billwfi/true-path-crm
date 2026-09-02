@@ -16,11 +16,18 @@ jobs:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
-      - name: Query recent tpcrm-jobs console logs
+      - name: Execution detail + broad logs
         run: |
           az extension add --upgrade --name containerapp -y 2>/dev/null || true
           az extension add --name log-analytics -y 2>/dev/null || true
+          echo "=== latest caj-tpcrm-campaign executions ==="
+          az containerapp job execution list -n caj-tpcrm-campaign -g rg-tpcrm-prod \
+            --query "reverse(sort_by([].{name:name,status:properties.status,start:properties.startTime}, &start))[:3]" -o jsonc || true
           WS=$(az containerapp env show -n cae-tpcrm-jobs -g rg-tpcrm-prod \
                 --query "properties.appLogsConfiguration.logAnalyticsConfiguration.customerId" -o tsv)
-          Q="ContainerAppConsoleLogs_CL | where TimeGenerated > ago(30m) | where ContainerGroupName_s startswith 'caj-tpcrm-campaign' | project TimeGenerated, Log_s | order by TimeGenerated asc | take 120"
-          az monitor log-analytics query -w "$WS" --analytics-query "$Q" -o tsv 2>&1 | sed 's/\t/  /' | head -120
+          echo "=== ALL console logs last 40m (name + line) ==="
+          Q="ContainerAppConsoleLogs_CL | where TimeGenerated > ago(40m) | where ContainerGroupName_s contains 'campaign' or ContainerImageName_s contains 'tpcrm-jobs' | project TimeGenerated, ContainerGroupName_s, Log_s | order by TimeGenerated asc | take 150"
+          az monitor log-analytics query -w "$WS" --analytics-query "$Q" -o tsv 2>&1 | sed 's/\t/ | /' | cut -c1-220 | head -150
+          echo "=== system logs (startup/pull failures) last 40m ==="
+          Q2="ContainerAppSystemLogs_CL | where TimeGenerated > ago(40m) | where ContainerGroupName_s contains 'campaign' | project TimeGenerated, Reason_s, Log_s | order by TimeGenerated asc | take 60"
+          az monitor log-analytics query -w "$WS" --analytics-query "$Q2" -o tsv 2>&1 | sed 's/\t/ | /' | cut -c1-220 | head -60
