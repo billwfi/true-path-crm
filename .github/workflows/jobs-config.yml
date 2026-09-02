@@ -1,0 +1,42 @@
+name: Jobs Config
+
+on:
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  cfg:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      - name: Show job configs
+        run: |
+          az extension add --upgrade --name containerapp -y 2>/dev/null || true
+          for J in caj-tpcrm-campaign caj-tpcrm-bookings-daily; do
+            echo "==================== $J ===================="
+            az containerapp job show -n "$J" -g rg-tpcrm-prod --query "{
+              env: properties.environmentId,
+              triggerType: properties.configuration.triggerType,
+              cron: properties.configuration.scheduleTriggerConfig.cronExpression,
+              parallelism: properties.configuration.scheduleTriggerConfig.parallelism,
+              completions: properties.configuration.scheduleTriggerConfig.replicaCompletionCount,
+              replicaTimeout: properties.configuration.replicaTimeout,
+              replicaRetryLimit: properties.configuration.replicaRetryLimit,
+              image: properties.template.containers[0].image,
+              cpu: properties.template.containers[0].resources.cpu,
+              memory: properties.template.containers[0].resources.memory,
+              registries: properties.configuration.registries,
+              identity: identity.type
+            }" -o jsonc || true
+            echo "-- env var names --"
+            az containerapp job show -n "$J" -g rg-tpcrm-prod --query "properties.template.containers[0].env[].name" -o tsv || true
+            echo "-- secret names --"
+            az containerapp job show -n "$J" -g rg-tpcrm-prod --query "properties.configuration.secrets[].name" -o tsv || true
+          done
