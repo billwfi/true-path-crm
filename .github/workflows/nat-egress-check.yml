@@ -1,0 +1,26 @@
+name: NAT Egress Check
+
+on:
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      - name: NAT + public IPs in rg-tpcrm-prod
+        run: |
+          echo "=== NAT gateways ==="
+          az network nat gateway list -g rg-tpcrm-prod \
+            --query "[].{name:name, publicIps:publicIpAddresses[].id}" -o jsonc || true
+          echo "=== public IP addresses (name -> ip) ==="
+          az network public-ip list -g rg-tpcrm-prod \
+            --query "[].{name:name, ip:ipAddress, assoc:ipConfiguration.id}" -o jsonc || true
