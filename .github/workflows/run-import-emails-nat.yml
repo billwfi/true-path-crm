@@ -1,0 +1,61 @@
+name: Run Import Emails (NAT job)
+
+# Send the per-client SFTP-import emails via ACS from a job in the VNet/NAT env
+# (caj-tpcrm-liviniti-nat) so it egresses from the static, SQL-allowlisted
+# 104.46.113.57. The old path (caj-tpcrm-campaign) lives in the non-NAT env whose
+# rotating egress IP the SQL firewall blocks, causing SQL login timeouts.
+# Repoints the liviniti job to PIPELINE=import-email, runs it, ALWAYS reverts.
+on:
+  workflow_dispatch:
+    inputs:
+      date:
+        description: 'Processed-files date YYYY-MM-DD (blank = yesterday)'
+        required: false
+        default: ''
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  JOB: caj-tpcrm-liviniti-nat
+  RG: rg-tpcrm-prod
+
+jobs:
+  send:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      - name: Repoint liviniti-nat job, run import-email, capture status
+        id: run
+        run: |
+          az extension add --upgrade --name containerapp -y 2>/dev/null || true
+          ORIG=$(az containerapp job show -n "$JOB" -g "$RG" \
+            --query "properties.template.containers[0].env[?name=='PIPELINE'].value | [0]" -o tsv)
+          ORIG=${ORIG:-liviniti}
+          echo "orig_pipeline=$ORIG" >> "$GITHUB_OUTPUT"
+          DATE="${{ github.event.inputs.date }}"
+          az containerapp job update -n "$JOB" -g "$RG" -o none \
+            --set-env-vars PIPELINE=import-email EMAIL_DATE="$DATE"
+          EXEC=$(az containerapp job start -n "$JOB" -g "$RG" --query name -o tsv)
+          echo "Started execution: $EXEC"
+          for i in $(seq 1 50); do
+            ST=$(az containerapp job execution list -n "$JOB" -g "$RG" \
+                   --query "[?name=='$EXEC'].properties.status | [0]" -o tsv 2>/dev/null)
+            echo "  execution status: ${ST:-<pending>}"
+            case "$ST" in Succeeded|Failed|Degraded) break;; esac
+            sleep 12
+          done
+          echo "Final: $ST"
+          [ "$ST" = "Succeeded" ]
+      - name: Restore PIPELINE (always)
+        if: always()
+        run: |
+          ORIG="${{ steps.run.outputs.orig_pipeline }}"; ORIG=${ORIG:-liviniti}
+          az containerapp job update -n "$JOB" -g "$RG" -o none \
+            --set-env-vars PIPELINE="$ORIG" EMAIL_DATE=""
+          echo "Restored PIPELINE=$ORIG"
