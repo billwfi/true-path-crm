@@ -111,7 +111,7 @@ exports.handler = async function (event) {
         b.id_number AS [Broker ID],
         c.company AS [Company Name],
         c.company_id AS [Company ID],
-        CASE WHEN TRY_CONVERT(bigint, c.member_id) > 0 THEN c.member_id ELSE c.cardholder_id END AS [Member ID#],
+        CASE WHEN TRY_CONVERT(bigint, c.member_id) > 0 THEN CONVERT(varchar(50), c.member_id) ELSE CONVERT(varchar(50), c.cardholder_id) END AS [Member ID#],
         c.first_name AS [First Name],
         c.last_name AS [Last Name],
         c.date_of_birth AS [Date of Birth],
