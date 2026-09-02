@@ -1,0 +1,34 @@
+name: Campaign Job Diag
+
+on:
+  workflow_dispatch:
+    inputs:
+      execution:
+        description: 'execution name'
+        required: false
+        default: 'caj-tpcrm-campaign-1yzqk1z'
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  diag:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      - name: Image + execution logs
+        run: |
+          az extension add --upgrade --name containerapp -y 2>/dev/null || true
+          echo "=== current caj-tpcrm-campaign image + PIPELINE ==="
+          az containerapp job show -n caj-tpcrm-campaign -g rg-tpcrm-prod \
+            --query "{image:properties.template.containers[0].image, name:properties.template.containers[0].name, pipeline:properties.template.containers[0].env[?name=='PIPELINE'].value|[0]}" -o jsonc || true
+          C=$(az containerapp job show -n caj-tpcrm-campaign -g rg-tpcrm-prod --query "properties.template.containers[0].name" -o tsv)
+          echo "container: $C"
+          echo "=== execution console logs (${{ inputs.execution }}) ==="
+          az containerapp job logs show -n caj-tpcrm-campaign -g rg-tpcrm-prod \
+            --container "$C" --execution "${{ inputs.execution }}" --tail 200 --format text 2>&1 | tail -120 || true
