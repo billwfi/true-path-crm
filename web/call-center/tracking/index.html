@@ -31,7 +31,22 @@
         <select id="f-scope" class="form-control" style="max-width:170px" onchange="load()">
           <option value="mine">My members</option><option value="all">All</option>
         </select>
+        <button class="btn btn-outline btn-sm self-center" id="rts-toggle" onclick="toggleRtsView()"><i class="fa-solid fa-triangle-exclamation"></i> Delivery Support</button>
         <span id="count" class="text-sm text-slate-500 ml-auto self-center"></span>
+      </div>
+
+      <!-- RTS / delivery-support cases (TRK1) -->
+      <div class="card mb-4 hidden" id="rts-card">
+        <div class="card-header flex items-center">
+          <span><i class="fa-solid fa-triangle-exclamation text-slate-400"></i> Delivery Support &amp; RTS Cases</span>
+          <span class="text-xs text-slate-400 ml-auto" id="rts-summary"></span>
+        </div>
+        <div class="card-body">
+          <table class="data-table">
+            <thead><tr><th>Member</th><th>Category</th><th>Day</th><th>Required today</th><th>Hold until</th><th>Courtesy</th><th>Assigned</th><th></th></tr></thead>
+            <tbody id="rts-body"></tbody>
+          </table>
+        </div>
       </div>
 
       <div class="card">
@@ -107,6 +122,44 @@
             ${r.ready_indx?`<a class="btn btn-primary btn-sm" href="/glp1/record/?indx=${r.ready_indx}" title="Open member"><i class="fa-solid fa-folder-open"></i></a>`:''}
           </td></tr>`).join('')
       : '<tr><td colspan="9" class="text-center py-10 text-slate-400">No shipments for these filters</td></tr>';
+  }
+
+  /* ── Delivery Support / RTS cases (TRK1) ── */
+  let rtsShown = false;
+  const LEVEL_BADGE = { week1:'blue', week2:'red', 'plan-hold':'green', 'plan-day':'orange', 'invalid-address':'purple', none:'gray' };
+
+  function toggleRtsView(){
+    rtsShown = !rtsShown;
+    document.getElementById('rts-card').classList.toggle('hidden', !rtsShown);
+    if (rtsShown) loadRtsQueue();
+  }
+
+  async function loadRtsQueue(){
+    const p = new URLSearchParams({ resource: 'queue' });
+    if (document.getElementById('f-scope').value === 'mine') p.set('mine', '1');
+    const d = await apiGet('/rts?' + p.toString()) || { rows: [], summary: {} };
+    const s = d.summary || {};
+    document.getElementById('rts-summary').textContent =
+      `${s.open||0} open · ${s.contact_due||0} need contact today · ${s.week2||0} at Week 2 · ${s.courtesy_due||0} courtesy hold due`;
+    document.getElementById('rts-body').innerHTML = (d.rows||[]).length
+      ? d.rows.map(r => {
+          const req = r.requirement || {}, ch = r.courtesy || {};
+          const nm = `${esc(r.Last_Name||'')}, ${esc(r.First_Name||'')}`.replace(/^, |, $/,'') || esc(r.member_key);
+          return `<tr>
+            <td class="font-medium">${nm}<div class="text-xs text-slate-400 font-normal">${esc([r.medication,r.strength].filter(Boolean).join(' '))}</div></td>
+            <td class="text-xs">${esc(r.issue_category)}</td>
+            <td>${req.day||'—'}</td>
+            <td>${req.channels && req.channels.length
+              ? `<span class="badge badge-${LEVEL_BADGE[req.level]||'gray'}">${esc(req.channels.join(' + '))}</span> ${
+                  req.satisfied ? '<span class="badge badge-green">done</span>' : '<span class="badge badge-red">due</span>'}`
+              : `<span class="text-xs text-slate-400">${esc(req.reason||'—')}</span>`}</td>
+            <td class="text-xs">${r.deadline?fmtDate(r.deadline):'—'}</td>
+            <td class="text-xs">${ch.overdue?'<span class="badge badge-red">overdue</span>':ch.due?'<span class="badge badge-orange">due</span>':(r.courtesy_hold_requested?'<i class="fa-solid fa-check text-emerald-500"></i>':'—')}</td>
+            <td class="text-xs text-slate-500">${esc(r.assigned_name)||'—'}</td>
+            <td class="text-right">${r.ready_indx?`<a class="btn btn-primary btn-sm" href="/glp1/record/?indx=${r.ready_indx}"><i class="fa-solid fa-folder-open"></i></a>`:''}</td>
+          </tr>`;
+        }).join('')
+      : '<tr><td colspan="8" class="text-center py-6 text-slate-400">No open delivery-support cases</td></tr>';
   }
 
   load();

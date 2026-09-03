@@ -161,6 +161,16 @@
             <div class="card-body form-pad" id="ship-body"></div>
           </div>
 
+          <!-- Delivery Support / RTS prevention (TRK1) -->
+          <div class="card mb-4" id="rts-card" style="display:none">
+            <div class="card-header flex items-center">
+              <span><i class="fa-solid fa-triangle-exclamation text-slate-400"></i> Delivery Support &amp; RTS Prevention</span>
+              <span class="badge ml-2" id="rts-badge" style="display:none"></span>
+              <span class="text-xs text-slate-400 ml-auto" id="rts-deadline"></span>
+            </div>
+            <div class="card-body form-pad" id="rts-body"></div>
+          </div>
+
           <!-- Cypress Requests (CS3 + RXF4) — transfer in/out + verbal requests, BA-routed -->
           <div class="card mb-4" id="cypress-card">
             <div class="card-header flex items-center">
@@ -288,6 +298,120 @@
     <div class="modal-footer">
       <button class="btn btn-outline" onclick="closeModal('contact-modal')">Cancel</button>
       <button class="btn btn-primary" onclick="saveContact()">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- Open RTS case modal -->
+<div id="rtsopen-modal" class="modal-backdrop hidden">
+  <div class="modal">
+    <div class="modal-header">
+      <span class="modal-title">Open Delivery-Support Case</span>
+      <button class="modal-close" onclick="closeModal('rtsopen-modal')">×</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group"><label class="form-label">Issue category *</label>
+        <select class="form-control" id="ro-category" onchange="roCatChange()">
+          <option>RTS Escalation</option><option>Customs Escalation</option><option>Invalid Address</option>
+        </select>
+        <p class="text-xs text-slate-500 mt-1" id="ro-cat-help"></p>
+      </div>
+      <div class="flex gap-3" id="ro-pkg-wrap">
+        <div class="form-group flex-1"><label class="form-label">Package type</label>
+          <select class="form-control" id="ro-package" onchange="roPkgChange()">
+            <option value="">— Select —</option>
+            <option>Priority Mail Express Intl</option><option>Parcel Select</option><option>First Class</option>
+          </select>
+          <p class="text-xs text-slate-500 mt-1" id="ro-pkg-help"></p></div>
+        <div class="form-group" style="max-width:170px"><label class="form-label">Medication type</label>
+          <select class="form-control" id="ro-medtype">
+            <option value="">— Select —</option><option>Refrigerated</option><option>Ambient</option>
+          </select>
+          <p class="text-xs text-slate-500 mt-1">Sets the courtesy-hold length</p></div>
+        <div class="form-group" style="max-width:160px"><label class="form-label">Hold start (day 1)</label>
+          <input type="date" class="form-control" id="ro-start"></div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeModal('rtsopen-modal')">Cancel</button>
+      <button class="btn btn-primary" id="ro-save" onclick="openRtsCase()"><i class="fa-solid fa-flag"></i> Open Case</button>
+    </div>
+  </div>
+</div>
+
+<!-- Daily RTS contact modal -->
+<div id="rtsc-modal" class="modal-backdrop hidden">
+  <div class="modal">
+    <div class="modal-header">
+      <span class="modal-title">Log Today's Contact</span>
+      <button class="modal-close" onclick="closeModal('rtsc-modal')">×</button>
+    </div>
+    <div class="modal-body">
+      <p class="text-sm mb-3" id="rc-required"></p>
+      <div class="flex gap-4 mb-3">
+        <label class="flex items-center gap-2 text-sm"><input type="checkbox" id="rc-text"> Text</label>
+        <label class="flex items-center gap-2 text-sm"><input type="checkbox" id="rc-call"> Call</label>
+        <label class="flex items-center gap-2 text-sm"><input type="checkbox" id="rc-email"> Email</label>
+        <label class="flex items-center gap-2 text-sm ml-auto"><input type="checkbox" id="rc-reached"> Member reached</label>
+      </div>
+      <div class="form-group"><label class="form-label">Member's plan (if they gave one)</label>
+        <input class="form-control" id="rc-plan" placeholder="e.g. will collect from the PO on Friday">
+        <p class="text-xs text-slate-500 mt-1">Only a <b>specific, actionable</b> plan suppresses the daily requirement — record the date below.</p></div>
+      <div class="flex gap-3">
+        <div class="form-group flex-1"><label class="form-label">Tracking status today</label><input class="form-control" id="rc-tracking"></div>
+        <div class="form-group flex-1"><label class="form-label">Carrier interaction</label><input class="form-control" id="rc-carrier" placeholder="agent name / call outcome"></div>
+      </div>
+      <div class="form-group"><label class="form-label">Notes &amp; reasoning</label><textarea class="form-control" id="rc-notes" rows="2"></textarea></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeModal('rtsc-modal')">Cancel</button>
+      <button class="btn btn-primary" id="rc-save" onclick="saveRtsContact()"><i class="fa-solid fa-floppy-disk"></i> Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- Plan modal -->
+<div id="rtsplan-modal" class="modal-backdrop hidden">
+  <div class="modal">
+    <div class="modal-header">
+      <span class="modal-title">Record Pickup Plan / Redelivery</span>
+      <button class="modal-close" onclick="closeModal('rtsplan-modal')">×</button>
+    </div>
+    <div class="modal-body">
+      <p class="text-sm text-slate-500 mb-3">Suppresses the daily contact requirement until the date below. The member is notified that morning; if the plan fails the case escalates to Week&nbsp;2 immediately.</p>
+      <div class="flex gap-3">
+        <div class="form-group flex-1"><label class="form-label">Type</label>
+          <select class="form-control" id="rp-source"><option>Member Plan</option><option>Scheduled Redelivery</option></select></div>
+        <div class="form-group" style="max-width:170px"><label class="form-label">Date *</label><input type="date" class="form-control" id="rp-date"></div>
+      </div>
+      <div class="form-group"><label class="form-label">What exactly was agreed</label><input class="form-control" id="rp-notes"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeModal('rtsplan-modal')">Cancel</button>
+      <button class="btn btn-primary" onclick="saveRtsPlan()"><i class="fa-solid fa-calendar-check"></i> Save Plan</button>
+    </div>
+  </div>
+</div>
+
+<!-- Close case modal -->
+<div id="rtsclose-modal" class="modal-backdrop hidden">
+  <div class="modal">
+    <div class="modal-header">
+      <span class="modal-title">Close Delivery-Support Case</span>
+      <button class="modal-close" onclick="closeModal('rtsclose-modal')">×</button>
+    </div>
+    <div class="modal-body">
+      <p class="text-sm text-slate-500 mb-3">All six documentation requirements must be met before a case can be closed.</p>
+      <div id="rx-doc-list" class="mb-3"></div>
+      <div class="flex gap-3">
+        <div class="form-group flex-1"><label class="form-label">Outcome *</label>
+          <select class="form-control" id="rz-status"><option>Resolved</option><option>Returned to Sender</option><option>Closed</option></select></div>
+        <div class="form-group flex-1"><label class="form-label">Resolution</label><input class="form-control" id="rz-res" placeholder="e.g. collected by member 9/14"></div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeModal('rtsclose-modal')">Cancel</button>
+      <button class="btn btn-primary" id="rz-save" onclick="closeRtsCase()"><i class="fa-solid fa-check"></i> Close Case</button>
     </div>
   </div>
 </div>
@@ -867,6 +991,7 @@
     getrxScripts = (d && d.scripts) || [];
     renderOrder();
     renderShip();
+    await loadRts();
     await loadRxRecords();
   }
 
@@ -1410,6 +1535,244 @@
   document.getElementById('handoff-modal').addEventListener('click', e => { if (e.target === e.currentTarget) closeModal('handoff-modal'); });
   document.getElementById('ship-modal').addEventListener('click', e => { if (e.target === e.currentTarget) closeModal('ship-modal'); });
   document.getElementById('trk-modal').addEventListener('click', e => { if (e.target === e.currentTarget) closeModal('trk-modal'); });
+
+  /* ── Delivery Support / RTS prevention (TRK1) ── */
+  let rts = null;
+  const PKG_HELP = {
+    'Priority Mail Express Intl': '15-day hold · signature required',
+    'Parcel Select': '~30-day hold · no signature',
+    'First Class': '~30-day hold · no signature',
+  };
+  const CAT_HELP = {
+    'RTS Escalation': 'Post-attempt — the package reached the local PO or delivery was attempted.',
+    'Customs Escalation': 'Pre-attempt — not yet at local delivery.',
+    'Invalid Address': 'Immediate RTS, no hold period — correct the address and reship.',
+  };
+  const LEVEL_STYLE = {
+    week1: ['#0369a1', '#e0f2fe'], week2: ['#b91c1c', '#fee2e2'],
+    'plan-hold': ['#15803d', '#dcfce7'], 'plan-day': ['#b45309', '#fef3c7'],
+    'invalid-address': ['#7e22ce', '#f3e8ff'], none: ['#64748b', '#f1f5f9'],
+  };
+
+  async function loadRts() {
+    const card = document.getElementById('rts-card');
+    if (!order || !order.tracking_number) { card.style.display = 'none'; rts = null; return; }
+    card.style.display = '';
+    rts = await apiGet(`/rts?order_id=${order.id}`) || { case: null };
+    renderRts();
+  }
+
+  function renderRts() {
+    const body = document.getElementById('rts-body');
+    const badge = document.getElementById('rts-badge');
+    document.getElementById('rts-deadline').textContent = '';
+    if (!rts || !rts.case) {
+      badge.style.display = 'none';
+      body.innerHTML = `<p class="text-sm text-slate-500 mb-3">Open a delivery-support case when a shipment stalls, is held, or is heading for return-to-sender. The case runs the SOP contact cadence and the hold countdown for you.</p>
+        <button class="btn btn-primary btn-sm" onclick="openRtsModal()"><i class="fa-solid fa-flag"></i> Open Delivery-Support Case</button>`;
+      return;
+    }
+    const c = rts.case, req = rts.requirement, ch = rts.courtesy, docs = rts.docs;
+    const [fg, bg] = LEVEL_STYLE[req.level] || LEVEL_STYLE.none;
+    badge.style.display = '';
+    badge.style.cssText = `background:${bg};color:${fg}`;
+    badge.textContent = c.issue_category + (req.day ? ` · Day ${req.day}` : '');
+    document.getElementById('rts-deadline').textContent = rts.deadline
+      ? `Hold until ${fmtDate(rts.deadline)}${c.hold_extension_days ? ` (+${c.hold_extension_days}d courtesy)` : ''}` : '';
+
+    const chip = (label, on) => `<span class="badge" style="background:${on?'#dcfce7':'#f1f5f9'};color:${on?'#15803d':'#94a3b8'}">${on?'<i class="fa-solid fa-check"></i> ':''}${label}</span>`;
+
+    body.innerHTML = `
+      <!-- today's requirement -->
+      <div class="rounded-md px-4 py-3 mb-3" style="background:${bg};border:1px solid ${fg}33">
+        <div style="color:${fg}" class="text-sm font-medium">${esc(req.reason)}</div>
+        ${req.channels && req.channels.length ? `<div class="mt-2 flex items-center gap-2 flex-wrap">
+          <span class="text-xs text-slate-500">Required today:</span>
+          ${req.channels.map(x => chip(x, req.logged && ((x==='Text'&&req.logged.did_text)||(x==='Call'&&req.logged.did_call)||(x==='Email'&&req.logged.did_email)))).join(' ')}
+          ${req.satisfied ? '<span class="badge badge-green">Satisfied</span>' : '<span class="badge badge-red">Outstanding</span>'}
+        </div>` : ''}
+      </div>
+
+      ${ch.due || ch.overdue ? `<div class="flex items-center justify-between rounded-md px-4 py-3 mb-3 text-sm ${ch.overdue?'bg-red-50 border border-red-300 text-red-800':'bg-amber-50 border border-amber-300 text-amber-800'}">
+        <span><i class="fa-solid fa-clock"></i> <b>Courtesy hold ${ch.overdue?'overdue':'due'} (day ${ch.day})</b> — call the <b>local</b> post office and request ${esc(ch.text||'an extension')}${ch.label?` — ${esc(ch.label)}`:''}. USPS Corporate cannot grant this.</span>
+        <button class="btn btn-primary btn-sm ml-3" onclick="requestCourtesyHold()">Record request</button></div>` : ''}
+      ${c.courtesy_hold_requested ? `<div class="text-xs text-slate-500 mb-3"><i class="fa-solid fa-check text-emerald-500"></i> Courtesy hold recorded${c.hold_extension_days?` — +${c.hold_extension_days} days granted`:' — not granted'}</div>` : ''}
+
+      <!-- classification -->
+      <div class="grid grid-cols-1 md:grid-cols-4 gap-x-6 gap-y-3 mb-3">
+        <div class="form-group mb-0"><label class="form-label">Issue category</label>
+          <select class="form-control" id="rc-cat" onchange="patchRts({issue_category:this.value})">
+            ${(rts.issue_categories||[]).map(x=>opt(x,c.issue_category)).join('')}</select></div>
+        <div class="form-group mb-0"><label class="form-label">Package type</label>
+          <select class="form-control" id="rc-pkg" onchange="patchRts({package_type:this.value})">
+            <option value="">— Select —</option>
+            ${Object.keys(rts.package_types||{}).map(x=>opt(x,c.package_type)).join('')}</select></div>
+        <div class="form-group mb-0"><label class="form-label">Medication type</label>
+          <select class="form-control" id="rc-med" onchange="patchRts({medication_type:this.value})">
+            <option value="">— Select —</option>${['Refrigerated','Ambient'].map(x=>opt(x,c.medication_type)).join('')}</select></div>
+        <div class="form-group mb-0"><label class="form-label">Service Request #</label>
+          <input class="form-control" id="rc-sr" value="${esc(c.service_requests)}" onchange="patchRts({service_requests:this.value})" placeholder="from USPS Corporate"></div>
+      </div>
+      <div class="text-xs text-slate-500 mb-3">
+        ${c.package_type ? `${esc(c.package_type)} — ${esc(PKG_HELP[c.package_type]||'')}` : 'Set the package type to start the hold countdown.'}
+        ${c.signature_required ? ' · <b>Signature required</b>' : ''}
+      </div>
+
+      <!-- actions -->
+      <div class="flex flex-wrap gap-2 mb-3 pt-2 border-t border-slate-100">
+        <button class="btn btn-primary btn-sm" onclick="openRtsContact()"><i class="fa-solid fa-list-check"></i> Log today's contact</button>
+        ${c.plan_active
+          ? `<button class="btn btn-outline btn-sm" onclick="clearRtsPlan()"><i class="fa-solid fa-calendar-xmark"></i> Clear plan (${fmtDate(c.plan_date)})</button>`
+          : `<button class="btn btn-outline btn-sm" onclick="openRtsPlan()"><i class="fa-solid fa-calendar-check"></i> Record pickup plan / redelivery</button>`}
+        <button class="btn btn-outline btn-sm" onclick="toggleRtsScripts()"><i class="fa-solid fa-phone-volume"></i> USPS scripts</button>
+        <button class="btn btn-outline btn-sm ml-auto" onclick="openRtsClose()"><i class="fa-solid fa-check"></i> Close case</button>
+      </div>
+      <div id="rts-scripts" class="hidden border border-slate-200 rounded-lg p-3 mb-3 bg-slate-50"></div>
+
+      <!-- documentation checklist -->
+      <div class="mb-3">
+        <div class="text-xs font-semibold text-slate-500 uppercase mb-1">Documentation (required before closing)</div>
+        <div class="flex flex-wrap gap-1.5">${docs.items.map(i=>chip(i.label,i.done)).join(' ')}</div>
+      </div>
+
+      <!-- daily log -->
+      <div class="text-xs font-semibold text-slate-500 uppercase mb-1">Daily contact log</div>
+      <table class="data-table"><thead><tr><th>Date</th><th>Day</th><th>Channels</th><th>Reached</th><th>Member plan</th><th>Tracking / carrier</th></tr></thead>
+      <tbody>${(rts.contacts||[]).length ? rts.contacts.map(x=>`<tr>
+        <td class="text-xs">${fmtDate(x.contact_date)}</td><td>${x.day_no??'—'}</td>
+        <td class="text-xs">${[x.did_text?'Text':null,x.did_call?'Call':null,x.did_email?'Email':null].filter(Boolean).join(' + ')||'—'}</td>
+        <td>${x.reached?'<span class="badge badge-green">Yes</span>':'<span class="text-slate-400">—</span>'}</td>
+        <td class="text-sm">${esc(x.member_plan)||'—'}</td>
+        <td class="text-xs">${esc(x.tracking_status)||''}${x.carrier_note?`<div class="text-slate-400">${esc(x.carrier_note)}</div>`:''}</td>
+      </tr>`).join('') : '<tr><td colspan="6" class="text-center py-4 text-slate-400">No contact logged yet</td></tr>'}</tbody></table>`;
+  }
+
+  function roCatChange(){
+    const v = document.getElementById('ro-category').value;
+    document.getElementById('ro-cat-help').textContent = CAT_HELP[v] || '';
+    document.getElementById('ro-pkg-wrap').style.display = (v === 'Invalid Address') ? 'none' : '';
+  }
+  function roPkgChange(){
+    document.getElementById('ro-pkg-help').textContent = PKG_HELP[document.getElementById('ro-package').value] || '';
+  }
+  function openRtsModal(){
+    document.getElementById('ro-category').value = 'RTS Escalation';
+    document.getElementById('ro-package').value = '';
+    document.getElementById('ro-medtype').value = '';
+    document.getElementById('ro-start').value = order.shipped_date ? String(order.shipped_date).slice(0,10) : new Date().toISOString().slice(0,10);
+    roCatChange(); roPkgChange();
+    openModal('rtsopen-modal');
+  }
+  async function openRtsCase(){
+    const btn = document.getElementById('ro-save'); btn.disabled = true;
+    const res = await apiPost(`/rts?order_id=${order.id}`, {
+      issue_category: document.getElementById('ro-category').value,
+      package_type: document.getElementById('ro-package').value || null,
+      medication_type: document.getElementById('ro-medtype').value || null,
+      hold_start_date: document.getElementById('ro-start').value || null,
+    });
+    btn.disabled = false;
+    if (res && res.ok) { rts = await res.json(); showToast('Delivery-support case opened','success'); closeModal('rtsopen-modal'); renderRts(); await loadOrderDetailKeepAttempts(); }
+    else { const e = res ? await res.json().catch(()=>({})) : {}; showToast(e.error||'Failed','error'); }
+  }
+
+  async function patchRts(body){
+    const res = await apiPatch(`/rts?case_id=${rts.case.id}`, body);
+    if (res && res.ok) { rts = await res.json(); renderRts(); }
+    else { const e = res ? await res.json().catch(()=>({})) : {}; showToast(e.error||'Update failed','error'); }
+  }
+
+  function openRtsContact(){
+    const req = rts.requirement;
+    document.getElementById('rc-required').innerHTML = req.channels && req.channels.length
+      ? `Required today: <b>${req.channels.join(' + ')}</b>` : 'No daily contact required today.';
+    const l = req.logged || {};
+    document.getElementById('rc-text').checked = !!l.did_text;
+    document.getElementById('rc-call').checked = !!l.did_call;
+    document.getElementById('rc-email').checked = !!l.did_email;
+    document.getElementById('rc-reached').checked = !!l.reached;
+    ['rc-plan','rc-tracking','rc-carrier','rc-notes'].forEach(id=>document.getElementById(id).value='');
+    openModal('rtsc-modal');
+  }
+  async function saveRtsContact(){
+    const btn = document.getElementById('rc-save'); btn.disabled = true;
+    const res = await apiPost(`/rts?case_id=${rts.case.id}&resource=contact`, {
+      did_text: document.getElementById('rc-text').checked,
+      did_call: document.getElementById('rc-call').checked,
+      did_email: document.getElementById('rc-email').checked,
+      reached: document.getElementById('rc-reached').checked,
+      member_plan: document.getElementById('rc-plan').value || null,
+      tracking_status: document.getElementById('rc-tracking').value || null,
+      carrier_note: document.getElementById('rc-carrier').value || null,
+      notes: document.getElementById('rc-notes').value || null,
+    });
+    btn.disabled = false;
+    if (res && res.ok) { rts = await res.json(); showToast('Contact logged','success'); closeModal('rtsc-modal'); renderRts(); }
+    else showToast('Failed','error');
+  }
+
+  function openRtsPlan(){
+    document.getElementById('rp-source').value = 'Member Plan';
+    document.getElementById('rp-date').value = '';
+    document.getElementById('rp-notes').value = '';
+    openModal('rtsplan-modal');
+  }
+  async function saveRtsPlan(){
+    const d = document.getElementById('rp-date').value;
+    if (!d) { showToast('A plan needs a specific date','error'); return; }
+    const res = await apiPost(`/rts?case_id=${rts.case.id}&resource=plan`, {
+      plan_date: d, plan_source: document.getElementById('rp-source').value,
+      plan_notes: document.getElementById('rp-notes').value || null });
+    if (res && res.ok) { rts = await res.json(); showToast('Plan recorded — daily contact suppressed','success'); closeModal('rtsplan-modal'); renderRts(); }
+    else showToast('Failed','error');
+  }
+  async function clearRtsPlan(){
+    const res = await apiPost(`/rts?case_id=${rts.case.id}&resource=plan`, { clear: true });
+    if (res && res.ok) { rts = await res.json(); showToast('Plan cleared','success'); renderRts(); }
+  }
+
+  async function requestCourtesyHold(){
+    if (!confirm2('Record that you called the LOCAL post office and requested the courtesy hold?')) return;
+    const res = await apiPost(`/rts?case_id=${rts.case.id}&resource=courtesy-hold`, { granted: true });
+    if (res && res.ok) { rts = await res.json(); showToast('Courtesy hold recorded','success'); renderRts(); }
+    else { const e = res ? await res.json().catch(()=>({})) : {}; showToast(e.error||'Failed','error'); }
+  }
+
+  function toggleRtsScripts(){
+    const el = document.getElementById('rts-scripts');
+    el.classList.toggle('hidden');
+    el.innerHTML = (rts.scripts||[]).map(s=>`<div class="mb-3">
+      <div class="flex items-center gap-2"><span class="font-medium text-sm">${esc(s.title)}</span>
+        <button class="btn btn-outline btn-sm" onclick="copyRtsScript('${esc(s.script_key)}')"><i class="fa-regular fa-copy"></i></button></div>
+      <div class="text-xs text-slate-600 whitespace-pre-line mt-1">${esc(s.script_text)}</div></div>`).join('');
+  }
+  function copyRtsScript(k){
+    const s = (rts.scripts||[]).find(x=>x.script_key===k); if (!s) return;
+    (navigator.clipboard?navigator.clipboard.writeText(s.script_text||''):Promise.reject())
+      .then(()=>showToast('Copied','success'),()=>showToast('Copy failed','error'));
+  }
+
+  function openRtsClose(){
+    document.getElementById('rx-doc-list').innerHTML = rts.docs.items.map(i=>
+      `<label class="flex items-center gap-2 text-sm py-1"><input type="checkbox" class="rx-doc" data-k="${i.key}" ${i.done?'checked':''}> ${esc(i.label)}</label>`).join('');
+    document.getElementById('rz-status').value = 'Resolved';
+    document.getElementById('rz-res').value = rts.case.resolution || '';
+    openModal('rtsclose-modal');
+  }
+  async function closeRtsCase(){
+    const doc = {};
+    document.querySelectorAll('.rx-doc').forEach(el=>{ doc[el.dataset.k] = el.checked; });
+    const btn = document.getElementById('rz-save'); btn.disabled = true;
+    const res = await apiPatch(`/rts?case_id=${rts.case.id}`, {
+      doc_checklist: doc, status: document.getElementById('rz-status').value,
+      resolution: document.getElementById('rz-res').value || null });
+    btn.disabled = false;
+    if (res && res.ok) { rts = await res.json(); showToast('Case closed','success'); closeModal('rtsclose-modal'); renderRts(); await loadOrderDetailKeepAttempts(); }
+    else { const e = res ? await res.json().catch(()=>({})) : {}; showToast(e.error||'Close failed','error'); }
+  }
+
+  ['rtsopen-modal','rtsc-modal','rtsplan-modal','rtsclose-modal'].forEach(id =>
+    document.getElementById(id).addEventListener('click', e => { if (e.target === e.currentTarget) closeModal(id); }));
 
   /* ── Cypress Requests (CS3 + RXF4) ── */
   let cypressRequests = [], cypressScripts = [], cypressScriptsShown = false;
