@@ -245,7 +245,7 @@
           <td class="text-right whitespace-nowrap">
             <button class="btn btn-light btn-sm" title="Log contact / reminder"
               onclick='openLog(${JSON.stringify({member:r.member_key,category:r.category,name:name(r)})})'><i class="fa-solid fa-phone-volume"></i></button>
-            <a class="btn btn-primary btn-sm" title="Open record" href="/glp1/record/?indx=${r.indx}"><i class="fa-solid fa-folder-open"></i> Open</a>
+            <a class="btn btn-primary btn-sm" title="Open this intake" href="/glp1/record/?indx=${r.indx}&cat=${encodeURIComponent(r.category)}"><i class="fa-solid fa-folder-open"></i> Open</a>
           </td>
         </tr>`).join('')
       : '<tr><td colspan="9" class="text-center py-10 text-slate-400">No matching intakes</td></tr>';

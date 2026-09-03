@@ -102,7 +102,7 @@
           <td class="text-xs text-slate-500">${esc(r.assigned_name)||'—'}</td>
           <td class="text-right whitespace-nowrap">
             ${r.file_link?`<a class="btn btn-outline btn-sm" href="${esc(r.file_link)}" target="_blank" rel="noopener" title="Open file"><i class="fa-solid fa-up-right-from-square"></i></a>`:''}
-            ${r.ready_indx?`<a class="btn btn-primary btn-sm" href="/glp1/record/?indx=${r.ready_indx}" title="Open member"><i class="fa-solid fa-folder-open"></i></a>`:''}
+            ${r.ready_indx?`<a class="btn btn-primary btn-sm" href="/glp1/record/?indx=${r.ready_indx}&cat=${encodeURIComponent(r.intake_type||'')}" title="Open this intake"><i class="fa-solid fa-folder-open"></i></a>`:''}
           </td></tr>`).join('')
       : '<tr><td colspan="9" class="text-center py-10 text-slate-400">No Rx records for these filters</td></tr>';
   }

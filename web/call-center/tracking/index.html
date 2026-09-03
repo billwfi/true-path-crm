@@ -119,7 +119,7 @@
           <td class="text-xs">${r.tracking_texted_at?'<i class="fa-solid fa-check text-emerald-500"></i>':'<span class="text-slate-300">—</span>'}</td>
           <td class="text-xs text-slate-500">${esc(r.assigned_name)||'—'}</td>
           <td class="text-right whitespace-nowrap">
-            ${r.ready_indx?`<a class="btn btn-primary btn-sm" href="/glp1/record/?indx=${r.ready_indx}" title="Open member"><i class="fa-solid fa-folder-open"></i></a>`:''}
+            ${r.ready_indx?`<a class="btn btn-primary btn-sm" href="/glp1/record/?indx=${r.ready_indx}&cat=${encodeURIComponent(r.intake_type||'')}" title="Open this intake"><i class="fa-solid fa-folder-open"></i></a>`:''}
           </td></tr>`).join('')
       : '<tr><td colspan="9" class="text-center py-10 text-slate-400">No shipments for these filters</td></tr>';
   }
@@ -156,7 +156,7 @@
             <td class="text-xs">${r.deadline?fmtDate(r.deadline):'—'}</td>
             <td class="text-xs">${ch.overdue?'<span class="badge badge-red">overdue</span>':ch.due?'<span class="badge badge-orange">due</span>':(r.courtesy_hold_requested?'<i class="fa-solid fa-check text-emerald-500"></i>':'—')}</td>
             <td class="text-xs text-slate-500">${esc(r.assigned_name)||'—'}</td>
-            <td class="text-right">${r.ready_indx?`<a class="btn btn-primary btn-sm" href="/glp1/record/?indx=${r.ready_indx}"><i class="fa-solid fa-folder-open"></i></a>`:''}</td>
+            <td class="text-right">${r.ready_indx?`<a class="btn btn-primary btn-sm" href="/glp1/record/?indx=${r.ready_indx}&cat=${encodeURIComponent(r.intake_type||'')}"><i class="fa-solid fa-folder-open"></i></a>`:''}</td>
           </tr>`;
         }).join('')
       : '<tr><td colspan="8" class="text-center py-6 text-slate-400">No open delivery-support cases</td></tr>';

@@ -85,7 +85,7 @@
           <td class="text-xs text-slate-400">${fmtDate(r.assigned_at)}</td>
           <td>${intakeBadge(r)}</td>
           <td class="text-right whitespace-nowrap">
-            <a class="btn btn-primary btn-sm" title="Open record" href="/glp1/record/?indx=${r.indx}"><i class="fa-solid fa-folder-open"></i> Open</a></td>
+            <a class="btn btn-primary btn-sm" title="Open record" href="/glp1/record/?indx=${r.indx}&cat=${encodeURIComponent(r.category||'')}"><i class="fa-solid fa-folder-open"></i> Open</a></td>
         </tr>`).join('')
       : '<tr><td colspan="7" class="text-center py-10 text-slate-400">No In Progress records assigned to you</td></tr>';
   }

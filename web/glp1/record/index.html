@@ -662,6 +662,9 @@
 
   const params = new URLSearchParams(location.search);
   const indx = params.get('indx');
+  // ?cat=<intake type> deep-links straight into that intake's detail (from the
+  // work queues, where the row already identifies member + type).
+  const wantCat = params.get('cat');
   let record = null, memberKey = null, contacts = [], intake = null, qData = null;
   // The member can hold several intakes (one per type). `intakes` is the full set; `activeCat`
   // is the one currently open in the tabs below.
@@ -2284,7 +2287,16 @@
   }
 
   showTab('demographics');
-  (async () => { if (await loadRecord()) await loadIntakes(); })();
+  (async () => {
+    if (!await loadRecord()) return;
+    await loadIntakes();
+    // Deep-link: open the requested intake directly instead of making the rep
+    // click through Demographics → Intake Status → Open.
+    if (wantCat && intakes.some(i => i.intake_type === wantCat)) {
+      showTab('intake');
+      await openIntakeDetail(wantCat);
+    }
+  })();
 </script>
 </body>
 </html>
