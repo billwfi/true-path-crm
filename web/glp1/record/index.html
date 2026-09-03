@@ -132,40 +132,6 @@
             </div>
           </div>
 
-          <!-- Intake Questionnaires (GLP-1 intake only) — a list; each opens into the form -->
-          <div class="card" id="q-card">
-            <div class="card-header"><i class="fa-solid fa-file-medical text-slate-400"></i> Intake Questionnaires</div>
-            <div class="card-body">
-
-              <!-- LIST -->
-              <div id="q-list-view">
-                <div class="flex justify-end mb-3">
-                  <button class="btn btn-outline btn-sm" onclick="addQuestionnaire()"><i class="fa-solid fa-plus"></i> Add Questionnaire</button>
-                </div>
-                <table class="data-table">
-                  <thead><tr>
-                    <th>Intake Date</th><th>Follow-up</th><th>Medication</th><th>Status</th><th></th>
-                  </tr></thead>
-                  <tbody id="q-list-body"></tbody>
-                </table>
-              </div>
-
-              <!-- DETAIL: the questionnaire form -->
-              <div id="q-detail-view" style="display:none">
-                <button class="btn btn-outline btn-sm mb-3" onclick="backToQuestionnaireList()"><i class="fa-solid fa-arrow-left"></i> Back to questionnaires</button>
-                <div id="q-dq-banner" class="flex items-center gap-2 bg-red-50 border border-red-300 text-red-700 rounded-md px-4 py-3 mb-4 text-sm" style="display:none">
-                  <i class="fa-solid fa-triangle-exclamation"></i>
-                  <span><strong>Possible disqualification.</strong> <span id="q-dq-reasons"></span></span>
-                </div>
-                <div id="q-form"></div>
-                <div class="flex items-center gap-3 mt-2">
-                  <button class="btn btn-primary" onclick="saveQuestionnaire(false)"><i class="fa-solid fa-floppy-disk"></i> Save</button>
-                  <button class="btn btn-outline" onclick="saveQuestionnaire(true)"><i class="fa-solid fa-check"></i> Complete &amp; Save</button>
-                  <span class="text-xs text-slate-400" id="q-updated"></span>
-                </div>
-              </div>
-            </div>
-          </div>
           <!-- Contact Tracking -->
           <div class="card mb-4">
             <div class="card-header flex items-center">
@@ -237,6 +203,40 @@
             </div>
           </div>
 
+          <!-- Intake Questionnaires (GLP-1 intake only) — a list; each opens into the form -->
+          <div class="card" id="q-card">
+            <div class="card-header"><i class="fa-solid fa-file-medical text-slate-400"></i> Intake Questionnaires</div>
+            <div class="card-body">
+
+              <!-- LIST -->
+              <div id="q-list-view">
+                <div class="flex justify-end mb-3">
+                  <button class="btn btn-outline btn-sm" onclick="addQuestionnaire()"><i class="fa-solid fa-plus"></i> Add Questionnaire</button>
+                </div>
+                <table class="data-table">
+                  <thead><tr>
+                    <th>Intake Date</th><th>Follow-up</th><th>Medication</th><th>Status</th><th></th>
+                  </tr></thead>
+                  <tbody id="q-list-body"></tbody>
+                </table>
+              </div>
+
+              <!-- DETAIL: the questionnaire form -->
+              <div id="q-detail-view" style="display:none">
+                <button class="btn btn-outline btn-sm mb-3" onclick="backToQuestionnaireList()"><i class="fa-solid fa-arrow-left"></i> Back to questionnaires</button>
+                <div id="q-dq-banner" class="flex items-center gap-2 bg-red-50 border border-red-300 text-red-700 rounded-md px-4 py-3 mb-4 text-sm" style="display:none">
+                  <i class="fa-solid fa-triangle-exclamation"></i>
+                  <span><strong>Possible disqualification.</strong> <span id="q-dq-reasons"></span></span>
+                </div>
+                <div id="q-form"></div>
+                <div class="flex items-center gap-3 mt-2">
+                  <button class="btn btn-primary" onclick="saveQuestionnaire(false)"><i class="fa-solid fa-floppy-disk"></i> Save</button>
+                  <button class="btn btn-outline" onclick="saveQuestionnaire(true)"><i class="fa-solid fa-check"></i> Complete &amp; Save</button>
+                  <span class="text-xs text-slate-400" id="q-updated"></span>
+                </div>
+              </div>
+            </div>
+          </div>
           <!-- Contact Tracking -->
           <div class="card mb-4">
             <div class="card-header flex items-center">
@@ -732,6 +732,20 @@
   const ITAB_AREA = { enroll: 'Enrollment Outreach', rx: 'Rx Order & Get Rx', ship: 'Fulfillment & Tracking' };
   let activeITab = 'enroll';
 
+  // GLP-1 members go to WellSync, so they never run the international Get Rx /
+  // Cypress / procurement path: their middle tab is just the questionnaire.
+  // Non-GLP-1 members get the full Rx order workflow and no questionnaire.
+  function applyTypeLayout(cat) {
+    const glp1 = isGlp1(cat);
+    const show = (id, on) => { const el = document.getElementById(id); if (el) el.style.display = on ? '' : 'none'; };
+    show('q-card', glp1);
+    // These three are also shown/hidden by their own loaders, which check isGlp1 too.
+    if (glp1) { show('order-card', false); show('rx-card', false); show('cypress-card', false); }
+    else show('order-card', true);
+    const tab = document.querySelector('#itabs [data-itab="rx"]');
+    if (tab) tab.textContent = glp1 ? 'Intake Questionnaire' : 'Rx Order & Get Rx';
+  }
+
   function showITab(name) {
     activeITab = name;
     document.querySelectorAll('#itabs .tab-btn').forEach(b => b.classList.toggle('active', b.dataset.itab === name));
@@ -855,7 +869,7 @@
     activeCat = cat;
     activeType = intakes.find(i => i.intake_type === cat) || null;
     document.getElementById('i-title').textContent = `Intake Status — ${typeName(activeType)}`;
-    document.getElementById('q-card').style.display = isGlp1(cat) ? '' : 'none';  // questionnaires = GLP-1 only
+    applyTypeLayout(cat);
     document.getElementById('intake-list').style.display = 'none';
     document.getElementById('intake-detail').style.display = '';
     showITab('enroll');
@@ -1088,6 +1102,8 @@
   function renderOrder() {
     const badge = document.getElementById('order-stage-badge');
     const body = document.getElementById('order-body');
+    // GLP-1 has no international order workflow.
+    if (isGlp1(trackCat())) { document.getElementById('order-card').style.display = 'none'; return; }
     document.getElementById('order-updated').textContent = order && order.updated_at ? 'Updated ' + fmtDate(order.updated_at) : '';
 
     if (!order) {
@@ -1306,7 +1322,7 @@
 
   async function loadRxRecords(){
     const card = document.getElementById('rx-card');
-    if (!order) { card.style.display = 'none'; rxRecords = []; return; }
+    if (!order || isGlp1(trackCat())) { card.style.display = 'none'; rxRecords = []; return; }
     card.style.display = '';
     const d = await apiGet(`/rx-records?order_id=${order.id}`) || { records: [] };
     rxRecords = d.records || [];
@@ -1437,7 +1453,7 @@
 
   function renderShip() {
     const card = document.getElementById('ship-card');
-    if (!order) { card.style.display = 'none'; return; }
+    if (!order || isGlp1(trackCat())) { card.style.display = 'none'; return; }
     card.style.display = '';
     const o = order, ev = o._events || [];
     const badge = document.getElementById('ship-stage-badge');
@@ -1640,7 +1656,7 @@
 
   async function loadRts() {
     const card = document.getElementById('rts-card');
-    if (!order || !order.tracking_number) { card.style.display = 'none'; rts = null; return; }
+    if (!order || !order.tracking_number || isGlp1(trackCat())) { card.style.display = 'none'; rts = null; return; }
     card.style.display = '';
     rts = await apiGet(`/rts?order_id=${order.id}`) || { case: null };
     renderRts();
@@ -1861,6 +1877,7 @@
   let cypressRequests = [], cypressScripts = [], cypressScriptsShown = false;
 
   async function loadCypress() {
+    if (isGlp1(trackCat())) { document.getElementById('cypress-card').style.display = 'none'; cypressRequests = []; return; }
     const d = await apiGet(`/cypress?member=${encodeURIComponent(memberKey)}&category=${encodeURIComponent(trackCat())}`) || { requests: [] };
     cypressRequests = d.requests || [];
     renderCypress();
