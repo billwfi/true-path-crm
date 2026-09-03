@@ -1,8 +1,15 @@
 const { mssql } = require('./_mssql');
 const { verifyToken, unauthorized, ok, badRequest, notFound, serverError, options } = require('./_auth');
 
-// Roles permitted to assign / reassign GLP1 records.
-const CAN_ASSIGN = ['Call Center Manager', 'Admin'];
+// Who may assign / reassign records. Everyone except Client Concierges: a
+// concierge receives assignments rather than handing them out. This was
+// previously an allow-list of ['Call Center Manager','Admin'], but no user
+// actually holds a "Call Center Manager" role, so AMT and other staff (role
+// 'Staff') were locked out of the assignment they do every day.
+const CANNOT_ASSIGN = ['Client Concierge'];
+function canAssign(user) {
+  return !!user && !CANNOT_ASSIGN.includes(user.role);
+}
 
 const LIST_COLS = `indx, category, Group_Code, Group_Name, Member_ID, Claim_Patient_ID,
   Last_Name, First_Name, Date_of_Birth, Gender, City, State, Zip_Code,
@@ -130,9 +137,9 @@ exports.handler = async function (event) {
     }
 
     if (event.httpMethod === 'PATCH') {
-      if (!CAN_ASSIGN.includes(user.role)) {
+      if (!canAssign(user)) {
         return { statusCode: 403, headers: require('./_auth').CORS,
-          body: JSON.stringify({ error: 'Only Call Center Managers can assign GLP1 records' }) };
+          body: JSON.stringify({ error: 'Client Concierges cannot assign records — they are assigned to you' }) };
       }
       const b = JSON.parse(event.body || '{}');
 

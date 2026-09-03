@@ -71,12 +71,16 @@
 <script src="/assets/js/app.js"></script>
 <script>
   initNav('glp1-ready');
-  const CAN_ASSIGN = ['Call Center Manager', 'Admin'];
-  const canAssign = CAN_ASSIGN.includes((getUser() || {}).role);
+  // Everyone except Client Concierges can assign — a concierge receives
+  // assignments rather than handing them out. Must match glp1.js.
+  const canAssign = ((getUser() || {}).role !== 'Client Concierge');
   let rows = [], selected = new Set(), staffMap = {}, debounce;
 
   if (!canAssign) {
     document.getElementById('assign-btn').style.display = 'none';
+    // Hide the select-all box too — without it the header showed a checkbox
+    // over a column with none in the rows.
+    document.getElementById('check-all').style.display = 'none';
   }
 
   function debounceLoad() { clearTimeout(debounce); debounce = setTimeout(load, 300); }
