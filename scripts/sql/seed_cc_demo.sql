@@ -42,7 +42,10 @@ INSERT INTO @m VALUES
  ('TEST100016','SARA','ABADI',     '1973-12-05','NONGLP1','DUPIXENT PEN 300MG',      'Low',    1,   4, 'Georgetown'),
  ('TEST100017','PIOTR','KOWALSKI', '1962-04-21','GLP1',   'OZEMPIC INJ 1MG/0.5ML',   'Medium', 3,   6, 'Austin'),
  ('TEST100018','TASHA','FREEMAN',  '1981-08-17','GLP1',   'WEGOVY INJ 2.4MG/0.75ML', 'High',   6, NULL,'Leander'),
- ('TEST100019','HEIDI','BRANDT',   '1995-02-11','GLP1',   'MOUNJARO INJ 2.5MG/0.5ML','Low',    0, NULL,'Austin');
+ ('TEST100019','HEIDI','BRANDT',   '1995-02-11','GLP1',   'MOUNJARO INJ 2.5MG/0.5ML','Low',    0, NULL,'Austin'),
+ -- for the Review & Close recycling queue
+ ('TEST100020','WEI','CHEN',       '1968-10-03','GLP1',   'OZEMPIC INJ 1MG/0.5ML',   'Low',    6, NULL,'Austin'),
+ ('TEST100021','JUAN','MORALES',   '1977-05-28','NONGLP1','HUMIRA PEN 40MG/0.8ML',   'Medium', 3, NULL,'Kyle');
 
 INSERT INTO dbo.ReadyToAssign
   (category, Group_Code, Group_Name, Member_ID, Claim_Patient_ID, Last_Name, First_Name,
@@ -88,9 +91,28 @@ BEGIN
 END
 CLOSE c; DEALLOCATE c;
 
--- The member who used all six attempts routes to Review & Close.
+-- Members who used all six attempts route to Review & Close.
 INSERT INTO dbo.tp_review_close (member_key, intake_type, reason, status, routed_by)
 SELECT m.mid, m.cat, 'Non-Responsive (6 attempts)', 'Open', NULL FROM @m m WHERE m.attempts >= 6;
+
+-- Morales reached invalid contact details on every attempt: RC2 marks that
+-- Invalid Information after 3 and routes to Review & Close.
+UPDATE dbo.GLP1_ContactLog SET invalid_contact = 1 WHERE member_key = 'TEST100021';
+INSERT INTO dbo.tp_review_close (member_key, intake_type, reason, status, routed_by)
+VALUES ('TEST100021', 'NONGLP1', 'Invalid Information (3 attempts)', 'Open', NULL);
+
+-- Chen has already been reviewed and closed for recycling; Morales is flagged
+-- but not yet closed, so the recycling queue shows both states.
+UPDATE dbo.tp_member_intakes SET outreach_status='Non-Responsive', outreach_status_at=SYSUTCDATETIME(),
+       recycle_after = DATEADD(day, 21, CAST(GETDATE() AS date)), ticket_status='Closed'
+ WHERE member_key='TEST100020';
+UPDATE dbo.tp_review_close SET status='Recycled', close_reason='Non-Responsive',
+       close_detail='CLOSED due to unresponsiveness after all outreach attempts were made.',
+       member_status='Non-Responsive', resolved_at=SYSUTCDATETIME()
+ WHERE member_key='TEST100020';
+
+UPDATE dbo.tp_member_intakes SET outreach_status='Invalid Information', outreach_status_at=SYSUTCDATETIME()
+ WHERE member_key='TEST100021';
 GO
 
 /* ══════════ 3. orders across the fulfillment pipeline ══════════ */

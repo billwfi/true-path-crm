@@ -281,7 +281,7 @@
       <!-- close-out -->
       <div class="card"><div class="card-header">Close out</div><div class="card-body form-pad">
         ${cur.invalid_info_eligible?`<div class="bg-amber-50 border border-amber-300 text-amber-800 rounded-md px-3 py-2 text-sm mb-3">
-          <i class="fa-solid fa-circle-info"></i> ${cur.attempts} outreach attempts logged — eligible for <b>Invalid Information</b> status.</div>`:''}
+          <i class="fa-solid fa-circle-info"></i> ${cur.invalid_attempts} of ${cur.attempts} attempts reached <b>invalid contact details</b> — eligible for <b>Invalid Information</b> status.</div>`:''}
         <div class="grid grid-cols-1 md:grid-cols-2 gap-x-5 gap-y-3">
           <div class="form-group mb-0"><label class="form-label">Close reason *</label>
             <select class="form-control" id="cl-reason" onchange="reasonChange()">

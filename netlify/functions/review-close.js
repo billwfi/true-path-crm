@@ -46,9 +46,15 @@ async function caseBundle(member, cat) {
             tracking_number, carrier, batch_id, delay_flag
      FROM dbo.tp_orders WHERE member_key=@m AND intake_type=@c ORDER BY created_at DESC`,
     { m: member, c: cat })).recordset;
-  const attempts = (await mssql(
-    `SELECT COUNT(*) n FROM dbo.GLP1_ContactLog WHERE member_key=@m AND category=@c`,
-    { m: member, c: cat })).recordset[0].n;
+  // Total attempts, and separately those that reached invalid contact details —
+  // the SOP's "Invalid Information" rule counts only the latter, so a merely
+  // non-responsive member must not be offered that status.
+  const counts = (await mssql(
+    `SELECT COUNT(*) AS n, SUM(CASE WHEN invalid_contact=1 THEN 1 ELSE 0 END) AS bad
+     FROM dbo.GLP1_ContactLog WHERE member_key=@m AND category=@c`,
+    { m: member, c: cat })).recordset[0];
+  const attempts = counts.n;
+  const invalidAttempts = Number(counts.bad || 0);
   const nm = await memberInfo(member, cat);
 
   const issued = rebates.filter(r => r.status === 'Completed').length;
@@ -63,9 +69,10 @@ async function caseBundle(member, cat) {
     rts_or_delay: orders.some(o => o.delay_flag),
   };
   return {
-    case: c, intake, rebates, orders, attempts, member_name: nm.full, group: nm.group, ready_indx: nm.indx,
+    case: c, intake, rebates, orders, attempts, invalid_attempts: invalidAttempts,
+    member_name: nm.full, group: nm.group, ready_indx: nm.indx,
     rebate_due: due, verification,
-    invalid_info_eligible: RB.invalidInfoEligible(attempts),
+    invalid_info_eligible: RB.invalidInfoEligible(invalidAttempts),
     options: {
       close_reasons: RB.CLOSE_REASONS, reasons_needing_auth: RB.REASONS_NEEDING_AUTH,
       member_statuses: RB.MEMBER_STATUSES, ticket_statuses: RB.TICKET_STATUSES,
