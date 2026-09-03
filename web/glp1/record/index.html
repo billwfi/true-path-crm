@@ -151,6 +151,16 @@
             </div>
           </div>
 
+          <!-- Fulfillment & Tracking (IA5 + CC5 + RC2) — address → procurement → ship → deliver -->
+          <div class="card mb-4" id="ship-card" style="display:none">
+            <div class="card-header flex items-center">
+              <span><i class="fa-solid fa-truck-fast text-slate-400"></i> Fulfillment &amp; Tracking</span>
+              <span class="badge ml-2" id="ship-stage-badge"></span>
+              <span class="text-xs text-slate-400 ml-auto" id="ship-batch"></span>
+            </div>
+            <div class="card-body form-pad" id="ship-body"></div>
+          </div>
+
           <!-- Cypress Requests (CS3 + RXF4) — transfer in/out + verbal requests, BA-routed -->
           <div class="card mb-4" id="cypress-card">
             <div class="card-header flex items-center">
@@ -278,6 +288,80 @@
     <div class="modal-footer">
       <button class="btn btn-outline" onclick="closeModal('contact-modal')">Cancel</button>
       <button class="btn btn-primary" onclick="saveContact()">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- Procurement hand-off modal -->
+<div id="handoff-modal" class="modal-backdrop hidden">
+  <div class="modal">
+    <div class="modal-header">
+      <span class="modal-title">Hand off to Procurement</span>
+      <button class="modal-close" onclick="closeModal('handoff-modal')">×</button>
+    </div>
+    <div class="modal-body">
+      <p class="text-sm text-slate-500 mb-3">Creates the procurement batch record, sets the intake to <b>Registered for Services</b>, and opens the order task with its reminder ladder.</p>
+      <div class="flex gap-3">
+        <div class="form-group flex-1"><label class="form-label">Vendor</label><input class="form-control" id="ho-vendor" placeholder="e.g. Cypress"></div>
+        <div class="form-group flex-1"><label class="form-label">Run-out date (order task due)</label><input type="date" class="form-control" id="ho-runout"></div>
+      </div>
+      <div class="flex gap-3">
+        <div class="form-group flex-1"><label class="form-label">Rebate group</label><input class="form-control" id="ho-rgroup"></div>
+        <div class="form-group" style="max-width:130px"><label class="form-label">Rebate $/mo</label><input type="number" step="0.01" class="form-control" id="ho-rmo"></div>
+        <div class="form-group" style="max-width:130px"><label class="form-label">Rebate $/yr</label><input type="number" step="0.01" class="form-control" id="ho-ryr"></div>
+      </div>
+      <p class="text-xs text-slate-400"><i class="fa-solid fa-circle-info"></i> Reminders created off run-out: Get&nbsp;Rx &minus;45d, verify address &minus;23d, adjudication &minus;25d.</p>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeModal('handoff-modal')">Cancel</button>
+      <button class="btn btn-primary" id="ho-save" onclick="doHandoff()"><i class="fa-solid fa-right-long"></i> Hand Off</button>
+    </div>
+  </div>
+</div>
+
+<!-- Record shipment modal -->
+<div id="ship-modal" class="modal-backdrop hidden">
+  <div class="modal">
+    <div class="modal-header">
+      <span class="modal-title">Record Shipment</span>
+      <button class="modal-close" onclick="closeModal('ship-modal')">×</button>
+    </div>
+    <div class="modal-body">
+      <div class="flex gap-3">
+        <div class="form-group" style="max-width:150px"><label class="form-label">Carrier *</label>
+          <select class="form-control" id="sh-carrier"><option>USPS</option><option>UPS</option><option>FedEx</option><option>Other</option></select></div>
+        <div class="form-group flex-1"><label class="form-label">Tracking number *</label><input class="form-control" id="sh-tn"></div>
+        <div class="form-group" style="max-width:160px"><label class="form-label">Ship date</label><input type="date" class="form-control" id="sh-date"></div>
+      </div>
+      <div class="form-group"><label class="form-label">Notes</label><input class="form-control" id="sh-notes"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeModal('ship-modal')">Cancel</button>
+      <button class="btn btn-primary" id="sh-save" onclick="doShip()"><i class="fa-solid fa-box"></i> Record Shipment</button>
+    </div>
+  </div>
+</div>
+
+<!-- Carrier status / delay / delivery-call modal -->
+<div id="trk-modal" class="modal-backdrop hidden">
+  <div class="modal">
+    <div class="modal-header">
+      <span class="modal-title" id="trk-title">Log</span>
+      <button class="modal-close" onclick="closeModal('trk-modal')">×</button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="trk-mode">
+      <div class="form-group" id="trk-status-wrap"><label class="form-label" id="trk-status-lbl">Carrier status *</label>
+        <input class="form-control" id="trk-status" placeholder="e.g. In transit / Available for pickup"></div>
+      <div class="form-group" id="trk-reached-wrap" style="display:none">
+        <label class="flex items-center gap-2 text-sm"><input type="checkbox" id="trk-reached" checked> Member reached and confirmed receipt</label>
+        <label class="flex items-center gap-2 text-sm mt-1"><input type="checkbox" id="trk-close"> Close this order</label>
+      </div>
+      <div class="form-group"><label class="form-label">Notes</label><textarea class="form-control" id="trk-notes" rows="2"></textarea></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeModal('trk-modal')">Cancel</button>
+      <button class="btn btn-primary" id="trk-save" onclick="saveTrk()"><i class="fa-solid fa-floppy-disk"></i> Save</button>
     </div>
   </div>
 </div>
@@ -773,14 +857,16 @@
     const d = await apiGet(`/orders?member=${encodeURIComponent(memberKey)}&category=${encodeURIComponent(trackCat())}`) || { orders: [] };
     orders = d.orders || [];
     const open = orders.find(o => !o.closed) || orders[0] || null;
-    if (open) { await loadOrderDetail(open.id); } else { order = null; renderOrder(); await loadRxRecords(); }
+    if (open) { await loadOrderDetail(open.id); }
+    else { order = null; renderOrder(); renderShip(); await loadRxRecords(); }
   }
   async function loadOrderDetail(id) {
     const d = await apiGet(`/orders?order_id=${id}`) || null;
     order = d ? d.order : null;
-    if (order) order._attempts = (d && d.attempts) || [];
+    if (order) { order._attempts = (d && d.attempts) || []; order._events = (d && d.events) || []; }
     getrxScripts = (d && d.scripts) || [];
     renderOrder();
+    renderShip();
     await loadRxRecords();
   }
 
@@ -1133,6 +1219,197 @@
   }
 
   document.getElementById('rx-modal').addEventListener('click', e => { if (e.target === e.currentTarget) closeModal('rx-modal'); });
+
+  /* ── Fulfillment & Tracking (IA5 + CC5 + RC2) ── */
+  const STAGE_COLOR = { 'Get Rx':'#64748b','Rx Received':'#0891b2','Processing':'#2563eb',
+    'Verify Address':'#7c3aed','Ordered':'#d97706','Shipped':'#0ea5e9','Delivered':'#16a34a' };
+
+  function renderShip() {
+    const card = document.getElementById('ship-card');
+    if (!order) { card.style.display = 'none'; return; }
+    card.style.display = '';
+    const o = order, ev = o._events || [];
+    const badge = document.getElementById('ship-stage-badge');
+    const c = STAGE_COLOR[o.stage] || '#64748b';
+    badge.style.cssText = `background:${c}1a;color:${c}`;
+    badge.textContent = o.stage;
+    document.getElementById('ship-batch').textContent = o.batch_id ? `Procurement batch #${o.batch_id}` : '';
+
+    // Progress rail: the four fulfillment gates.
+    const gates = [
+      { k:'addr',  label:'Address verified', done:!!o.address_verified },
+      { k:'proc',  label:'Procurement',      done:!!o.batch_id },
+      { k:'ship',  label:'Shipped',          done:!!o.tracking_number },
+      { k:'deliv', label:'Delivered',        done:!!o.delivered_date },
+      { k:'conf',  label:'Confirmed',        done:!!o.delivery_confirmed },
+    ];
+    const rail = gates.map(g => `<span class="step ${g.done?'done':'next'}" style="display:inline-flex;align-items:center;gap:5px;border:1px solid ${g.done?'#86efac':'#e2e8f0'};background:${g.done?'#dcfce7':'#f8fafc'};color:${g.done?'#15803d':'#94a3b8'};border-radius:999px;padding:3px 10px;font-size:12px;margin:0 4px 4px 0">
+      ${g.done?'<i class="fa-solid fa-check"></i>':'<i class="fa-regular fa-circle"></i>'} ${g.label}</span>`).join('');
+
+    const link = o.tracking_number ? trackLink(o.carrier, o.tracking_number) : '';
+    document.getElementById('ship-body').innerHTML = `
+      <div class="mb-3">${rail}</div>
+      ${o.delay_flag ? `<div class="flex items-center gap-2 bg-amber-50 border border-amber-300 text-amber-800 rounded-md px-4 py-2 mb-3 text-sm">
+        <i class="fa-solid fa-triangle-exclamation"></i> <b>Shipping delay</b> — ${esc(o.delay_notes)||'flagged'}</div>` : ''}
+
+      <div class="grid grid-cols-1 md:grid-cols-4 gap-x-6 gap-y-2 text-sm mb-3">
+        <div><div class="text-xs text-slate-400">Carrier</div><div class="font-medium">${esc(o.carrier)||'—'}</div></div>
+        <div><div class="text-xs text-slate-400">Tracking #</div><div class="font-medium font-mono text-xs">${
+          link ? `<a href="${esc(link)}" target="_blank" rel="noopener">${esc(o.tracking_number)} <i class="fa-solid fa-up-right-from-square"></i></a>` : '—'}</div></div>
+        <div><div class="text-xs text-slate-400">Shipped</div><div class="font-medium">${o.shipped_date?fmtDate(o.shipped_date):'—'}</div></div>
+        <div><div class="text-xs text-slate-400">Delivered</div><div class="font-medium">${o.delivered_date?fmtDate(o.delivered_date):'—'}</div></div>
+        <div class="md:col-span-2"><div class="text-xs text-slate-400">Last carrier status</div><div class="font-medium">${esc(o.last_carrier_status)||'—'}${
+          o.last_carrier_check?` <span class="text-xs text-slate-400">· ${fmtDate(o.last_carrier_check)}</span>`:''}</div></div>
+        <div><div class="text-xs text-slate-400">Run-out</div><div class="font-medium">${o.run_out_date?fmtDate(o.run_out_date):'—'}</div></div>
+        <div><div class="text-xs text-slate-400">Rebate</div><div class="font-medium">${
+          (o.rebate_monthly!=null||o.rebate_annual!=null) ? `$${o.rebate_monthly??0}/mo${o.rebate_annual!=null?` · $${o.rebate_annual}/yr`:''}` : '—'}</div></div>
+      </div>
+
+      <div class="flex flex-wrap gap-2 pt-2 border-t border-slate-100">
+        ${!o.address_verified
+          ? `<button class="btn btn-primary btn-sm" onclick="doVerifyAddress()"><i class="fa-solid fa-location-check"></i> Mark Address Verified</button>`
+          : ''}
+        ${o.address_verified && !o.batch_id
+          ? `<button class="btn btn-primary btn-sm" onclick="openHandoff()"><i class="fa-solid fa-right-long"></i> Hand off to Procurement</button>`
+          : ''}
+        ${o.batch_id && !o.tracking_number
+          ? `<button class="btn btn-primary btn-sm" onclick="openShip()"><i class="fa-solid fa-box"></i> Record Shipment</button>`
+          : ''}
+        ${o.tracking_number ? `
+          <button class="btn btn-outline btn-sm" onclick="sendTrackingText()"><i class="fa-solid fa-comment-sms"></i> ${
+            o.tracking_texted_at ? 'Re-send tracking text' : 'Send tracking text'}</button>
+          <button class="btn btn-outline btn-sm" onclick="openTrk('carrier')"><i class="fa-solid fa-magnifying-glass-location"></i> Log carrier status</button>
+          <button class="btn btn-outline btn-sm" onclick="openTrk('delay')"><i class="fa-solid fa-clock-rotate-left"></i> Report delay</button>` : ''}
+        ${o.tracking_number && !o.delivered_date
+          ? `<button class="btn btn-primary btn-sm" onclick="markDelivered()"><i class="fa-solid fa-house-circle-check"></i> Mark Delivered</button>` : ''}
+        ${o.delivered_date && !o.delivery_confirmed
+          ? `<button class="btn btn-primary btn-sm" onclick="openTrk('call')"><i class="fa-solid fa-phone-volume"></i> Delivery-confirmation call</button>` : ''}
+        ${o.delivery_confirmed ? `<span class="badge badge-green"><i class="fa-solid fa-check"></i> Delivery confirmed</span>` : ''}
+      </div>
+
+      ${ev.length ? `
+      <div class="mt-3 pt-3 border-t border-slate-100">
+        <div class="text-xs font-semibold text-slate-500 uppercase mb-2">Tracking history</div>
+        <table class="data-table"><thead><tr><th>When</th><th>Event</th><th>Status</th><th>Notes</th></tr></thead>
+        <tbody>${ev.map(e => `<tr>
+          <td class="text-xs text-slate-400">${fmtDate(e.occurred_at)}</td>
+          <td>${esc(e.event_type)}</td><td class="text-sm">${esc(e.status)||'—'}</td>
+          <td class="text-sm">${esc(e.notes)||''}</td></tr>`).join('')}</tbody></table>
+      </div>` : ''}`;
+  }
+
+  function trackLink(carrier, tn) {
+    const c = (carrier||'').toUpperCase();
+    if (c.includes('UPS')) return `https://www.ups.com/track?tracknum=${encodeURIComponent(tn)}`;
+    if (c.includes('FEDEX')) return `https://www.fedex.com/fedextrack/?trknbr=${encodeURIComponent(tn)}`;
+    return `https://tools.usps.com/go/TrackConfirmAction?tLabels=${encodeURIComponent(tn)}`;
+  }
+
+  async function doVerifyAddress() {
+    const res = await apiPost(`/orders?order_id=${order.id}&resource=verify-address`, {});
+    if (res && res.ok) { showToast('Address verified', 'success'); await loadOrderDetailKeepAttempts(); }
+    else showToast('Failed', 'error');
+  }
+
+  function openHandoff() {
+    document.getElementById('ho-vendor').value = '';
+    document.getElementById('ho-runout').value = order.run_out_date ? String(order.run_out_date).slice(0,10) : '';
+    document.getElementById('ho-rgroup').value = order.rebate_group || '';
+    document.getElementById('ho-rmo').value = order.rebate_monthly ?? '';
+    document.getElementById('ho-ryr').value = order.rebate_annual ?? '';
+    openModal('handoff-modal');
+  }
+  async function doHandoff() {
+    const btn = document.getElementById('ho-save'); btn.disabled = true;
+    const res = await apiPost(`/orders?order_id=${order.id}&resource=handoff`, {
+      vendor: document.getElementById('ho-vendor').value,
+      run_out_date: document.getElementById('ho-runout').value || null,
+      rebate_group: document.getElementById('ho-rgroup').value,
+      rebate_monthly: document.getElementById('ho-rmo').value,
+      rebate_annual: document.getElementById('ho-ryr').value,
+    });
+    btn.disabled = false;
+    if (res && res.ok) {
+      const d = await res.json().catch(()=>({}));
+      showToast(`Handed off — batch #${d.batch_id}; ${(d.created||[]).length} task/reminders created`, 'success');
+      closeModal('handoff-modal');
+      await loadOrderDetailKeepAttempts(); await loadTracking(); await loadIntakesQuiet();
+    } else { const e = res ? await res.json().catch(()=>({})) : {}; showToast(e.error || 'Hand-off failed', 'error'); }
+  }
+
+  function openShip() {
+    document.getElementById('sh-carrier').value = 'USPS';
+    document.getElementById('sh-tn').value = '';
+    document.getElementById('sh-date').value = new Date().toISOString().slice(0,10);
+    document.getElementById('sh-notes').value = '';
+    openModal('ship-modal');
+  }
+  async function doShip() {
+    const tn = document.getElementById('sh-tn').value.trim();
+    if (!tn) { showToast('Tracking number is required', 'error'); return; }
+    const btn = document.getElementById('sh-save'); btn.disabled = true;
+    const res = await apiPost(`/orders?order_id=${order.id}&resource=ship`, {
+      carrier: document.getElementById('sh-carrier').value, tracking_number: tn,
+      shipped_date: document.getElementById('sh-date').value || null,
+      notes: document.getElementById('sh-notes').value || null,
+    });
+    btn.disabled = false;
+    if (res && res.ok) { showToast('Shipment recorded — tracking task created', 'success'); closeModal('ship-modal'); await loadOrderDetailKeepAttempts(); }
+    else { const e = res ? await res.json().catch(()=>({})) : {}; showToast(e.error || 'Failed', 'error'); }
+  }
+
+  async function sendTrackingText() {
+    const res = await apiPost(`/orders?order_id=${order.id}&resource=tracking-text`, {});
+    if (res && res.ok) {
+      const d = await res.json().catch(()=>({}));
+      if (d.message && navigator.clipboard) navigator.clipboard.writeText(d.message).catch(()=>{});
+      showToast('Tracking text prepared & copied', 'success');
+      await loadOrderDetailKeepAttempts(); await loadTracking();
+    } else showToast('Failed', 'error');
+  }
+
+  function openTrk(mode) {
+    document.getElementById('trk-mode').value = mode;
+    const t = { carrier:'Log Carrier Status', delay:'Report Shipping Delay', call:'Delivery-Confirmation Call' }[mode];
+    document.getElementById('trk-title').textContent = t;
+    document.getElementById('trk-status').value = '';
+    document.getElementById('trk-notes').value = '';
+    document.getElementById('trk-status-wrap').style.display = (mode === 'call') ? 'none' : '';
+    document.getElementById('trk-status-lbl').textContent = (mode === 'delay') ? 'Delay reason *' : 'Carrier status *';
+    document.getElementById('trk-reached-wrap').style.display = (mode === 'call') ? '' : 'none';
+    openModal('trk-modal');
+  }
+  async function saveTrk() {
+    const mode = document.getElementById('trk-mode').value;
+    const status = document.getElementById('trk-status').value.trim();
+    const notes = document.getElementById('trk-notes').value || null;
+    if (mode !== 'call' && !status) { showToast('Enter a value', 'error'); return; }
+    const btn = document.getElementById('trk-save'); btn.disabled = true;
+    let res;
+    if (mode === 'carrier') res = await apiPost(`/orders?order_id=${order.id}&resource=carrier-check`, { status, notes });
+    else if (mode === 'delay') res = await apiPost(`/orders?order_id=${order.id}&resource=delay`, { reason: status, notes });
+    else res = await apiPost(`/orders?order_id=${order.id}&resource=delivery-call`, {
+      reached: document.getElementById('trk-reached').checked,
+      close_order: document.getElementById('trk-close').checked, notes });
+    btn.disabled = false;
+    if (res && res.ok) { showToast('Saved', 'success'); closeModal('trk-modal'); await loadOrderDetailKeepAttempts(); await loadTracking(); }
+    else showToast('Failed', 'error');
+  }
+  async function markDelivered() {
+    if (!confirm2('Mark this shipment delivered? This opens the delivery-confirmation call step.')) return;
+    const res = await apiPost(`/orders?order_id=${order.id}&resource=delivered`, {});
+    if (res && res.ok) { showToast('Marked delivered — confirmation call reminder created', 'success'); await loadOrderDetailKeepAttempts(); }
+    else showToast('Failed', 'error');
+  }
+  // Refresh the intake list quietly so a status change to Registered for Services shows.
+  async function loadIntakesQuiet() {
+    intakes = await apiGet(`/glp1-tracking?member=${encodeURIComponent(memberKey)}&resource=intakes`) || intakes;
+    renderIntakeList();
+  }
+
+  document.getElementById('handoff-modal').addEventListener('click', e => { if (e.target === e.currentTarget) closeModal('handoff-modal'); });
+  document.getElementById('ship-modal').addEventListener('click', e => { if (e.target === e.currentTarget) closeModal('ship-modal'); });
+  document.getElementById('trk-modal').addEventListener('click', e => { if (e.target === e.currentTarget) closeModal('trk-modal'); });
 
   /* ── Cypress Requests (CS3 + RXF4) ── */
   let cypressRequests = [], cypressScripts = [], cypressScriptsShown = false;

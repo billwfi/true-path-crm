@@ -11,11 +11,22 @@ const { normalizePriority, isEscalation, nextFollowup } = require('./_cadence');
 //   POST /orders?order_id=&resource=verbal-handoff  -> verbal Rx request → BA (creates BA ESC reminder)
 //   POST /orders?order_id=&resource=mrc-escalation   -> escalate to leadership/MRC
 //   POST /orders?order_id=&resource=rx-received      -> mark Rx received (→ Rx processing, increment 2)
+//
+// Phase 4 (procurement hand-off + shipping/tracking):
+//   POST /orders?order_id=&resource=verify-address   -> address verified (→ Verify Address stage)
+//   POST /orders?order_id=&resource=handoff          -> hand off to procurement (tp_batch + Registered for Services)
+//   POST /orders?order_id=&resource=ship             -> record shipment (carrier + tracking #) + tracking task
+//   POST /orders?order_id=&resource=tracking-text    -> compose/log the member tracking text (staged)
+//   POST /orders?order_id=&resource=carrier-check    -> log a carrier status check
+//   POST /orders?order_id=&resource=delivered        -> mark delivered (+ delivery-confirmation call task)
+//   POST /orders?order_id=&resource=delivery-call    -> log the delivery-confirmation call
+//   POST /orders?order_id=&resource=delay            -> flag a shipping delay
+//   GET  /orders?resource=tracking[&mine=1&state=]   -> shipments in flight / follow-ups due
 
 const TARGETS  = ['Prescriber', 'Member', 'BA'];
 const CHANNELS = ['Fax', 'Call', 'LVM', 'Text', 'Email'];
 const GETRX_STATUSES = ['New', 'Faxed', 'Follow-up Call', 'Refaxed', 'MRC Escalation', 'Verbal Request', 'Rx Received'];
-const STAGES = ['Get Rx', 'Rx Received', 'Processing', 'Verify Address', 'Ordered'];
+const STAGES = ['Get Rx', 'Rx Received', 'Processing', 'Verify Address', 'Ordered', 'Shipped', 'Delivered'];
 
 const MEMBER_MATCH = `category=@c AND COALESCE(NULLIF(Member_ID,''), CAST(indx AS VARCHAR(50)))=@m`;
 
@@ -52,6 +63,7 @@ exports.handler = async function (event) {
 
   try {
     if (event.httpMethod === 'GET') {
+      if (q.resource === 'tracking') return trackingQueue(q, user);
       if (q.order_id) {
         const order = (await mssql(
           `SELECT o.*, LTRIM(RTRIM(CONCAT(u.firstname,' ',u.lastname))) AS assigned_name
@@ -61,11 +73,18 @@ exports.handler = async function (event) {
         const attempts = (await mssql(
           `SELECT * FROM dbo.tp_getrx_attempts WHERE order_id=@id ORDER BY attempt_no, id`,
           { id: order.id })).recordset;
+        const events = (await mssql(
+          `SELECT id, event_type, status, notes, occurred_at FROM dbo.tp_tracking_events
+           WHERE order_id=@id ORDER BY occurred_at DESC, id DESC`, { id: order.id })).recordset;
         const nm = await memberName(order.member_key, order.intake_type);
         const scripts = (await mssql(
           `SELECT script_key, title, trigger_point, script_text FROM dbo.tp_getrx_scripts WHERE active=1 ORDER BY sort_order`))
           .recordset.map(s => ({ ...s, script_text: (s.script_text || '').replace(/\{\{\s*first_name\s*\}\}/gi, nm.first || 'there') }));
-        return ok({ order, attempts, scripts, member_name: nm.full });
+        // Tracking text, with the member's name / tracking number filled in.
+        const tt = (await mssql(
+          `SELECT TOP 1 script_text FROM dbo.tp_outreach_scripts WHERE intake_type='*' AND attempt_no=-1`)).recordset[0];
+        const trackingText = tt ? fillTracking(tt.script_text, nm.first, order) : null;
+        return ok({ order, attempts, events, scripts, member_name: nm.full, tracking_text: trackingText });
       }
       if (!q.member) return badRequest('member or order_id required');
       const orders = (await mssql(
@@ -82,6 +101,14 @@ exports.handler = async function (event) {
       if (q.resource === 'verbal-handoff') return verbalHandoff(q, event, user);
       if (q.resource === 'mrc-escalation') return mrcEscalation(q, user);
       if (q.resource === 'rx-received') return markRxReceived(q, user);
+      if (q.resource === 'verify-address') return verifyAddress(q, user);
+      if (q.resource === 'handoff') return procurementHandoff(q, event, user);
+      if (q.resource === 'ship') return recordShipment(q, event, user);
+      if (q.resource === 'tracking-text') return trackingText(q, user);
+      if (q.resource === 'carrier-check') return carrierCheck(q, event, user);
+      if (q.resource === 'delivered') return markDelivered(q, event, user);
+      if (q.resource === 'delivery-call') return deliveryCall(q, event, user);
+      if (q.resource === 'delay') return reportDelay(q, event, user);
 
       // Create an order ticket for a member+intake.
       if (!q.member) return badRequest('member is required');
@@ -228,4 +255,276 @@ async function markRxReceived(q, user) {
     `UPDATE dbo.tp_orders SET getrx_status='Rx Received', stage='Rx Received', updated_at=SYSUTCDATETIME()
      WHERE id=@id`, { id });
   return r.rowsAffected[0] ? ok({ ok: true, stage: 'Rx Received' }) : notFound();
+}
+
+/* ══════════ Phase 4 — procurement hand-off + shipping / tracking ══════════ */
+
+// USPS/UPS/FedEx public tracking URL for the member text.
+function carrierLink(carrier, tn) {
+  if (!tn) return '';
+  const c = (carrier || '').toUpperCase();
+  if (c.includes('UPS'))   return `https://www.ups.com/track?tracknum=${encodeURIComponent(tn)}`;
+  if (c.includes('FEDEX')) return `https://www.fedex.com/fedextrack/?trknbr=${encodeURIComponent(tn)}`;
+  return `https://tools.usps.com/go/TrackConfirmAction?tLabels=${encodeURIComponent(tn)}`;
+}
+function fillTracking(text, first, o) {
+  return (text || '')
+    .replace(/\{\{\s*first_name\s*\}\}/gi, first || 'there')
+    .replace(/\{\{\s*tracking_number\s*\}\}/gi, o.tracking_number || '[tracking #]')
+    .replace(/\{\{\s*tracking_link\s*\}\}/gi, carrierLink(o.carrier, o.tracking_number) || '[tracking link]');
+}
+async function logEvent(orderId, type, status, notes, userId) {
+  await mssql(
+    `INSERT INTO dbo.tp_tracking_events (order_id, event_type, status, notes, created_by)
+     VALUES (@id, @t, @s, @n, @by)`,
+    { id: orderId, t: type, s: (status || '').slice(0, 120) || null, n: notes || null, by: userId || null });
+}
+async function getOrder(id) {
+  return (await mssql('SELECT * FROM dbo.tp_orders WHERE id=@id', { id })).recordset[0];
+}
+
+// RC2 — the SOP reminder ladder off the order's run-out date.
+async function orderTaskReminders(o, nm, userId) {
+  const made = [];
+  const dayBefore = (d, n) => { const x = new Date(d); x.setDate(x.getDate() - n); return x.toISOString().slice(0, 10); };
+  const med = [o.medication, o.strength].filter(Boolean).join(' ') || 'medication';
+  // The per-medication order task: due at run-out, with the SOP checklist.
+  const rebate = (o.rebate_monthly != null || o.rebate_annual != null)
+    ? ` — ${med} $${o.rebate_monthly ?? 0}/mo${o.rebate_annual != null ? ` / $${o.rebate_annual}/yr` : ''}`
+    : '';
+  const taskName = `Order - ${med}${o.day_supply ? ` - ${o.day_supply} day` : ''}${rebate}`;
+  const desc = 'Checklist: (1) Submit Order Form  (2) Place Order';
+  await mssql(
+    `INSERT INTO dbo.tp_tasks (name, status, priority, start_date, due_date, assigned_id, related_type, related_id, description, tags)
+     VALUES (@n, 'Open', @p, CAST(GETDATE() AS date), @due, @asg, 'CC Order', @rid, @d, 'Scripts')`,
+    { n: taskName.slice(0, 1000), p: o.priority || 'Medium', due: o.run_out_date || null,
+      asg: o.assigned_to || null, rid: o.id, d: desc });
+  made.push(taskName);
+  // Rx-driven reminders, only when we know the run-out date.
+  if (o.run_out_date) {
+    const ru = String(o.run_out_date).slice(0, 10);
+    const ladder = [
+      [45, `Get Rx - ${nm.full} - ${med}`],
+      [23, `Submit to verify address - ${nm.full} - ${med}`],
+      [25, `Adjudication (WellDyne/BevCap) - ${nm.full} - ${med}`],
+    ];
+    for (const [days, text] of ladder) {
+      await mssql(
+        `INSERT INTO dbo.tp_reminders (rel_type, rel_id, staff_id, created_by, description, reminder_date, notify_by_email, is_closed)
+         VALUES ('CC Order', @rid, NULL, @by, @d, @when, 0, 0)`,
+        { rid: o.id, by: userId || null, d: text.slice(0, 400), when: dayBefore(ru, days) + 'T09:00:00' });
+      made.push(text);
+    }
+  }
+  return made;
+}
+
+async function verifyAddress(q, user) {
+  const id = parseInt(q.order_id, 10);
+  if (!id) return badRequest('order_id required');
+  const o = await getOrder(id); if (!o) return notFound();
+  await mssql(
+    `UPDATE dbo.tp_orders SET address_verified=1, address_verified_at=SYSUTCDATETIME(),
+       stage=CASE WHEN stage IN ('Get Rx','Rx Received','Processing') THEN 'Verify Address' ELSE stage END,
+       updated_at=SYSUTCDATETIME() WHERE id=@id`, { id });
+  return ok({ ok: true, address_verified: true });
+}
+
+// IA5 — hand off to procurement: create the tp_batch record, mark the intake
+// 'Registered for Services', and raise a procurement notification.
+async function procurementHandoff(q, event, user) {
+  const id = parseInt(q.order_id, 10);
+  if (!id) return badRequest('order_id required');
+  const o = await getOrder(id); if (!o) return notFound();
+  if (!o.address_verified) return badRequest('Verify the shipping address before handing off to procurement');
+  if (o.batch_id) return badRequest('This order has already been handed off (batch #' + o.batch_id + ')');
+  const b = JSON.parse(event.body || '{}');
+  const nm = await memberName(o.member_key, o.intake_type);
+
+  const batch = await mssql(
+    `INSERT INTO dbo.tp_batch (customer_id, customer_name, drug_name, strength, vendor,
+        vendor_day_supply, status, transaction_date, document_patient_id)
+     OUTPUT INSERTED.id
+     VALUES (@cid, @cname, @drug, @strength, @vendor, @ds, 'Pending', CAST(GETDATE() AS date), @cid)`,
+    { cid: o.member_key, cname: nm.full, drug: o.medication, strength: o.strength,
+      vendor: (b.vendor || '').slice(0, 500) || null, ds: o.day_supply || null });
+  const batchId = batch.recordset[0].id;
+
+  await mssql(
+    `UPDATE dbo.tp_orders SET batch_id=@bid, handed_off_at=SYSUTCDATETIME(), stage='Ordered',
+       rebate_group=COALESCE(@rg, rebate_group), rebate_monthly=COALESCE(@rm, rebate_monthly),
+       rebate_annual=COALESCE(@ra, rebate_annual), run_out_date=COALESCE(@ro, run_out_date),
+       updated_at=SYSUTCDATETIME() WHERE id=@id`,
+    { bid: batchId, id,
+      rg: (b.rebate_group || '').slice(0, 120) || null,
+      rm: b.rebate_monthly !== '' && b.rebate_monthly != null ? Number(b.rebate_monthly) : null,
+      ra: b.rebate_annual !== '' && b.rebate_annual != null ? Number(b.rebate_annual) : null,
+      ro: b.run_out_date || null });
+
+  // IA5 — terminal intake state signalling "ready for procurement".
+  await mssql(
+    `UPDATE dbo.tp_member_intakes SET status='Registered for Services', sub_status='Order Created',
+       status_date=CAST(GETDATE() AS date), updated_by=@by, updated_at=GETDATE()
+     WHERE member_key=@m AND intake_type=@c`,
+    { m: o.member_key, c: o.intake_type, by: user.id || null });
+
+  await makeReminder('Procurement Hand-off',
+    `PROCUREMENT - ${nm.full} - ${[o.medication, o.strength].filter(Boolean).join(' ')} - batch #${batchId}`,
+    nextFollowup('High') + 'T09:00:00', user.id);
+
+  // RC2 — order task + Rx-driven reminder ladder.
+  const fresh = await getOrder(id);
+  const tasks = await orderTaskReminders(fresh, nm, user.id);
+  await logEvent(id, 'Carrier Check', 'Handed to procurement', `Batch #${batchId}`, user.id);
+  return ok({ ok: true, batch_id: batchId, stage: 'Ordered', intake_status: 'Registered for Services', created: tasks });
+}
+
+// CC5 — record the shipment and open the tracking task.
+async function recordShipment(q, event, user) {
+  const id = parseInt(q.order_id, 10);
+  if (!id) return badRequest('order_id required');
+  const o = await getOrder(id); if (!o) return notFound();
+  const b = JSON.parse(event.body || '{}');
+  const tn = (b.tracking_number || '').trim();
+  if (!tn) return badRequest('tracking_number is required');
+  const carrier = (b.carrier || 'USPS').slice(0, 60);
+  await mssql(
+    `UPDATE dbo.tp_orders SET carrier=@carrier, tracking_number=@tn, shipped_date=@sd,
+       stage='Shipped', delay_flag=0, updated_at=SYSUTCDATETIME() WHERE id=@id`,
+    { carrier, tn: tn.slice(0, 120), sd: b.shipped_date || new Date().toISOString().slice(0, 10), id });
+  await logEvent(id, 'Shipped', `${carrier} ${tn}`, b.notes || null, user.id);
+  const nm = await memberName(o.member_key, o.intake_type);
+  // Tracking task for the rep to monitor the carrier until delivery.
+  await mssql(
+    `INSERT INTO dbo.tp_tasks (name, status, priority, start_date, assigned_id, related_type, related_id, description, tags)
+     VALUES (@n, 'Open', @p, CAST(GETDATE() AS date), @asg, 'CC Tracking', @rid, @d, 'Tracking')`,
+    { n: `Tracking - ${nm.full} - ${carrier} ${tn}`.slice(0, 1000), p: o.priority || 'Medium',
+      asg: o.assigned_to || null, rid: id,
+      d: `Monitor ${carrier} until delivered, then make the delivery-confirmation call.` });
+  const fresh = await getOrder(id);
+  return created({ ok: true, stage: 'Shipped', tracking_link: carrierLink(carrier, tn),
+    tracking_text: fillTracking((await mssql(`SELECT TOP 1 script_text FROM dbo.tp_outreach_scripts WHERE intake_type='*' AND attempt_no=-1`)).recordset[0]?.script_text, nm.first, fresh) });
+}
+
+// CC5 — staged member tracking text (composed + logged, not dispatched).
+async function trackingText(q, user) {
+  const id = parseInt(q.order_id, 10);
+  if (!id) return badRequest('order_id required');
+  const o = await getOrder(id); if (!o) return notFound();
+  if (!o.tracking_number) return badRequest('Record the shipment first');
+  const nm = await memberName(o.member_key, o.intake_type);
+  const tpl = (await mssql(`SELECT TOP 1 script_text FROM dbo.tp_outreach_scripts WHERE intake_type='*' AND attempt_no=-1`)).recordset[0];
+  const msg = fillTracking(tpl && tpl.script_text, nm.first, o);
+  await mssql('UPDATE dbo.tp_orders SET tracking_texted_at=SYSUTCDATETIME(), updated_at=SYSUTCDATETIME() WHERE id=@id', { id });
+  await logEvent(id, 'Tracking Texted', 'Prepared [staged]', msg, user.id);
+  // Mirror into the contact log so the member's history shows it.
+  await mssql(
+    `INSERT INTO dbo.GLP1_ContactLog (member_key, category, contact_date, contact_type, notes, contact_status, created_by)
+     VALUES (@m, @c, CAST(GETDATE() AS date), 'Text', @n, 'Closed', @by)`,
+    { m: o.member_key, c: o.intake_type, n: 'Tracking text prepared [staged]', by: user.id || null });
+  return ok({ ok: true, message: msg, staged: true });
+}
+
+async function carrierCheck(q, event, user) {
+  const id = parseInt(q.order_id, 10);
+  if (!id) return badRequest('order_id required');
+  const b = JSON.parse(event.body || '{}');
+  const status = (b.status || '').trim();
+  if (!status) return badRequest('status is required');
+  await mssql(
+    `UPDATE dbo.tp_orders SET last_carrier_status=@s, last_carrier_check=SYSUTCDATETIME(), updated_at=SYSUTCDATETIME() WHERE id=@id`,
+    { s: status.slice(0, 120), id });
+  await logEvent(id, 'Carrier Check', status, b.notes || null, user.id);
+  return ok({ ok: true, last_carrier_status: status });
+}
+
+// CC5 — delivered: stamp the date and open the delivery-confirmation call step.
+async function markDelivered(q, event, user) {
+  const id = parseInt(q.order_id, 10);
+  if (!id) return badRequest('order_id required');
+  const o = await getOrder(id); if (!o) return notFound();
+  const b = JSON.parse(event.body || '{}');
+  const dd = b.delivered_date || new Date().toISOString().slice(0, 10);
+  await mssql(
+    `UPDATE dbo.tp_orders SET delivered_date=@dd, stage='Delivered', delay_flag=0,
+       last_carrier_status='Delivered', last_carrier_check=SYSUTCDATETIME(), updated_at=SYSUTCDATETIME()
+     WHERE id=@id`, { dd, id });
+  await logEvent(id, 'Delivered', 'Delivered', b.notes || null, user.id);
+  const nm = await memberName(o.member_key, o.intake_type);
+  const made = await makeReminder('Delivery Confirmation',
+    `DELIVERY CALL - ${nm.full} - confirm receipt`, new Date().toISOString().slice(0, 10) + 'T09:00:00', user.id);
+  return ok({ ok: true, stage: 'Delivered', delivery_call_reminder: made });
+}
+
+async function deliveryCall(q, event, user) {
+  const id = parseInt(q.order_id, 10);
+  if (!id) return badRequest('order_id required');
+  const b = JSON.parse(event.body || '{}');
+  await mssql(
+    `UPDATE dbo.tp_orders SET delivery_confirmed=1, delivery_confirmed_at=SYSUTCDATETIME(),
+       closed=CASE WHEN @close=1 THEN 1 ELSE closed END, updated_at=SYSUTCDATETIME() WHERE id=@id`,
+    { id, close: b.close_order ? 1 : 0 });
+  await logEvent(id, 'Delivery Call', b.reached ? 'Member reached' : 'No answer', b.notes || null, user.id);
+  const o = await getOrder(id);
+  // Log the call on the member's contact history too.
+  await mssql(
+    `INSERT INTO dbo.GLP1_ContactLog (member_key, category, contact_date, contact_type, notes, contact_status, created_by)
+     VALUES (@m, @c, CAST(GETDATE() AS date), 'Phone Call', @n, @st, @by)`,
+    { m: o.member_key, c: o.intake_type,
+      n: `Delivery-confirmation call — ${b.reached ? 'member reached' : 'no answer'}${b.notes ? ': ' + b.notes : ''}`,
+      st: b.reached ? 'Closed' : 'Open', by: user.id || null });
+  return ok({ ok: true, delivery_confirmed: true, closed: !!b.close_order });
+}
+
+async function reportDelay(q, event, user) {
+  const id = parseInt(q.order_id, 10);
+  if (!id) return badRequest('order_id required');
+  const o = await getOrder(id); if (!o) return notFound();
+  const b = JSON.parse(event.body || '{}');
+  const reason = (b.reason || 'Shipping delay').trim();
+  await mssql(
+    `UPDATE dbo.tp_orders SET delay_flag=1, delay_notes=@n, updated_at=SYSUTCDATETIME() WHERE id=@id`,
+    { n: reason + (b.notes ? ` — ${b.notes}` : ''), id });
+  await logEvent(id, 'Delay', reason, b.notes || null, user.id);
+  const nm = await memberName(o.member_key, o.intake_type);
+  const made = await makeReminder('Shipping Delay',
+    `DELAY - ${nm.full} - ${reason}`.slice(0, 400), nextFollowup('High') + 'T09:00:00', user.id);
+  return ok({ ok: true, delay_flag: true, reminder: made });
+}
+
+// Shipments in flight + delivery follow-ups due — the Tracking queue page.
+async function trackingQueue(q, user) {
+  const conds = [`o.stage IN ('Ordered','Shipped','Delivered')`, 'o.closed=0'];
+  const p = { uid: user.id };
+  if (q.mine === '1') conds.push('o.assigned_to=@uid');
+  if (q.state === 'in-flight')  conds.push(`o.stage='Shipped'`);
+  if (q.state === 'awaiting')   conds.push(`o.stage='Ordered'`);
+  if (q.state === 'to-confirm') conds.push(`o.stage='Delivered' AND o.delivery_confirmed=0`);
+  if (q.state === 'delayed')    conds.push('o.delay_flag=1');
+  if (q.search) { conds.push('(a.First_Name LIKE @s OR a.Last_Name LIKE @s OR o.tracking_number LIKE @s OR o.medication LIKE @s)'); p.s = `%${q.search}%`; }
+  const rows = (await mssql(`
+    SELECT o.id AS order_id, o.member_key, o.intake_type, o.medication, o.strength, o.stage,
+           o.carrier, o.tracking_number, o.shipped_date, o.delivered_date, o.delivery_confirmed,
+           o.tracking_texted_at, o.last_carrier_status, o.last_carrier_check, o.delay_flag,
+           o.batch_id, o.priority, o.run_out_date,
+           LTRIM(RTRIM(CONCAT(u.firstname,' ',u.lastname))) AS assigned_name,
+           a.First_Name, a.Last_Name, a.Group_Name, a.indx AS ready_indx
+    FROM dbo.tp_orders o
+    LEFT JOIN dbo.Users u ON u.id=o.assigned_to
+    OUTER APPLY (SELECT TOP 1 r.First_Name, r.Last_Name, r.Group_Name, r.indx FROM dbo.ReadyToAssign r
+      WHERE r.category=o.intake_type
+        AND COALESCE(NULLIF(r.Member_ID,''), CAST(r.indx AS VARCHAR(50)))=o.member_key
+      ORDER BY r.indx DESC) a
+    WHERE ${conds.join(' AND ')}
+    ORDER BY CASE o.stage WHEN 'Delivered' THEN 0 WHEN 'Shipped' THEN 1 ELSE 2 END,
+             o.delay_flag DESC, o.shipped_date DESC, o.id DESC`, p)).recordset;
+  const s = (await mssql(`
+    SELECT SUM(CASE WHEN stage='Ordered' THEN 1 ELSE 0 END) awaiting,
+           SUM(CASE WHEN stage='Shipped' THEN 1 ELSE 0 END) in_flight,
+           SUM(CASE WHEN stage='Delivered' AND delivery_confirmed=0 THEN 1 ELSE 0 END) to_confirm,
+           SUM(CASE WHEN delay_flag=1 THEN 1 ELSE 0 END) delayed
+    FROM dbo.tp_orders WHERE closed=0 ${q.mine === '1' ? 'AND assigned_to=@uid' : ''}`, p)).recordset[0] || {};
+  return ok({ rows, summary: {
+    awaiting: Number(s.awaiting || 0), in_flight: Number(s.in_flight || 0),
+    to_confirm: Number(s.to_confirm || 0), delayed: Number(s.delayed || 0) } });
 }

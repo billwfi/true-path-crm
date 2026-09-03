@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Shipping &amp; Tracking — True Path CRM</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+  <link rel="stylesheet" href="/assets/css/app.css">
+  <style>
+    .tiles{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:16px}
+    @media(max-width:760px){.tiles{grid-template-columns:repeat(2,1fr)}}
+    .tile{background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:14px 16px;cursor:pointer;transition:box-shadow .12s,border-color .12s}
+    .tile:hover{box-shadow:0 4px 14px rgba(15,23,42,.08)}
+    .tile.active{border-color:#0ea5e9;box-shadow:0 0 0 2px rgba(14,165,233,.18)}
+    .tile .n{font-size:26px;font-weight:700;line-height:1;font-variant-numeric:tabular-nums;color:#334155}
+    .tile .l{font-size:11.5px;text-transform:uppercase;letter-spacing:.04em;color:#64748b;margin-top:6px}
+    .tile.blue .n{color:#0ea5e9}.tile.green .n{color:#16a34a}.tile.amber .n{color:#d97706}
+  </style>
+</head>
+<body class="bg-slate-100 text-slate-700">
+<div id="app" class="flex h-screen overflow-hidden">
+  <div id="nav-placeholder"></div>
+  <div class="flex-1 flex flex-col overflow-hidden">
+    <div id="topbar"></div>
+    <main class="flex-1 overflow-y-auto p-6">
+
+      <div id="tiles" class="tiles"></div>
+
+      <div class="search-bar" style="flex-wrap:wrap;gap:8px">
+        <input type="text" id="search" class="form-control" placeholder="Search member, medication, tracking #…" oninput="debounceLoad()" style="max-width:280px">
+        <select id="f-scope" class="form-control" style="max-width:170px" onchange="load()">
+          <option value="mine">My members</option><option value="all">All</option>
+        </select>
+        <span id="count" class="text-sm text-slate-500 ml-auto self-center"></span>
+      </div>
+
+      <div class="card">
+        <div class="card-body">
+          <table class="data-table">
+            <thead><tr>
+              <th>Member</th><th>Medication</th><th>Stage</th><th>Carrier / Tracking</th>
+              <th>Shipped</th><th>Last Status</th><th>Texted</th><th>Assigned</th><th></th>
+            </tr></thead>
+            <tbody id="tbl-body"></tbody>
+          </table>
+        </div>
+      </div>
+    </main>
+  </div>
+</div>
+
+<script src="/assets/js/app.js"></script>
+<script>
+  initNav('cc-tracking');
+  let rows = [], summary = {}, debounce, activeTile = '';
+
+  function debounceLoad(){ clearTimeout(debounce); debounce = setTimeout(load, 300); }
+  const STAGE_BADGE = { 'Ordered':'amber','Shipped':'blue','Delivered':'green' };
+  function stageBadge(s){ return `<span class="badge badge-${STAGE_BADGE[s]||'gray'}">${esc(s)}</span>`; }
+  function trackLink(carrier, tn){
+    const c = (carrier||'').toUpperCase();
+    if (c.includes('UPS')) return `https://www.ups.com/track?tracknum=${encodeURIComponent(tn)}`;
+    if (c.includes('FEDEX')) return `https://www.fedex.com/fedextrack/?trknbr=${encodeURIComponent(tn)}`;
+    return `https://tools.usps.com/go/TrackConfirmAction?tLabels=${encodeURIComponent(tn)}`;
+  }
+  function name(r){ return `${esc(r.Last_Name||'')}, ${esc(r.First_Name||'')}`.replace(/^, |, $/,'') || esc(r.member_key); }
+
+  async function load(){
+    const p = new URLSearchParams({ resource: 'tracking' });
+    if (document.getElementById('f-scope').value === 'mine') p.set('mine', '1');
+    if (activeTile) p.set('state', activeTile);
+    const s = document.getElementById('search').value.trim(); if (s) p.set('search', s);
+    const d = await apiGet('/orders?' + p.toString()) || { rows: [], summary: {} };
+    rows = d.rows || []; summary = d.summary || {};
+    renderTiles(); render();
+  }
+
+  function renderTiles(){
+    const t = [
+      { k:'awaiting',   l:'Awaiting Shipment', n:summary.awaiting||0,   cls:'amber' },
+      { k:'in-flight',  l:'In Transit',        n:summary.in_flight||0,  cls:'blue' },
+      { k:'to-confirm', l:'To Confirm',        n:summary.to_confirm||0, cls:'green' },
+      { k:'delayed',    l:'Delayed',           n:summary.delayed||0,    cls:'' },
+    ];
+    document.getElementById('tiles').innerHTML = t.map(x =>
+      `<div class="tile ${x.cls}${activeTile===x.k?' active':''}" onclick="tileClick('${x.k}')">
+         <div class="n">${x.n}</div><div class="l">${x.l}</div></div>`).join('');
+  }
+  function tileClick(k){ activeTile = (activeTile===k) ? '' : k; load(); }
+
+  function render(){
+    document.getElementById('count').textContent = `${rows.length} shipment${rows.length===1?'':'s'}`;
+    document.getElementById('tbl-body').innerHTML = rows.length
+      ? rows.map(r => `<tr>
+          <td class="font-medium">${name(r)}
+            <div class="text-xs text-slate-400 font-normal">${esc(r.Group_Name)||''}${r.batch_id?` · batch #${r.batch_id}`:''}</div></td>
+          <td>${esc([r.medication, r.strength].filter(Boolean).join(' '))||'—'}</td>
+          <td>${stageBadge(r.stage)}${r.delay_flag?' <span class="badge badge-red">Delay</span>':''}</td>
+          <td class="text-xs">${r.tracking_number
+            ? `${esc(r.carrier)||''} <a class="font-mono" href="${esc(trackLink(r.carrier,r.tracking_number))}" target="_blank" rel="noopener">${esc(r.tracking_number)}</a>`
+            : '<span class="text-slate-400">—</span>'}</td>
+          <td class="text-xs">${r.shipped_date?fmtDate(r.shipped_date):'—'}</td>
+          <td class="text-xs">${esc(r.last_carrier_status)||'—'}</td>
+          <td class="text-xs">${r.tracking_texted_at?'<i class="fa-solid fa-check text-emerald-500"></i>':'<span class="text-slate-300">—</span>'}</td>
+          <td class="text-xs text-slate-500">${esc(r.assigned_name)||'—'}</td>
+          <td class="text-right whitespace-nowrap">
+            ${r.ready_indx?`<a class="btn btn-primary btn-sm" href="/glp1/record/?indx=${r.ready_indx}" title="Open member"><i class="fa-solid fa-folder-open"></i></a>`:''}
+          </td></tr>`).join('')
+      : '<tr><td colspan="9" class="text-center py-10 text-slate-400">No shipments for these filters</td></tr>';
+  }
+
+  load();
+</script>
+</body>
+</html>
