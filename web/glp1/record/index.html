@@ -82,6 +82,10 @@
                   <label class="form-label">Sub-Status</label>
                   <select class="form-control" id="i-sub-status"></select>
                 </div>
+                <div class="form-group mb-0">
+                  <label class="form-label">Priority</label>
+                  <select class="form-control" id="i-priority"></select>
+                </div>
                 <button class="btn btn-primary" onclick="saveIntake()"><i class="fa-solid fa-floppy-disk"></i> Save</button>
                 <span class="text-xs text-slate-400 ml-auto" id="i-updated"></span>
               </div>
@@ -99,6 +103,7 @@
               <div id="ao-rc-banner" style="display:none" class="flex items-center justify-between bg-purple-50 border border-purple-300 text-purple-800 rounded-md px-4 py-3 mb-3 text-sm"></div>
               <div id="ao-stepper" class="flex flex-wrap gap-2 mb-4"></div>
               <div id="ao-current"></div>
+              <div id="ao-tools" class="mt-3 pt-3 border-t border-slate-100 flex flex-wrap items-center gap-x-3 gap-y-2 text-sm"></div>
             </div>
           </div>
 
@@ -264,6 +269,7 @@
   const CONTACT_STATUSES = ['Open', 'Closed'];
   const INTAKE_STATUSES = ['In Progress', 'Outreach Completed', 'Submitted to WellSync'];
   const SUB_STATUSES = ['Declined Enrollment', 'Approved', 'Clinical Denial'];
+  const PRIORITIES = ['Low', 'Medium', 'High', 'Urgent'];
   const WELLSYNC = 'Submitted to WellSync';
 
   const params = new URLSearchParams(location.search);
@@ -469,6 +475,8 @@
         ${esc(s.channel)}${s.booking_link ? ' <i class="fa-solid fa-link" title="Includes booking link"></i>' : ''}</span>`;
     }).join('');
 
+    renderOutreachTools();
+
     // Current step / completion
     const el = document.getElementById('ao-current');
     if (o.exhausted) {
@@ -488,12 +496,45 @@
           ${step.booking_link ? '<span class="badge badge-gray"><i class="fa-solid fa-link"></i> Booking link</span>' : ''}
         </div>
         <textarea id="ao-script" class="form-control" rows="4" readonly style="background:#fff">${esc(step.script_text)}</textarea>
-        <div class="flex items-center gap-2 mt-3">
+        <div class="flex flex-wrap items-center gap-2 mt-3">
           <button class="btn btn-outline btn-sm" onclick="copyScript()"><i class="fa-regular fa-copy"></i> Copy script</button>
-          <button class="btn btn-primary btn-sm" onclick="openLogAttempt()"><i class="fa-solid fa-paper-plane"></i> Log attempt ${step.attempt_no}</button>
-          <span class="text-xs text-slate-400 ml-1">Logs as “${esc(step.log_as)}” in Contact Tracking</span>
+          <button class="btn btn-primary btn-sm" onclick="sendAttempt()"><i class="fa-solid fa-paper-plane"></i> Mark Sent &amp; Advance</button>
+          <button class="btn btn-outline btn-sm" onclick="openLogAttempt()"><i class="fa-regular fa-pen-to-square"></i> Log with notes…</button>
+          <span class="text-xs text-slate-400 ml-1">Logs as “${esc(step.log_as)}” · next follow-up auto-set (${o.priority} = every ${o.cadence_days}d)</span>
         </div>
       </div>`;
+  }
+
+  // Cadence note + staged address-verification action (shown for every state).
+  function renderOutreachTools() {
+    const o = outreach, el = document.getElementById('ao-tools');
+    if (!o) { el.innerHTML = ''; return; }
+    el.innerHTML = `
+      <span class="text-slate-500"><i class="fa-solid fa-gauge-high text-slate-400"></i>
+        Priority <strong>${esc(o.priority)}</strong> · follow-up cadence every ${o.cadence_days} day${o.cadence_days === 1 ? '' : 's'}</span>
+      <button class="btn btn-outline btn-sm" onclick="prepareAddressVerify()"><i class="fa-solid fa-location-dot"></i> Prepare address-verification text</button>
+      ${o.address_link_configured ? '' : '<span class="text-xs text-slate-400">(link placeholder — set CC_ADDRESS_VERIFY_URL)</span>'}`;
+  }
+
+  async function sendAttempt() {
+    const res = await apiPost(`/outreach?member=${encodeURIComponent(memberKey)}&category=${encodeURIComponent(trackCat())}`, { sent: true });
+    if (res && res.ok) {
+      const d = await res.json().catch(() => ({}));
+      showToast(d.auto_routed_to_review
+        ? 'Attempt sent — routed to Review & Close'
+        : `Attempt sent · follow-up ${d.followup_date ? fmtDate(d.followup_date) : 'set'}`, 'success');
+      await loadTracking();
+    } else { const e = res ? await res.json().catch(() => ({})) : {}; showToast(e.error || 'Could not send', 'error'); }
+  }
+
+  async function prepareAddressVerify() {
+    const res = await apiPost(`/outreach?member=${encodeURIComponent(memberKey)}&category=${encodeURIComponent(trackCat())}&action=address-verify`, {});
+    if (res && res.ok) {
+      const d = await res.json().catch(() => ({}));
+      if (d.message && navigator.clipboard) navigator.clipboard.writeText(d.message).catch(() => {});
+      showToast('Address-verification text prepared & copied', 'success');
+      await loadTracking();
+    } else showToast('Could not prepare text', 'error');
   }
 
   function copyScript() {
@@ -640,6 +681,7 @@
     document.getElementById('i-status-date').value =
       dInput(intake && intake.status_date) || dInput(record && record.assigned_at) || new Date().toISOString().slice(0, 10);
     fillSelect('i-sub-status', SUB_STATUSES, (intake && intake.sub_status) || SUB_STATUSES[0]);
+    fillSelect('i-priority', PRIORITIES, (intake && intake.priority) || 'Medium');
     onIntakeStatusChange();
     document.getElementById('i-updated').textContent =
       intake && intake.updated_at ? 'Updated ' + fmtDate(intake.updated_at) : '';
@@ -654,10 +696,14 @@
       status,
       status_date: document.getElementById('i-status-date').value || null,
       sub_status: status === WELLSYNC ? document.getElementById('i-sub-status').value : null,
+      priority: document.getElementById('i-priority').value,
     };
     const res = await apiPatch(`/glp1-tracking?member=${encodeURIComponent(memberKey)}&category=${encodeURIComponent(trackCat())}&action=intake`, body);
-    if (res && res.ok) { showToast('Intake saved', 'success'); await loadTracking(); }
-    else showToast('Save failed', 'error');
+    if (res && res.ok) {
+      const d = await res.json().catch(() => ({}));
+      showToast(d.escalated ? 'Intake saved — escalation reminder created' : 'Intake saved', 'success');
+      await loadTracking();
+    } else showToast('Save failed', 'error');
   }
   async function markOutreachCompleted() {
     document.getElementById('i-status').value = 'Outreach Completed';

@@ -38,6 +38,9 @@
         <select id="f-assignee" class="form-control" style="max-width:220px;display:none" onchange="load()"></select>
         <select id="f-type" class="form-control" style="max-width:170px" onchange="applyFilters()"><option value="">All Types</option></select>
         <select id="f-status" class="form-control" style="max-width:190px" onchange="applyFilters()"><option value="">All Statuses</option></select>
+        <select id="f-priority" class="form-control" style="max-width:150px" onchange="applyFilters()">
+          <option value="">Any priority</option><option>Urgent</option><option>High</option><option>Medium</option><option>Low</option>
+        </select>
         <select id="f-group" class="form-control" style="max-width:220px" onchange="applyFilters()"><option value="">All Groups</option></select>
         <select id="f-due" class="form-control" style="max-width:170px" onchange="applyFilters()">
           <option value="">Any follow-up</option><option value="overdue">Overdue</option>
@@ -51,7 +54,7 @@
         <div class="card-body">
           <table class="data-table">
             <thead><tr>
-              <th>Member</th><th>Group</th><th>Type</th><th>Intake Status</th>
+              <th>Member</th><th>Group</th><th>Type</th><th>Intake Status</th><th>Priority</th>
               <th>Outreach</th><th>Next Follow-up</th><th>Last Contact</th><th></th>
             </tr></thead>
             <tbody id="tbl-body"></tbody>
@@ -130,6 +133,12 @@
     return `<span class="att"><span class="att-bar"><i style="width:${pct}%"></i></span>${n}/${max}</span>`;
   }
 
+  const PRI_COLOR = { Urgent:'#dc2626', High:'#d97706', Medium:'#64748b', Low:'#94a3b8' };
+  function priChip(p){
+    const v = p || 'Medium', c = PRI_COLOR[v] || '#64748b';
+    return `<span class="badge" style="background:${c}1a;color:${c}">${esc(v)}</span>`;
+  }
+
   async function loadFilters(){
     if (CAN_SEE_ALL) {
       const asg = await apiGet('/concierge-queue?resource=assignees') || [];
@@ -190,6 +199,7 @@
     const search = document.getElementById('search').value.toLowerCase();
     const type = document.getElementById('f-type').value;
     const status = document.getElementById('f-status').value;
+    const priority = document.getElementById('f-priority').value;
     const group = document.getElementById('f-group').value;
     const due = document.getElementById('f-due').value;
     const t = todayStr();
@@ -198,6 +208,7 @@
     view = all.filter(r => {
       if (type && r.category !== type) return false;
       if (status && r.intake_status !== status) return false;
+      if (priority && (r.priority || 'Medium') !== priority) return false;
       if (group && r.Group_Name !== group) return false;
       const fu = dateOnly(r.next_followup);
       if (due === 'overdue' && !(fu && fu < t)) return false;
@@ -227,6 +238,7 @@
           <td>${esc(r.Group_Name)||'—'}</td>
           <td><span class="badge" style="background:${esc(r.type_color)||'#64748b'}22;color:${esc(r.type_color)||'#334155'}">${esc(r.type_name)||esc(r.category)}</span></td>
           <td>${statusPill(r)}</td>
+          <td>${priChip(r.priority)}</td>
           <td>${attCell(r)}</td>
           <td class="${fuClass(r.next_followup)}">${r.next_followup ? fmtDate(r.next_followup) : '—'}</td>
           <td class="text-xs text-slate-400">${r.last_contact ? fmtDate(r.last_contact) : 'never'}</td>
@@ -236,7 +248,7 @@
             <a class="btn btn-primary btn-sm" title="Open record" href="/glp1/record/?indx=${r.indx}"><i class="fa-solid fa-folder-open"></i> Open</a>
           </td>
         </tr>`).join('')
-      : '<tr><td colspan="8" class="text-center py-10 text-slate-400">No matching intakes</td></tr>';
+      : '<tr><td colspan="9" class="text-center py-10 text-slate-400">No matching intakes</td></tr>';
   }
 
   /* ── quick log modal ── */

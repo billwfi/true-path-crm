@@ -41,7 +41,7 @@ function baseCte(scopeAll) {
 const SELECT_ROWS = `
   SELECT a.indx, a.category, a.Group_Name, a.Member_ID, a.First_Name, a.Last_Name,
          a.City, a.State, a.Drug_Name, a.assigned_at, a.assigned_to, a.member_key,
-         mi.status AS intake_status, mi.sub_status AS intake_sub_status, mi.status_date,
+         mi.status AS intake_status, mi.sub_status AS intake_sub_status, mi.status_date, mi.priority,
          t.name AS type_name, t.color AS type_color,
          ISNULL(cl.attempts, 0) AS attempts, cl.last_contact, cl.next_followup,
          LTRIM(RTRIM(CONCAT(u.firstname, ' ', u.lastname))) AS assigned_name,
@@ -101,6 +101,7 @@ exports.handler = async function (event) {
     const conds = ['a.rn = 1'];
     if (q.category)      { conds.push('a.category = @category'); params.category = q.category; }
     if (q.intake_status) { conds.push('mi.status = @intake_status'); params.intake_status = q.intake_status; }
+    if (q.priority)      { conds.push('mi.priority = @priority'); params.priority = q.priority; }
     if (q.group)         { conds.push('a.Group_Name = @group'); params.group = q.group; }
     if (q.search) {
       conds.push(`(a.First_Name LIKE @search OR a.Last_Name LIKE @search OR a.Member_ID LIKE @search OR a.Drug_Name LIKE @search)`);

@@ -1,5 +1,6 @@
 const { mssql } = require('./_mssql');
 const { verifyToken, unauthorized, ok, created, badRequest, notFound, serverError, options, CORS } = require('./_auth');
+const { normalizePriority, isEscalation, nextFollowup } = require('./_cadence');
 
 // Contact tracking + intake status for an assigned GLP1 member.
 // member = member_key (Member_ID, or idx:<indx> fallback for null-member records).
@@ -213,22 +214,37 @@ exports.handler = async function (event) {
         const status = allowedStatuses.includes(b.status) ? b.status : allowedStatuses[0];
         const subsForStatus = Array.isArray(subMap[status]) ? subMap[status] : [];
         const sub = subsForStatus.includes(b.sub_status) ? b.sub_status : null;
+
+        // RXF1 — priority drives the follow-up cadence. Capture the prior priority so
+        // we only raise an escalation reminder when it transitions into High/Urgent.
+        const prev = (await mssql(
+          'SELECT priority FROM dbo.tp_member_intakes WHERE member_key=@m AND intake_type=@c',
+          { m: member, c: cat })).recordset[0];
+        const prevPriority = normalizePriority(prev && prev.priority);
+        const priority = ('priority' in b) ? normalizePriority(b.priority) : prevPriority;
+
         const r = await mssql(
           `MERGE dbo.tp_member_intakes AS t
            USING (SELECT @member AS member_key, @category AS intake_type) AS s
            ON t.member_key = s.member_key AND t.intake_type = s.intake_type
            WHEN MATCHED THEN UPDATE SET status=@status, status_date=@status_date,
-             sub_status=@sub_status, updated_by=@updated_by, updated_at=GETDATE()
-           WHEN NOT MATCHED THEN INSERT (member_key, intake_type, status, status_date, sub_status, updated_by)
-             VALUES (@member, @category, @status, @status_date, @sub_status, @updated_by)
+             sub_status=@sub_status, priority=@priority, updated_by=@updated_by, updated_at=GETDATE()
+           WHEN NOT MATCHED THEN INSERT (member_key, intake_type, status, status_date, sub_status, priority, updated_by)
+             VALUES (@member, @category, @status, @status_date, @sub_status, @priority, @updated_by)
            OUTPUT INSERTED.member_key, INSERTED.status, INSERTED.status_date,
-                  INSERTED.sub_status, INSERTED.updated_by, INSERTED.updated_at;`,
+                  INSERTED.sub_status, INSERTED.priority, INSERTED.updated_by, INSERTED.updated_at;`,
           {
             member, category: cat, status,
             status_date: b.status_date || new Date().toISOString().slice(0, 10),
-            sub_status: sub, updated_by: user.id || null,
+            sub_status: sub, priority, updated_by: user.id || null,
           });
-        return ok(r.recordset[0]);
+
+        // Auto-create an escalation reminder on transition into High/Urgent (RXF1).
+        let escalated = false;
+        if (isEscalation(priority) && !isEscalation(prevPriority)) {
+          escalated = await createEscalationReminder(member, cat, priority, user.id);
+        }
+        return ok({ ...r.recordset[0], escalated });
       }
 
       // Update a single contact attempt (e.g. close it / edit notes).
@@ -288,4 +304,30 @@ exports.handler = async function (event) {
 function safeParse(json) {
   if (!json) return {};
   try { return JSON.parse(json); } catch { return {}; }
+}
+
+// RXF1 — raise an escalation reminder when an intake becomes High/Urgent. The member
+// name + reason go in the description (SOP format "ESC - NAME - PRIORITY - note"); the
+// BA/VD recipient routing is wired in Phase 3, so staff_id is left null for now.
+async function createEscalationReminder(member, cat, priority, byUserId) {
+  try {
+    const m = (await mssql(
+      `SELECT TOP 1 First_Name, Last_Name FROM dbo.ReadyToAssign
+       WHERE category=@c AND COALESCE(NULLIF(Member_ID,''), CAST(indx AS VARCHAR(50)))=@m
+       ORDER BY indx DESC`, { c: cat, m: member })).recordset[0] || {};
+    const name = `${(m.Last_Name || '').trim()}, ${(m.First_Name || '').trim()}`.replace(/^, |, $/, '') || member;
+    const desc = `ESC - ${name} - ${priority} - ${cat} intake escalated`;
+    const when = nextFollowup(priority) + 'T09:00:00';
+    // Don't stack duplicate open escalations for the same member/intake.
+    const existing = (await mssql(
+      `SELECT TOP 1 id FROM dbo.tp_reminders
+       WHERE rel_type='CC Escalation' AND is_closed=0 AND description LIKE @like`,
+      { like: `ESC - ${name} - %` })).recordset[0];
+    if (existing) return false;
+    await mssql(
+      `INSERT INTO dbo.tp_reminders (rel_type, rel_id, staff_id, created_by, description, reminder_date, notify_by_email, is_closed)
+       VALUES ('CC Escalation', NULL, NULL, @by, @desc, @when, 0, 0)`,
+      { by: byUserId || null, desc, when });
+    return true;
+  } catch { return false; }
 }
