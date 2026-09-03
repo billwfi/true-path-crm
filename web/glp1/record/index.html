@@ -134,6 +134,23 @@
             <div class="card-body form-pad" id="order-body"></div>
           </div>
 
+          <!-- Rx Processing (RXF2 + CC4 + CS4) — structured Rx records: naming, label, day supply -->
+          <div class="card mb-4" id="rx-card" style="display:none">
+            <div class="card-header flex items-center">
+              <span><i class="fa-solid fa-file-prescription text-slate-400"></i> Rx Processing</span>
+              <div class="ml-auto flex gap-2">
+                <button class="btn btn-outline btn-sm" onclick="copyRxReply()"><i class="fa-regular fa-copy"></i> Rx-received reply</button>
+                <button class="btn btn-primary btn-sm" onclick="openRxModal()"><i class="fa-solid fa-plus"></i> Add Rx</button>
+              </div>
+            </div>
+            <div class="card-body">
+              <table class="data-table">
+                <thead><tr><th>File Name</th><th>Label</th><th>Status</th><th>Day Supply</th><th>WR</th><th></th></tr></thead>
+                <tbody id="rx-body"></tbody>
+              </table>
+            </div>
+          </div>
+
           <!-- Contact Tracking -->
           <div class="card mb-4">
             <div class="card-header flex items-center">
@@ -243,6 +260,49 @@
     <div class="modal-footer">
       <button class="btn btn-outline" onclick="closeModal('contact-modal')">Cancel</button>
       <button class="btn btn-primary" onclick="saveContact()">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- Add / edit Rx record modal -->
+<div id="rx-modal" class="modal-backdrop hidden">
+  <div class="modal" style="max-width:640px">
+    <div class="modal-header">
+      <span class="modal-title" id="rx-modal-title">Add Rx</span>
+      <button class="modal-close" onclick="closeModal('rx-modal')">×</button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="rx-id">
+      <div class="flex gap-3">
+        <div class="form-group flex-1"><label class="form-label">Member name (on Rx) *</label><input class="form-control" id="rx-name" oninput="rxPreview()"></div>
+        <div class="form-group" style="max-width:160px"><label class="form-label">DOB *</label><input class="form-control" id="rx-dob" placeholder="MM/DD/YYYY" oninput="rxPreview()"></div>
+      </div>
+      <div class="flex gap-3">
+        <div class="form-group flex-1"><label class="form-label">Medication</label><input class="form-control" id="rx-med" oninput="rxPreview()"></div>
+        <div class="form-group flex-1"><label class="form-label">Strength</label><input class="form-control" id="rx-strength" oninput="rxPreview()"></div>
+        <div class="form-group" style="max-width:170px"><label class="form-label">Written (WR) date</label><input type="date" class="form-control" id="rx-wr" oninput="rxPreview()"></div>
+      </div>
+      <div class="flex gap-3">
+        <div class="form-group flex-1"><label class="form-label">Status *</label>
+          <select class="form-control" id="rx-status" onchange="rxStatusChange()"></select></div>
+        <div class="form-group flex-1" id="rx-ds-wrap"><label class="form-label">Day supply</label><input type="number" class="form-control" id="rx-ds" oninput="rxPreview()"></div>
+      </div>
+      <div class="form-group" id="rx-reason-wrap" style="display:none"><label class="form-label">Invalid reason</label><input class="form-control" id="rx-reason" oninput="rxPreview()"></div>
+      <div class="form-group" id="rx-origwr-wrap" style="display:none"><label class="form-label">Original WR date (cancelled)</label><input type="date" class="form-control" id="rx-origwr" oninput="rxPreview()"></div>
+      <div class="form-group"><label class="form-label">File link (SharePoint / storage reference)</label><input class="form-control" id="rx-link" placeholder="https://…"></div>
+
+      <div class="rounded-md bg-slate-50 border border-slate-200 px-3 py-2 text-xs mb-3">
+        <div><span class="text-slate-400">File name:</span> <span class="font-mono" id="rx-pv-name">—</span></div>
+        <div class="mt-1"><span class="text-slate-400">Label:</span> <span class="font-mono" id="rx-pv-label">—</span></div>
+        <div id="rx-pv-warn" class="text-red-600 mt-1" style="display:none"><i class="fa-solid fa-triangle-exclamation"></i> File names/labels cannot contain # &lt; &gt; /</div>
+      </div>
+
+      <label class="flex items-center gap-2 text-sm mb-2"><input type="checkbox" id="rx-confirm"> <strong>I confirmed the member name and DOB on the Rx match the profile.</strong></label>
+      <label class="flex items-center gap-2 text-sm" id="rx-markrecv-wrap"><input type="checkbox" id="rx-markrecv"> Mark the order “Rx Received”.</label>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeModal('rx-modal')">Cancel</button>
+      <button class="btn btn-primary" id="rx-save" onclick="saveRx()"><i class="fa-solid fa-floppy-disk"></i> Save Rx</button>
     </div>
   </div>
 </div>
@@ -633,7 +693,7 @@
     const d = await apiGet(`/orders?member=${encodeURIComponent(memberKey)}&category=${encodeURIComponent(trackCat())}`) || { orders: [] };
     orders = d.orders || [];
     const open = orders.find(o => !o.closed) || orders[0] || null;
-    if (open) { await loadOrderDetail(open.id); } else { order = null; renderOrder(); }
+    if (open) { await loadOrderDetail(open.id); } else { order = null; renderOrder(); await loadRxRecords(); }
   }
   async function loadOrderDetail(id) {
     const d = await apiGet(`/orders?order_id=${id}`) || null;
@@ -641,6 +701,7 @@
     if (order) order._attempts = (d && d.attempts) || [];
     getrxScripts = (d && d.scripts) || [];
     renderOrder();
+    await loadRxRecords();
   }
 
   function pill(text, color) { return `<span class="badge" style="background:${color}1a;color:${color}">${esc(text)}</span>`; }
@@ -829,6 +890,169 @@
   }
 
   document.getElementById('getrx-modal').addEventListener('click', e => { if (e.target === e.currentTarget) closeModal('getrx-modal'); });
+
+  /* ── Rx Processing (RXF2 + CC4 + CS4) ── */
+  const RX_STATUSES = ['Valid', 'INVALID', 'CANNOT SOURCE', 'DUPLICATE RX', 'DENIED RX', 'NEED 90 DAY', 'CANCELLED RX', 'NEEDS CLARIFICATION'];
+  const RX_DS_STATUSES = ['Valid', 'NEED 90 DAY'];
+  const RX_BAD = /[#<>/]/;
+  let rxRecords = [];
+
+  function rxWR(d){ if(!d) return ''; const s=String(d).slice(0,10).split('-'); return s.length===3?`${+s[1]}/${+s[2]}/${s[0]}`:String(d); }
+
+  // Client mirror of the backend naming taxonomy (kept in sync with rx-records.js).
+  function rxFileName(r){
+    const base = `${r.member_name||''} (${r.dob||''}) - ${[r.medication,r.strength].filter(Boolean).join(' ')} - WR ${rxWR(r.written_date)}`;
+    let sfx = '';
+    if (r.status==='INVALID') sfx = ` - INVALID${r.invalid_reason?` (${r.invalid_reason})`:''}`;
+    else if (r.status==='CANNOT SOURCE') sfx = ' - CANNOT SOURCE';
+    else if (r.status==='DUPLICATE RX') sfx = ' - DUPLICATE RX';
+    else if (r.status==='DENIED RX') sfx = ' - DENIED RX';
+    else if (r.status==='NEED 90 DAY') sfx = ' - NEED 90 DAY';
+    else if (r.status==='CANCELLED RX') sfx = ` - CANCELLED RX${r.original_wr_date?` (orig WR ${rxWR(r.original_wr_date)})`:''}`;
+    else if (r.status==='NEEDS CLARIFICATION') sfx = ' - NEEDS CLARIFICATION';
+    return (base+sfx).replace(/\s+/g,' ').trim();
+  }
+  function rxLabel(r){
+    const ds = (r.day_supply!=null && r.day_supply!=='') ? `${r.day_supply} day` : '';
+    switch(r.status){
+      case 'Valid': return `Rx${ds?` - ${ds}`:''}`;
+      case 'NEED 90 DAY': return `NEED 90 DAY${ds?` - ${ds}`:''}`;
+      case 'INVALID': return `INVALID${r.invalid_reason?` - ${r.invalid_reason}`:''}`;
+      case 'CANNOT SOURCE': return 'CANNOT SOURCE';
+      case 'DUPLICATE RX': return 'DUPLICATE';
+      case 'DENIED RX': return 'DENIED RX';
+      case 'CANCELLED RX': return `CANCELLED RX${r.original_wr_date?` - Original WR ${rxWR(r.original_wr_date)}`:''}`;
+      case 'NEEDS CLARIFICATION': return 'NEEDS CLARIFICATION';
+      default: return 'Rx';
+    }
+  }
+
+  async function loadRxRecords(){
+    const card = document.getElementById('rx-card');
+    if (!order) { card.style.display = 'none'; rxRecords = []; return; }
+    card.style.display = '';
+    const d = await apiGet(`/rx-records?order_id=${order.id}`) || { records: [] };
+    rxRecords = d.records || [];
+    renderRxRecords();
+  }
+  function renderRxRecords(){
+    document.getElementById('rx-body').innerHTML = rxRecords.length
+      ? rxRecords.map(r => `<tr>
+          <td class="font-mono text-xs">${esc(r.file_name)}${r.dosage_changed?' <span title="Strength changed vs previous Rx — LJ verify" class="badge badge-red">Δ dose</span>':''}</td>
+          <td class="text-xs">${esc(r.label)}</td>
+          <td>${esc(r.status)}</td>
+          <td>${r.day_supply??'—'}</td>
+          <td class="text-xs">${r.written_date?fmtDate(r.written_date):'—'}</td>
+          <td class="text-right whitespace-nowrap">
+            ${r.file_link?`<a class="btn btn-outline btn-sm" href="${esc(r.file_link)}" target="_blank" rel="noopener" title="Open file"><i class="fa-solid fa-up-right-from-square"></i></a>`:''}
+            <button class="btn btn-outline btn-sm" onclick="editRx(${r.id})"><i class="fa-solid fa-pen"></i></button>
+            <button class="btn btn-danger btn-sm" onclick="deleteRx(${r.id})"><i class="fa-solid fa-trash"></i></button>
+          </td></tr>`).join('')
+      : '<tr><td colspan="6" class="text-center py-6 text-slate-400">No Rx recorded yet</td></tr>';
+  }
+
+  function rxStatusChange(){
+    const s = document.getElementById('rx-status').value;
+    document.getElementById('rx-ds-wrap').style.display = RX_DS_STATUSES.includes(s) ? '' : 'none';
+    document.getElementById('rx-reason-wrap').style.display = s === 'INVALID' ? '' : 'none';
+    document.getElementById('rx-origwr-wrap').style.display = s === 'CANCELLED RX' ? '' : 'none';
+    document.getElementById('rx-markrecv-wrap').style.display = RX_DS_STATUSES.includes(s) ? '' : 'none';
+    rxPreview();
+  }
+  function rxCollect(){
+    return {
+      member_name: document.getElementById('rx-name').value.trim(),
+      dob: document.getElementById('rx-dob').value.trim(),
+      medication: document.getElementById('rx-med').value.trim(),
+      strength: document.getElementById('rx-strength').value.trim(),
+      written_date: document.getElementById('rx-wr').value || null,
+      status: document.getElementById('rx-status').value,
+      invalid_reason: document.getElementById('rx-reason').value.trim(),
+      original_wr_date: document.getElementById('rx-origwr').value || null,
+      day_supply: document.getElementById('rx-ds').value,
+      file_link: document.getElementById('rx-link').value.trim(),
+    };
+  }
+  function rxPreview(){
+    const r = rxCollect();
+    document.getElementById('rx-pv-name').textContent = rxFileName(r) || '—';
+    document.getElementById('rx-pv-label').textContent = rxLabel(r) || '—';
+    const bad = [r.member_name, r.medication, r.strength, r.invalid_reason].some(v => v && RX_BAD.test(v));
+    document.getElementById('rx-pv-warn').style.display = bad ? '' : 'none';
+    document.getElementById('rx-save').disabled = bad;
+  }
+
+  function openRxModal(){
+    document.getElementById('rx-id').value = '';
+    document.getElementById('rx-modal-title').textContent = 'Add Rx';
+    document.getElementById('rx-name').value = `${record.First_Name||''} ${record.Last_Name||''}`.trim();
+    document.getElementById('rx-dob').value = record.Date_of_Birth ? fmtDate(record.Date_of_Birth) : '';
+    document.getElementById('rx-med').value = (order && order.medication) || '';
+    document.getElementById('rx-strength').value = (order && order.strength) || '';
+    document.getElementById('rx-wr').value = '';
+    fillSelect('rx-status', RX_STATUSES, 'Valid');
+    document.getElementById('rx-ds').value = (order && order.day_supply) || '';
+    document.getElementById('rx-reason').value = '';
+    document.getElementById('rx-origwr').value = '';
+    document.getElementById('rx-link').value = '';
+    document.getElementById('rx-confirm').checked = false;
+    document.getElementById('rx-markrecv').checked = false;
+    rxStatusChange();
+    openModal('rx-modal');
+  }
+  function editRx(id){
+    const r = rxRecords.find(x => x.id === id); if (!r) return;
+    document.getElementById('rx-id').value = r.id;
+    document.getElementById('rx-modal-title').textContent = 'Edit Rx';
+    document.getElementById('rx-name').value = r.member_name || '';
+    document.getElementById('rx-dob').value = r.dob || '';
+    document.getElementById('rx-med').value = r.medication || '';
+    document.getElementById('rx-strength').value = r.strength || '';
+    document.getElementById('rx-wr').value = r.written_date ? String(r.written_date).slice(0,10) : '';
+    fillSelect('rx-status', RX_STATUSES, r.status);
+    document.getElementById('rx-ds').value = r.day_supply ?? '';
+    document.getElementById('rx-reason').value = r.invalid_reason || '';
+    document.getElementById('rx-origwr').value = r.original_wr_date ? String(r.original_wr_date).slice(0,10) : '';
+    document.getElementById('rx-link').value = r.file_link || '';
+    document.getElementById('rx-confirm').checked = !!r.name_dob_confirmed;
+    document.getElementById('rx-markrecv').checked = false;
+    rxStatusChange();
+    openModal('rx-modal');
+  }
+
+  async function saveRx(){
+    const id = document.getElementById('rx-id').value;
+    const r = rxCollect();
+    if ([r.member_name, r.medication, r.strength, r.invalid_reason].some(v => v && RX_BAD.test(v))) { showToast('Remove # < > / from names', 'error'); return; }
+    if (!id && !document.getElementById('rx-confirm').checked) { showToast('Confirm name & DOB match the profile first', 'error'); return; }
+    const btn = document.getElementById('rx-save'); btn.disabled = true;
+    const body = { ...r, name_dob_confirmed: document.getElementById('rx-confirm').checked, mark_received: document.getElementById('rx-markrecv').checked };
+    let res;
+    if (id) res = await apiPatch(`/rx-records?id=${id}`, body);
+    else res = await apiPost(`/rx-records?order_id=${order.id}&member=${encodeURIComponent(memberKey)}&category=${encodeURIComponent(trackCat())}`, body);
+    btn.disabled = false;
+    if (res && res.ok) {
+      const d = await res.json().catch(()=>({}));
+      let msg = id ? 'Rx updated' : 'Rx saved';
+      if (d.dosage_changed) msg += ' — strength change flagged' + (d.lj_reminder ? ' (LJ verify reminder created)' : '');
+      showToast(msg, 'success'); closeModal('rx-modal');
+      await loadRxRecords();
+      if (!id && body.mark_received) await loadOrderDetailKeepAttempts();
+    } else { const e = res ? await res.json().catch(()=>({})) : {}; showToast(e.error || 'Save failed', 'error'); }
+  }
+  async function deleteRx(id){
+    if (!confirm2('Delete this Rx record?')) return;
+    const res = await apiDelete(`/rx-records?id=${id}`);
+    if (res && res.ok) { showToast('Deleted', 'success'); await loadRxRecords(); } else showToast('Delete failed', 'error');
+  }
+  async function copyRxReply(){
+    const d = await apiGet(`/rx-records?resource=reply&order_id=${order.id}`);
+    if (!d) { showToast('Nothing to copy', 'error'); return; }
+    (navigator.clipboard ? navigator.clipboard.writeText(d.reply) : Promise.reject())
+      .then(() => showToast(`Rx-received reply copied (${d.count})`, 'success'), () => showToast('Copy failed', 'error'));
+  }
+
+  document.getElementById('rx-modal').addEventListener('click', e => { if (e.target === e.currentTarget) closeModal('rx-modal'); });
 
   /* ── Enrollment Worksheet (CC1 / ENR1) ── */
   const WS_ITEMS = [

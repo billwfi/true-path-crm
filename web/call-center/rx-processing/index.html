@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Rx Processing — True Path CRM</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+  <link rel="stylesheet" href="/assets/css/app.css">
+</head>
+<body class="bg-slate-100 text-slate-700">
+<div id="app" class="flex h-screen overflow-hidden">
+  <div id="nav-placeholder"></div>
+  <div class="flex-1 flex flex-col overflow-hidden">
+    <div id="topbar"></div>
+    <main class="flex-1 overflow-y-auto p-6">
+
+      <div class="search-bar" style="flex-wrap:wrap;gap:8px">
+        <input type="text" id="search" class="form-control" placeholder="Search member or medication…" oninput="debounceLoad()" style="max-width:260px">
+        <select id="f-scope" class="form-control" style="max-width:170px" onchange="load()">
+          <option value="mine">My members</option><option value="all">All</option>
+        </select>
+        <select id="f-status" class="form-control" style="max-width:200px" onchange="load()">
+          <option value="">All statuses</option>
+        </select>
+        <label class="text-sm text-slate-500 self-center ml-1">From</label>
+        <input type="date" id="f-from" class="form-control" style="max-width:160px" onchange="load()">
+        <label class="text-sm text-slate-500 self-center">To</label>
+        <input type="date" id="f-to" class="form-control" style="max-width:160px" onchange="load()">
+        <span id="count" class="text-sm text-slate-500 ml-auto self-center"></span>
+      </div>
+
+      <div class="card">
+        <div class="card-body">
+          <table class="data-table">
+            <thead><tr>
+              <th>Received</th><th>Member</th><th>Medication</th><th>Status</th><th>Day Supply</th>
+              <th>Label</th><th>Order Stage</th><th>Assigned</th><th></th>
+            </tr></thead>
+            <tbody id="tbl-body"></tbody>
+          </table>
+        </div>
+      </div>
+    </main>
+  </div>
+</div>
+
+<script src="/assets/js/app.js"></script>
+<script>
+  initNav('cc-rx-processing');
+  const me = getUser() || {};
+  const RX_STATUSES = ['Valid', 'INVALID', 'CANNOT SOURCE', 'DUPLICATE RX', 'DENIED RX', 'NEED 90 DAY', 'CANCELLED RX', 'NEEDS CLARIFICATION'];
+  let rows = [], debounce;
+
+  function debounceLoad(){ clearTimeout(debounce); debounce = setTimeout(load, 300); }
+  function todayStr(){ return new Date().toISOString().slice(0,10); }
+
+  (function initFilters(){
+    const sel = document.getElementById('f-status');
+    sel.innerHTML = '<option value="">All statuses</option>' + RX_STATUSES.map(s => `<option>${s}</option>`).join('');
+    // default to today so the "daily processing list" opens on today's work
+    document.getElementById('f-from').value = todayStr();
+  })();
+
+  const STATUS_BADGE = { 'Valid':'green','NEED 90 DAY':'blue','INVALID':'red','DENIED RX':'red',
+    'CANNOT SOURCE':'gray','DUPLICATE RX':'gray','CANCELLED RX':'gray','NEEDS CLARIFICATION':'purple' };
+  function statusBadge(s){ return `<span class="badge badge-${STATUS_BADGE[s]||'gray'}">${esc(s)}</span>`; }
+
+  async function load(){
+    const p = new URLSearchParams({ resource: 'list' });
+    if (document.getElementById('f-scope').value === 'mine') p.set('mine', '1');
+    const st = document.getElementById('f-status').value; if (st) p.set('status', st);
+    const from = document.getElementById('f-from').value; if (from) p.set('from', from);
+    const to = document.getElementById('f-to').value; if (to) p.set('to', to);
+    const s = document.getElementById('search').value.trim(); if (s) p.set('search', s);
+    const d = await apiGet('/rx-records?' + p.toString()) || { rows: [] };
+    rows = d.rows || [];
+    render();
+  }
+
+  function render(){
+    document.getElementById('count').textContent = `${rows.length} record${rows.length===1?'':'s'}`;
+    document.getElementById('tbl-body').innerHTML = rows.length
+      ? rows.map(r => `<tr>
+          <td class="text-xs text-slate-400">${fmtDate(r.created_at)}</td>
+          <td class="font-medium">${esc(r.member_name)||'—'}
+            ${r.dosage_changed?'<span class="badge badge-red" title="Strength changed vs previous Rx">Δ dose</span>':''}</td>
+          <td>${esc([r.medication, r.strength].filter(Boolean).join(' '))||'—'}</td>
+          <td>${statusBadge(r.status)}</td>
+          <td>${r.day_supply??'—'}</td>
+          <td class="text-xs">${esc(r.label)||'—'}</td>
+          <td class="text-xs">${esc(r.stage)||'—'}${r.getrx_status?` · ${esc(r.getrx_status)}`:''}</td>
+          <td class="text-xs text-slate-500">${esc(r.assigned_name)||'—'}</td>
+          <td class="text-right whitespace-nowrap">
+            ${r.file_link?`<a class="btn btn-outline btn-sm" href="${esc(r.file_link)}" target="_blank" rel="noopener" title="Open file"><i class="fa-solid fa-up-right-from-square"></i></a>`:''}
+            ${r.ready_indx?`<a class="btn btn-primary btn-sm" href="/glp1/record/?indx=${r.ready_indx}" title="Open member"><i class="fa-solid fa-folder-open"></i></a>`:''}
+          </td></tr>`).join('')
+      : '<tr><td colspan="9" class="text-center py-10 text-slate-400">No Rx records for these filters</td></tr>';
+  }
+
+  load();
+</script>
+</body>
+</html>
