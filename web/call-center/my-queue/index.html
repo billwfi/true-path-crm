@@ -18,7 +18,11 @@
     .att{display:inline-flex;align-items:center;gap:6px;font-variant-numeric:tabular-nums}
     .att-bar{width:52px;height:6px;border-radius:4px;background:#e2e8f0;overflow:hidden}
     .att-bar i{display:block;height:100%;background:#0ea5e9}
-    .fu-over{color:#dc2626;font-weight:600}.fu-today{color:#d97706;font-weight:600}
+    /* Scoped to .data-table td: the base rule `.data-table td{color:#334155}` in
+       app.css is more specific than a bare .fu-over and was winning, so overdue
+       and due-today follow-ups rendered in the ordinary slate. */
+    .data-table td.fu-over{color:#dc2626;font-weight:600}
+    .data-table td.fu-today{color:#d97706;font-weight:600}
     .modal-back{position:fixed;inset:0;background:rgba(15,23,42,.45);display:none;align-items:center;justify-content:center;z-index:50}
     .modal-back.show{display:flex}
     .modal-card{background:#fff;border-radius:14px;width:100%;max-width:440px;padding:22px;box-shadow:0 20px 50px rgba(15,23,42,.3)}
