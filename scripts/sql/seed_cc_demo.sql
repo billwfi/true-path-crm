@@ -61,6 +61,17 @@ FROM @m m;
 INSERT INTO dbo.tp_member_intakes (member_key, intake_type, status, status_date, priority, updated_by)
 SELECT m.mid, m.cat, 'In Progress', DATEADD(day, -20, @today), m.priority, @cc FROM @m m;
 
+-- The clear-down above removes intakes for every TEST1000% member, including the
+-- two originals (TEST100001/2) whose ReadyToAssign rows are deliberately kept.
+-- Rebuild an intake for any preserved demo member+category that now lacks one,
+-- so a member holding both a GLP-1 and a non-GLP-1 track still demonstrates that.
+INSERT INTO dbo.tp_member_intakes (member_key, intake_type, status, status_date, priority, updated_by)
+SELECT DISTINCT r.Member_ID, r.category, 'In Progress', DATEADD(day, -20, @today), 'Medium', @cc
+FROM dbo.ReadyToAssign r
+WHERE r.Member_ID IN ('TEST100001','TEST100002')
+  AND NOT EXISTS (SELECT 1 FROM dbo.tp_member_intakes mi
+                  WHERE mi.member_key = r.Member_ID AND mi.intake_type = r.category);
+
 -- Outreach history: earlier attempts Closed, the latest Open carrying the follow-up
 -- date, which is what My Queue reads for Overdue / Due Today.
 DECLARE @mid VARCHAR(50), @cat VARCHAR(50), @n INT, @off INT, @i INT, @cd DATE;
