@@ -124,6 +124,16 @@
             </div>
           </div>
 
+          <!-- Order & Get Rx (CC4 + RXF1) — the prescriber-chase stage after enrollment -->
+          <div class="card mb-4" id="order-card">
+            <div class="card-header flex items-center">
+              <span><i class="fa-solid fa-prescription text-slate-400"></i> Order &amp; Get Rx</span>
+              <span class="badge ml-2" id="order-stage-badge" style="display:none"></span>
+              <span class="text-xs text-slate-400 ml-auto" id="order-updated"></span>
+            </div>
+            <div class="card-body form-pad" id="order-body"></div>
+          </div>
+
           <!-- Contact Tracking -->
           <div class="card mb-4">
             <div class="card-header flex items-center">
@@ -233,6 +243,37 @@
     <div class="modal-footer">
       <button class="btn btn-outline" onclick="closeModal('contact-modal')">Cancel</button>
       <button class="btn btn-primary" onclick="saveContact()">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- Log Get Rx attempt modal -->
+<div id="getrx-modal" class="modal-backdrop hidden">
+  <div class="modal">
+    <div class="modal-header">
+      <span class="modal-title">Log Get Rx Attempt</span>
+      <button class="modal-close" onclick="closeModal('getrx-modal')">×</button>
+    </div>
+    <div class="modal-body">
+      <div class="flex gap-3">
+        <div class="form-group flex-1"><label class="form-label">Contacting *</label>
+          <select class="form-control" id="gx-target"><option>Prescriber</option><option>Member</option><option>BA</option></select></div>
+        <div class="form-group flex-1"><label class="form-label">Channel *</label>
+          <select class="form-control" id="gx-channel"><option>Fax</option><option>Call</option><option>LVM</option><option>Text</option><option>Email</option></select></div>
+      </div>
+      <div class="flex gap-3">
+        <div class="form-group flex-1"><label class="form-label">Phone-tree option</label><input class="form-control" id="gx-phone-tree" placeholder="e.g. Option 2 – Refills"></div>
+        <div class="form-group flex-1"><label class="form-label">Prescriber turnaround (days)</label><input type="number" class="form-control" id="gx-turnaround" placeholder="overrides cadence"></div>
+      </div>
+      <div class="form-group"><label class="form-label">Notes</label><textarea class="form-control" id="gx-notes" rows="2"></textarea></div>
+      <div class="flex gap-3">
+        <div class="form-group flex-1"><label class="form-label">Outcome</label><input class="form-control" id="gx-outcome" placeholder="e.g. Faxed, LVM, promised 3 days"></div>
+        <div class="form-group flex-1"><label class="form-label">Follow-up date</label><input type="date" class="form-control" id="gx-followup"></div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeModal('getrx-modal')">Cancel</button>
+      <button class="btn btn-primary" id="gx-save" onclick="saveGetRxAttempt()"><i class="fa-solid fa-floppy-disk"></i> Log Attempt</button>
     </div>
   </div>
 </div>
@@ -390,6 +431,7 @@
     document.getElementById('intake-detail').style.display = '';
     await loadTracking();
     await loadWorksheet();
+    await loadOrders();
     if (isGlp1(cat)) await loadQuestionnaires();
   }
 
@@ -582,6 +624,211 @@
   }
 
   document.getElementById('outreach-modal').addEventListener('click', e => { if (e.target === e.currentTarget) closeModal('outreach-modal'); });
+
+  /* ── Order & Get Rx (CC4 + RXF1) ── */
+  const GETRX_STATUSES = ['New', 'Faxed', 'Follow-up Call', 'Refaxed', 'MRC Escalation', 'Verbal Request', 'Rx Received'];
+  let orders = [], order = null, getrxScripts = [];
+
+  async function loadOrders() {
+    const d = await apiGet(`/orders?member=${encodeURIComponent(memberKey)}&category=${encodeURIComponent(trackCat())}`) || { orders: [] };
+    orders = d.orders || [];
+    const open = orders.find(o => !o.closed) || orders[0] || null;
+    if (open) { await loadOrderDetail(open.id); } else { order = null; renderOrder(); }
+  }
+  async function loadOrderDetail(id) {
+    const d = await apiGet(`/orders?order_id=${id}`) || null;
+    order = d ? d.order : null;
+    if (order) order._attempts = (d && d.attempts) || [];
+    getrxScripts = (d && d.scripts) || [];
+    renderOrder();
+  }
+
+  function pill(text, color) { return `<span class="badge" style="background:${color}1a;color:${color}">${esc(text)}</span>`; }
+  const GETRX_COLOR = { 'New':'#64748b','Faxed':'#2563eb','Follow-up Call':'#0891b2','Refaxed':'#7c3aed',
+    'MRC Escalation':'#dc2626','Verbal Request':'#d97706','Rx Received':'#16a34a' };
+
+  function renderOrder() {
+    const badge = document.getElementById('order-stage-badge');
+    const body = document.getElementById('order-body');
+    document.getElementById('order-updated').textContent = order && order.updated_at ? 'Updated ' + fmtDate(order.updated_at) : '';
+
+    if (!order) {
+      badge.style.display = 'none';
+      body.innerHTML = `
+        <p class="text-sm text-slate-500 mb-3">Create the order ticket once the member has enrolled — captures the medication, day supply, and enrollment notes, then starts the Get Rx prescriber chase.</p>
+        <div class="grid grid-cols-1 md:grid-cols-4 gap-x-6 gap-y-3">
+          <div class="form-group mb-0 md:col-span-2"><label class="form-label">Medication</label><input class="form-control" id="o-medication" placeholder="e.g. Semaglutide"></div>
+          <div class="form-group mb-0"><label class="form-label">Strength</label><input class="form-control" id="o-strength"></div>
+          <div class="form-group mb-0"><label class="form-label">Day Supply</label><input type="number" class="form-control" id="o-day-supply"></div>
+          <div class="form-group mb-0 md:col-span-2"><label class="form-label">Supply on hand (existing members)</label><input class="form-control" id="o-supply"></div>
+          <div class="form-group mb-0"><label class="form-label">Priority</label><select class="form-control" id="o-priority">${PRIORITIES.map(p=>opt(p, (intake&&intake.priority)||'Medium')).join('')}</select></div>
+          <div class="form-group mb-0 md:col-span-4"><label class="form-label">Enrollment notes</label><textarea class="form-control" id="o-notes" rows="2"></textarea></div>
+        </div>
+        <button class="btn btn-primary mt-3" onclick="createOrder()"><i class="fa-solid fa-plus"></i> Create Order Ticket</button>`;
+      return;
+    }
+
+    badge.style.display = '';
+    badge.style.cssText += `background:${(GETRX_COLOR[order.getrx_status]||'#64748b')}1a;color:${GETRX_COLOR[order.getrx_status]||'#64748b'}`;
+    badge.textContent = `${order.stage}${order.getrx_status ? ' · ' + order.getrx_status : ''}`;
+
+    const attempts = order._attempts || [];
+    const n = attempts.length;
+    const preChecked = order.active_rx_checked;
+    const showScripts = n >= 3; // scripts surface at attempt 4+
+    const memberScripts = getrxScripts.filter(s => s.trigger_point === 'member-4plus');
+
+    body.innerHTML = `
+      <!-- order fields -->
+      <div class="grid grid-cols-1 md:grid-cols-4 gap-x-6 gap-y-3 mb-3">
+        <div class="form-group mb-0 md:col-span-2"><label class="form-label">Medication</label><input class="form-control" id="o-medication" value="${esc(order.medication)}"></div>
+        <div class="form-group mb-0"><label class="form-label">Strength</label><input class="form-control" id="o-strength" value="${esc(order.strength)}"></div>
+        <div class="form-group mb-0"><label class="form-label">Day Supply</label><input type="number" class="form-control" id="o-day-supply" value="${order.day_supply ?? ''}"></div>
+        <div class="form-group mb-0 md:col-span-2"><label class="form-label">Supply on hand</label><input class="form-control" id="o-supply" value="${esc(order.supply_on_hand)}"></div>
+        <div class="form-group mb-0"><label class="form-label">Priority</label><select class="form-control" id="o-priority">${PRIORITIES.map(p=>opt(p, order.priority||'Medium')).join('')}</select></div>
+        <div class="form-group mb-0"><label class="form-label">Get Rx Status</label><select class="form-control" id="o-getrx-status">${GETRX_STATUSES.map(s=>opt(s, order.getrx_status||'New')).join('')}</select></div>
+        <div class="form-group mb-0 md:col-span-4"><label class="form-label">Enrollment notes</label><textarea class="form-control" id="o-notes" rows="2">${esc(order.enrollment_notes)}</textarea></div>
+      </div>
+      <div class="flex gap-2 mb-4"><button class="btn btn-primary btn-sm" onclick="saveOrder()"><i class="fa-solid fa-floppy-disk"></i> Save Order</button></div>
+
+      <!-- active-Rx pre-check gate -->
+      <div class="rounded-md px-4 py-3 mb-4 text-sm ${preChecked ? 'bg-emerald-50 border border-emerald-200' : 'bg-amber-50 border border-amber-300 text-amber-800'}">
+        <label class="flex items-center gap-2">
+          <input type="checkbox" id="o-activerx-checked" ${preChecked ? 'checked' : ''} onchange="saveActiveRx()">
+          <span><strong>Active-Rx pre-check</strong> — confirmed the member's profile for an existing active Rx before prescriber outreach.</span>
+        </label>
+        <div class="flex items-center gap-2 mt-2 ${preChecked ? '' : 'opacity-50'}">
+          <span class="text-xs">Active Rx found?</span>
+          <select class="form-control" id="o-activerx-found" style="max-width:120px" onchange="saveActiveRx()" ${preChecked ? '' : 'disabled'}>
+            <option value="">—</option><option value="yes" ${order.active_rx_found===true?'selected':''}>Yes</option><option value="no" ${order.active_rx_found===false?'selected':''}>No</option>
+          </select>
+        </div>
+      </div>
+
+      ${showScripts && memberScripts.length ? `
+      <div class="border border-slate-200 rounded-lg p-3 mb-4 bg-slate-50">
+        <div class="text-xs font-semibold text-slate-500 uppercase mb-2">Member-side scripts (attempt 4+)</div>
+        ${memberScripts.map(s => `<div class="mb-2">
+          <div class="flex items-center gap-2"><span class="font-medium text-sm">${esc(s.title)}</span>
+            <button class="btn btn-outline btn-sm" onclick="copyGetrxScript('${esc(s.script_key)}')"><i class="fa-regular fa-copy"></i></button></div>
+          <div class="text-xs text-slate-500">${esc(s.script_text)}</div></div>`).join('')}
+      </div>` : ''}
+
+      <!-- attempt tracker -->
+      <div class="flex items-center mb-2">
+        <span class="font-medium text-slate-700">Get Rx Outreach</span>
+        <span class="badge badge-blue ml-2">${n} attempt${n===1?'':'s'}</span>
+        <div class="ml-auto flex gap-2">
+          <button class="btn btn-primary btn-sm" ${preChecked ? '' : 'disabled title="Complete the active-Rx pre-check first"'} onclick="openGetRxAttempt()"><i class="fa-solid fa-plus"></i> Log Attempt</button>
+        </div>
+      </div>
+      <table class="data-table mb-3">
+        <thead><tr><th>#</th><th>Contacting</th><th>Channel</th><th>Phone-tree</th><th>Notes / Outcome</th><th>Follow-up</th></tr></thead>
+        <tbody>${n ? attempts.map(a => `<tr>
+          <td>${a.attempt_no}</td><td>${esc(a.target)}</td><td>${esc(a.channel)}</td>
+          <td class="text-xs">${esc(a.phone_tree)||'—'}</td>
+          <td class="text-sm">${esc(a.notes)||''}${a.outcome?` <span class="text-slate-400">· ${esc(a.outcome)}</span>`:''}</td>
+          <td class="text-xs">${a.followup_date?fmtDate(a.followup_date):'—'}</td></tr>`).join('')
+          : '<tr><td colspan="6" class="text-center py-4 text-slate-400">No Get Rx attempts yet</td></tr>'}</tbody>
+      </table>
+
+      <!-- escalation / handoff actions -->
+      <div class="flex flex-wrap gap-2 pt-2 border-t border-slate-100">
+        <button class="btn btn-outline btn-sm" onclick="verbalHandoff()"><i class="fa-solid fa-comment-medical"></i> Verbal Rx Request → BA${n>=6?' (suggested)':''}</button>
+        <button class="btn btn-outline btn-sm" onclick="mrcEscalate()"><i class="fa-solid fa-triangle-exclamation"></i> Escalate to MRC</button>
+        <button class="btn btn-primary btn-sm ml-auto" onclick="markRxReceived()"><i class="fa-solid fa-check"></i> Mark Rx Received</button>
+      </div>`;
+  }
+
+  function copyGetrxScript(key) {
+    const s = getrxScripts.find(x => x.script_key === key);
+    if (!s) return;
+    (navigator.clipboard ? navigator.clipboard.writeText(s.script_text || '') : Promise.reject())
+      .then(() => showToast('Copied', 'success'), () => showToast('Copy failed', 'error'));
+  }
+
+  async function createOrder() {
+    const body = {
+      medication: document.getElementById('o-medication').value,
+      strength: document.getElementById('o-strength').value,
+      day_supply: document.getElementById('o-day-supply').value,
+      supply_on_hand: document.getElementById('o-supply').value,
+      enrollment_notes: document.getElementById('o-notes').value,
+      priority: document.getElementById('o-priority').value,
+    };
+    const res = await apiPost(`/orders?member=${encodeURIComponent(memberKey)}&category=${encodeURIComponent(trackCat())}`, body);
+    if (res && res.ok) { showToast('Order created', 'success'); await loadOrders(); }
+    else showToast('Create failed', 'error');
+  }
+
+  async function saveOrder() {
+    const body = {
+      medication: document.getElementById('o-medication').value,
+      strength: document.getElementById('o-strength').value,
+      day_supply: document.getElementById('o-day-supply').value,
+      supply_on_hand: document.getElementById('o-supply').value,
+      enrollment_notes: document.getElementById('o-notes').value,
+      priority: document.getElementById('o-priority').value,
+      getrx_status: document.getElementById('o-getrx-status').value,
+    };
+    const res = await apiPatch(`/orders?order_id=${order.id}`, body);
+    if (res && res.ok) { const d = await res.json().catch(()=>({})); showToast(d.escalated ? 'Order saved — escalation reminder created' : 'Order saved', 'success'); await loadOrderDetailKeepAttempts(); }
+    else showToast('Save failed', 'error');
+  }
+
+  async function saveActiveRx() {
+    const checked = document.getElementById('o-activerx-checked').checked;
+    const foundV = document.getElementById('o-activerx-found').value;
+    const body = { active_rx_checked: checked, active_rx_found: foundV === '' ? null : (foundV === 'yes') };
+    const res = await apiPatch(`/orders?order_id=${order.id}`, body);
+    if (res && res.ok) { await loadOrderDetailKeepAttempts(); } else showToast('Save failed', 'error');
+  }
+
+  async function loadOrderDetailKeepAttempts() { await loadOrderDetail(order.id); }
+
+  function openGetRxAttempt() {
+    ['gx-phone-tree','gx-turnaround','gx-notes','gx-outcome','gx-followup'].forEach(id => document.getElementById(id).value = '');
+    document.getElementById('gx-target').value = 'Prescriber';
+    document.getElementById('gx-channel').value = (order._attempts && order._attempts.length) ? 'Call' : 'Fax';
+    openModal('getrx-modal');
+  }
+  async function saveGetRxAttempt() {
+    const btn = document.getElementById('gx-save'); btn.disabled = true;
+    const body = {
+      target: document.getElementById('gx-target').value,
+      channel: document.getElementById('gx-channel').value,
+      phone_tree: document.getElementById('gx-phone-tree').value || null,
+      turnaround_days: document.getElementById('gx-turnaround').value || null,
+      notes: document.getElementById('gx-notes').value || null,
+      outcome: document.getElementById('gx-outcome').value || null,
+      followup_date: document.getElementById('gx-followup').value || null,
+    };
+    const res = await apiPost(`/orders?order_id=${order.id}&resource=attempt`, body);
+    btn.disabled = false;
+    if (res && res.ok) { const d = await res.json().catch(()=>({})); showToast(`Attempt logged · follow-up ${d.followup_date?fmtDate(d.followup_date):'set'}`, 'success'); closeModal('getrx-modal'); await loadOrderDetailKeepAttempts(); }
+    else { const e = res ? await res.json().catch(()=>({})) : {}; showToast(e.error || 'Log failed', 'error'); }
+  }
+
+  async function verbalHandoff() {
+    if (!confirm2('Hand a verbal Rx request to BA for Cypress submission?')) return;
+    const res = await apiPost(`/orders?order_id=${order.id}&resource=verbal-handoff`, {});
+    if (res && res.ok) { showToast('Verbal request handed to BA', 'success'); await loadOrderDetailKeepAttempts(); }
+    else showToast('Failed', 'error');
+  }
+  async function mrcEscalate() {
+    if (!confirm2('Escalate this Get Rx to leadership / MRC?')) return;
+    const res = await apiPost(`/orders?order_id=${order.id}&resource=mrc-escalation`, {});
+    if (res && res.ok) { showToast('Escalated to MRC', 'success'); await loadOrderDetailKeepAttempts(); }
+    else showToast('Failed', 'error');
+  }
+  async function markRxReceived() {
+    if (!confirm2('Mark the Rx as received? This advances the order to Rx processing.')) return;
+    const res = await apiPost(`/orders?order_id=${order.id}&resource=rx-received`, {});
+    if (res && res.ok) { showToast('Rx received', 'success'); await loadOrderDetailKeepAttempts(); }
+    else showToast('Failed', 'error');
+  }
+
+  document.getElementById('getrx-modal').addEventListener('click', e => { if (e.target === e.currentTarget) closeModal('getrx-modal'); });
 
   /* ── Enrollment Worksheet (CC1 / ENR1) ── */
   const WS_ITEMS = [
