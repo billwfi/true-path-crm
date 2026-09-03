@@ -122,9 +122,9 @@ exports.handler = async function (event) {
           : `Hi ${ctx.first_name || 'there'}, please confirm your shipping address: ${ctx.address_link || '[address confirmation link]'}`;
         const row = (await mssql(
           `INSERT INTO dbo.GLP1_ContactLog
-             (member_key, category, contact_date, contact_type, notes, followup_date, contact_status, created_by)
+             (member_key, category, contact_date, contact_type, notes, followup_date, contact_status, created_by, work_area)
            OUTPUT INSERTED.*
-           VALUES (@member, @category, @contact_date, 'Text', @notes, NULL, 'Closed', @by)`,
+           VALUES (@member, @category, @contact_date, 'Text', @notes, NULL, 'Closed', @by, 'Enrollment Outreach')`,
           { member, category: cat, contact_date: new Date().toISOString().slice(0, 10),
             notes: 'Address verification text prepared [staged]', by: user.id || null })).recordset[0];
         return created({ contact: row, message: msg, staged: true });
@@ -147,9 +147,9 @@ exports.handler = async function (event) {
 
       const row = (await mssql(
         `INSERT INTO dbo.GLP1_ContactLog
-           (member_key, category, contact_date, contact_type, notes, followup_date, contact_status, created_by, outreach_attempt, invalid_contact)
+           (member_key, category, contact_date, contact_type, notes, followup_date, contact_status, created_by, outreach_attempt, invalid_contact, work_area)
          OUTPUT INSERTED.*
-         VALUES (@member, @category, @contact_date, @contact_type, @notes, @followup_date, @contact_status, @by, @attempt, @invalid)`,
+         VALUES (@member, @category, @contact_date, @contact_type, @notes, @followup_date, @contact_status, @by, @attempt, @invalid, 'Enrollment Outreach')`,
         {
           member, category: cat, contact_date: contactDate,
           contact_type: logAs, notes,

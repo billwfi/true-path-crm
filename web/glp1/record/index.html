@@ -92,6 +92,14 @@
             </div>
           </div>
 
+          <!-- Workflow tabs: each stage with its own contact tracking -->
+          <div id="itabs" class="flex gap-6 border-b border-slate-200 mb-4 px-1">
+            <button class="tab-btn active" data-itab="enroll" onclick="showITab('enroll')">Enrollment Outreach</button>
+            <button class="tab-btn" data-itab="rx" onclick="showITab('rx')">Rx Order &amp; Get Rx</button>
+            <button class="tab-btn" data-itab="ship" onclick="showITab('ship')">Fulfillment &amp; Tracking</button>
+          </div>
+
+          <div class="itab-panel" data-ipanel="enroll">
           <!-- Enrollment Outreach (CC1) — the guided 6-attempt cadence -->
           <div class="card mb-4" id="outreach-card">
             <div class="card-header flex items-center">
@@ -121,94 +129,6 @@
                 <textarea id="ws-notes" class="form-control" rows="3" placeholder="Shipping address, medication, copay, special instructions…"></textarea>
               </div>
               <button class="btn btn-primary" onclick="saveWorksheet()"><i class="fa-solid fa-floppy-disk"></i> Save Worksheet</button>
-            </div>
-          </div>
-
-          <!-- Order & Get Rx (CC4 + RXF1) — the prescriber-chase stage after enrollment -->
-          <div class="card mb-4" id="order-card">
-            <div class="card-header flex items-center">
-              <span><i class="fa-solid fa-prescription text-slate-400"></i> Order &amp; Get Rx</span>
-              <span class="badge ml-2" id="order-stage-badge" style="display:none"></span>
-              <span class="text-xs text-slate-400 ml-auto" id="order-updated"></span>
-            </div>
-            <div class="card-body form-pad" id="order-body"></div>
-          </div>
-
-          <!-- Rx Processing (RXF2 + CC4 + CS4) — structured Rx records: naming, label, day supply -->
-          <div class="card mb-4" id="rx-card" style="display:none">
-            <div class="card-header flex items-center">
-              <span><i class="fa-solid fa-file-prescription text-slate-400"></i> Rx Processing</span>
-              <div class="ml-auto flex gap-2">
-                <button class="btn btn-outline btn-sm" onclick="copyRxReply()"><i class="fa-regular fa-copy"></i> Rx-received reply</button>
-                <button class="btn btn-primary btn-sm" onclick="openRxModal()"><i class="fa-solid fa-plus"></i> Add Rx</button>
-              </div>
-            </div>
-            <div class="card-body">
-              <table class="data-table">
-                <thead><tr><th>File Name</th><th>Label</th><th>Status</th><th>Day Supply</th><th>WR</th><th></th></tr></thead>
-                <tbody id="rx-body"></tbody>
-              </table>
-            </div>
-          </div>
-
-          <!-- Fulfillment & Tracking (IA5 + CC5 + RC2) — address → procurement → ship → deliver -->
-          <div class="card mb-4" id="ship-card" style="display:none">
-            <div class="card-header flex items-center">
-              <span><i class="fa-solid fa-truck-fast text-slate-400"></i> Fulfillment &amp; Tracking</span>
-              <span class="badge ml-2" id="ship-stage-badge"></span>
-              <span class="text-xs text-slate-400 ml-auto" id="ship-batch"></span>
-            </div>
-            <div class="card-body form-pad" id="ship-body"></div>
-          </div>
-
-          <!-- Delivery Support / RTS prevention (TRK1) -->
-          <div class="card mb-4" id="rts-card" style="display:none">
-            <div class="card-header flex items-center">
-              <span><i class="fa-solid fa-triangle-exclamation text-slate-400"></i> Delivery Support &amp; RTS Prevention</span>
-              <span class="badge ml-2" id="rts-badge" style="display:none"></span>
-              <span class="text-xs text-slate-400 ml-auto" id="rts-deadline"></span>
-            </div>
-            <div class="card-body form-pad" id="rts-body"></div>
-          </div>
-
-          <!-- Cypress Requests (CS3 + RXF4) — transfer in/out + verbal requests, BA-routed -->
-          <div class="card mb-4" id="cypress-card">
-            <div class="card-header flex items-center">
-              <span><i class="fa-solid fa-right-left text-slate-400"></i> Cypress Requests</span>
-              <div class="ml-auto flex gap-2">
-                <button class="btn btn-outline btn-sm" onclick="toggleCypressScripts()"><i class="fa-solid fa-language"></i> Scripts</button>
-                <button class="btn btn-primary btn-sm" onclick="openCypressModal()"><i class="fa-solid fa-plus"></i> New Request</button>
-              </div>
-            </div>
-            <div class="card-body">
-              <div id="cypress-scripts" class="hidden border border-slate-200 rounded-lg p-3 mb-3 bg-slate-50"></div>
-              <table class="data-table">
-                <thead><tr><th>Type</th><th>Medication</th><th>Pharmacy / Prescriber</th><th>Status</th><th>Created</th><th></th></tr></thead>
-                <tbody id="cypress-body"></tbody>
-              </table>
-            </div>
-          </div>
-
-          <!-- Contact Tracking -->
-          <div class="card mb-4">
-            <div class="card-header flex items-center">
-              <span><i class="fa-solid fa-comments text-slate-400"></i> Contact Tracking</span>
-              <span class="badge badge-blue ml-2" id="attempts-badge">0 attempts</span>
-              <span id="tab-attempts" class="hidden"></span>
-              <button class="btn btn-primary btn-sm ml-auto" onclick="openContact()"><i class="fa-solid fa-plus"></i> Add Contact</button>
-            </div>
-            <div class="card-body">
-              <div id="outreach-prompt" class="flex items-center justify-between bg-amber-50 border border-amber-300 text-amber-800 rounded-md px-4 py-3 mb-3 text-sm" style="display:none">
-                <span><i class="fa-solid fa-triangle-exclamation"></i>
-                  4+ outreach attempts logged and all are closed. Mark intake as <strong>Outreach Completed</strong>?</span>
-                <button class="btn btn-sm btn-primary ml-3" onclick="markOutreachCompleted()">Mark Outreach Completed</button>
-              </div>
-              <table class="data-table">
-                <thead><tr>
-                  <th>Date</th><th>Type</th><th>Notes</th><th>Follow-up</th><th>Status</th><th></th>
-                </tr></thead>
-                <tbody id="contacts-body"></tbody>
-              </table>
             </div>
           </div>
 
@@ -246,6 +166,148 @@
               </div>
             </div>
           </div>
+          <!-- Contact Tracking -->
+          <div class="card mb-4">
+            <div class="card-header flex items-center">
+              <span><i class="fa-solid fa-comments text-slate-400"></i> Contact Tracking <span class="text-xs text-slate-400 font-normal">· Enrollment Outreach</span></span>
+              <span class="badge badge-blue ml-2" id="attempts-badge-enroll">0 attempts</span>
+              <span id="tab-attempts" class="hidden"></span>
+              <button class="btn btn-primary btn-sm ml-auto" onclick="openContact(null,'Enrollment Outreach')"><i class="fa-solid fa-plus"></i> Add Contact</button>
+            </div>
+            <div class="card-body">
+              <div id="outreach-prompt-enroll" class="flex items-center justify-between bg-amber-50 border border-amber-300 text-amber-800 rounded-md px-4 py-3 mb-3 text-sm" style="display:none">
+                <span><i class="fa-solid fa-triangle-exclamation"></i>
+                  4+ outreach attempts logged and all are closed. Mark intake as <strong>Outreach Completed</strong>?</span>
+                <button class="btn btn-sm btn-primary ml-3" onclick="markOutreachCompleted()">Mark Outreach Completed</button>
+              </div>
+              <table class="data-table">
+                <thead><tr>
+                  <th>Date</th><th>Type</th><th>Notes</th><th>Follow-up</th><th>Status</th><th></th>
+                </tr></thead>
+                <tbody id="contacts-body-enroll"></tbody>
+              </table>
+            </div>
+          </div>
+
+          </div>
+
+          <div class="itab-panel" data-ipanel="rx" style="display:none">
+          <!-- Order & Get Rx (CC4 + RXF1) — the prescriber-chase stage after enrollment -->
+          <div class="card mb-4" id="order-card">
+            <div class="card-header flex items-center">
+              <span><i class="fa-solid fa-prescription text-slate-400"></i> Order &amp; Get Rx</span>
+              <span class="badge ml-2" id="order-stage-badge" style="display:none"></span>
+              <span class="text-xs text-slate-400 ml-auto" id="order-updated"></span>
+            </div>
+            <div class="card-body form-pad" id="order-body"></div>
+          </div>
+
+          <!-- Rx Processing (RXF2 + CC4 + CS4) — structured Rx records: naming, label, day supply -->
+          <div class="card mb-4" id="rx-card" style="display:none">
+            <div class="card-header flex items-center">
+              <span><i class="fa-solid fa-file-prescription text-slate-400"></i> Rx Processing</span>
+              <div class="ml-auto flex gap-2">
+                <button class="btn btn-outline btn-sm" onclick="copyRxReply()"><i class="fa-regular fa-copy"></i> Rx-received reply</button>
+                <button class="btn btn-primary btn-sm" onclick="openRxModal()"><i class="fa-solid fa-plus"></i> Add Rx</button>
+              </div>
+            </div>
+            <div class="card-body">
+              <table class="data-table">
+                <thead><tr><th>File Name</th><th>Label</th><th>Status</th><th>Day Supply</th><th>WR</th><th></th></tr></thead>
+                <tbody id="rx-body"></tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- Cypress Requests (CS3 + RXF4) — transfer in/out + verbal requests, BA-routed -->
+          <div class="card mb-4" id="cypress-card">
+            <div class="card-header flex items-center">
+              <span><i class="fa-solid fa-right-left text-slate-400"></i> Cypress Requests</span>
+              <div class="ml-auto flex gap-2">
+                <button class="btn btn-outline btn-sm" onclick="toggleCypressScripts()"><i class="fa-solid fa-language"></i> Scripts</button>
+                <button class="btn btn-primary btn-sm" onclick="openCypressModal()"><i class="fa-solid fa-plus"></i> New Request</button>
+              </div>
+            </div>
+            <div class="card-body">
+              <div id="cypress-scripts" class="hidden border border-slate-200 rounded-lg p-3 mb-3 bg-slate-50"></div>
+              <table class="data-table">
+                <thead><tr><th>Type</th><th>Medication</th><th>Pharmacy / Prescriber</th><th>Status</th><th>Created</th><th></th></tr></thead>
+                <tbody id="cypress-body"></tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- Contact Tracking -->
+          <div class="card mb-4">
+            <div class="card-header flex items-center">
+              <span><i class="fa-solid fa-comments text-slate-400"></i> Contact Tracking <span class="text-xs text-slate-400 font-normal">· Rx Order & Get Rx</span></span>
+              <span class="badge badge-blue ml-2" id="attempts-badge-rx">0 attempts</span>
+              <span id="tab-attempts" class="hidden"></span>
+              <button class="btn btn-primary btn-sm ml-auto" onclick="openContact(null,'Rx Order & Get Rx')"><i class="fa-solid fa-plus"></i> Add Contact</button>
+            </div>
+            <div class="card-body">
+              <div id="outreach-prompt-rx" class="flex items-center justify-between bg-amber-50 border border-amber-300 text-amber-800 rounded-md px-4 py-3 mb-3 text-sm" style="display:none">
+                <span><i class="fa-solid fa-triangle-exclamation"></i>
+                  4+ outreach attempts logged and all are closed. Mark intake as <strong>Outreach Completed</strong>?</span>
+                <button class="btn btn-sm btn-primary ml-3" onclick="markOutreachCompleted()">Mark Outreach Completed</button>
+              </div>
+              <table class="data-table">
+                <thead><tr>
+                  <th>Date</th><th>Type</th><th>Notes</th><th>Follow-up</th><th>Status</th><th></th>
+                </tr></thead>
+                <tbody id="contacts-body-rx"></tbody>
+              </table>
+            </div>
+          </div>
+
+          </div>
+
+          <div class="itab-panel" data-ipanel="ship" style="display:none">
+          <!-- Fulfillment & Tracking (IA5 + CC5 + RC2) — address → procurement → ship → deliver -->
+          <div class="card mb-4" id="ship-card" style="display:none">
+            <div class="card-header flex items-center">
+              <span><i class="fa-solid fa-truck-fast text-slate-400"></i> Fulfillment &amp; Tracking</span>
+              <span class="badge ml-2" id="ship-stage-badge"></span>
+              <span class="text-xs text-slate-400 ml-auto" id="ship-batch"></span>
+            </div>
+            <div class="card-body form-pad" id="ship-body"></div>
+          </div>
+
+          <!-- Delivery Support / RTS prevention (TRK1) -->
+          <div class="card mb-4" id="rts-card" style="display:none">
+            <div class="card-header flex items-center">
+              <span><i class="fa-solid fa-triangle-exclamation text-slate-400"></i> Delivery Support &amp; RTS Prevention</span>
+              <span class="badge ml-2" id="rts-badge" style="display:none"></span>
+              <span class="text-xs text-slate-400 ml-auto" id="rts-deadline"></span>
+            </div>
+            <div class="card-body form-pad" id="rts-body"></div>
+          </div>
+
+          <!-- Contact Tracking -->
+          <div class="card mb-4">
+            <div class="card-header flex items-center">
+              <span><i class="fa-solid fa-comments text-slate-400"></i> Contact Tracking <span class="text-xs text-slate-400 font-normal">· Fulfillment & Tracking</span></span>
+              <span class="badge badge-blue ml-2" id="attempts-badge-ship">0 attempts</span>
+              <span id="tab-attempts" class="hidden"></span>
+              <button class="btn btn-primary btn-sm ml-auto" onclick="openContact(null,'Fulfillment & Tracking')"><i class="fa-solid fa-plus"></i> Add Contact</button>
+            </div>
+            <div class="card-body">
+              <div id="outreach-prompt-ship" class="flex items-center justify-between bg-amber-50 border border-amber-300 text-amber-800 rounded-md px-4 py-3 mb-3 text-sm" style="display:none">
+                <span><i class="fa-solid fa-triangle-exclamation"></i>
+                  4+ outreach attempts logged and all are closed. Mark intake as <strong>Outreach Completed</strong>?</span>
+                <button class="btn btn-sm btn-primary ml-3" onclick="markOutreachCompleted()">Mark Outreach Completed</button>
+              </div>
+              <table class="data-table">
+                <thead><tr>
+                  <th>Date</th><th>Type</th><th>Notes</th><th>Follow-up</th><th>Status</th><th></th>
+                </tr></thead>
+                <tbody id="contacts-body-ship"></tbody>
+              </table>
+            </div>
+          </div>
+
+          </div>
+
         </div>
       </div>
     </main>
@@ -294,6 +356,9 @@
         <div class="form-group flex-1"><label class="form-label">Contact Status</label>
           <select class="form-control" id="c-status"></select></div>
       </div>
+      <div class="form-group"><label class="form-label">Work area *</label>
+        <select class="form-control" id="c-area"></select>
+        <p class="text-xs text-slate-500 mt-1">Which part of the workflow this contact belongs to — it files the record under that tab.</p></div>
     </div>
     <div class="modal-footer">
       <button class="btn btn-outline" onclick="closeModal('contact-modal')">Cancel</button>
@@ -662,6 +727,16 @@
   const INTAKE_STATUSES = ['In Progress', 'Outreach Completed', 'Submitted to WellSync'];
   const SUB_STATUSES = ['Declined Enrollment', 'Approved', 'Clinical Denial'];
   const PRIORITIES = ['Low', 'Medium', 'High', 'Urgent'];
+  // Workflow areas — must match WORK_AREAS in glp1-tracking.js.
+  const WORK_AREAS = ['Enrollment Outreach', 'Rx Order & Get Rx', 'Fulfillment & Tracking'];
+  const ITAB_AREA = { enroll: 'Enrollment Outreach', rx: 'Rx Order & Get Rx', ship: 'Fulfillment & Tracking' };
+  let activeITab = 'enroll';
+
+  function showITab(name) {
+    activeITab = name;
+    document.querySelectorAll('#itabs .tab-btn').forEach(b => b.classList.toggle('active', b.dataset.itab === name));
+    document.querySelectorAll('.itab-panel').forEach(p => p.style.display = p.dataset.ipanel === name ? '' : 'none');
+  }
   const WELLSYNC = 'Submitted to WellSync';
 
   const params = new URLSearchParams(location.search);
@@ -783,6 +858,7 @@
     document.getElementById('q-card').style.display = isGlp1(cat) ? '' : 'none';  // questionnaires = GLP-1 only
     document.getElementById('intake-list').style.display = 'none';
     document.getElementById('intake-detail').style.display = '';
+    showITab('enroll');
     await loadTracking();
     await loadWorksheet();
     await loadOrders();
@@ -2030,11 +2106,19 @@
 
   /* ── Contacts ── */
   function renderContacts() {
-    document.getElementById('attempts-badge').textContent =
-      `${contacts.length} attempt${contacts.length === 1 ? '' : 's'}`;
     document.getElementById('tab-attempts').textContent = contacts.length;
-    document.getElementById('contacts-body').innerHTML = contacts.length
-      ? contacts.map(c => `<tr>
+    // Each tab shows only the contacts filed under its own work area.
+    Object.entries(ITAB_AREA).forEach(([suffix, area]) => renderContactArea(suffix, area));
+  }
+
+  function renderContactArea(suffix, area) {
+    const rows = contacts.filter(c => (c.work_area || 'Enrollment Outreach') === area);
+    const badge = document.getElementById('attempts-badge-' + suffix);
+    if (badge) badge.textContent = `${rows.length} contact${rows.length === 1 ? '' : 's'}`;
+    const body = document.getElementById('contacts-body-' + suffix);
+    if (!body) return;
+    body.innerHTML = rows.length
+      ? rows.map(c => `<tr>
           <td class="text-xs">${fmtDate(c.contact_date)}</td>
           <td>${esc(c.contact_type)}</td>
           <td class="text-sm">${esc(c.notes) || '—'}</td>
@@ -2049,15 +2133,19 @@
             <button class="btn btn-danger btn-sm" title="Delete" onclick='deleteContact(${c.id})'><i class="fa-solid fa-trash"></i></button>
           </td>
         </tr>`).join('')
-      : '<tr><td colspan="6" class="text-center py-8 text-slate-400">No contact attempts yet</td></tr>';
+      : `<tr><td colspan="6" class="text-center py-8 text-slate-400">No contacts recorded for ${esc(area)}</td></tr>`;
 
-    // Prompt to complete outreach: 4+ attempts, all closed, intake still In Progress.
-    const allClosed = contacts.length > 0 && contacts.every(c => c.contact_status === 'Closed');
-    const show = contacts.length >= 4 && allClosed && (!intake || intake.status === 'In Progress');
-    document.getElementById('outreach-prompt').style.display = show ? '' : 'none';
+    // Prompt to complete outreach: 4+ enrollment attempts, all closed, intake still In Progress.
+    const prompt = document.getElementById('outreach-prompt-' + suffix);
+    if (prompt) {
+      const allClosed = rows.length > 0 && rows.every(c => c.contact_status === 'Closed');
+      const show = area === 'Enrollment Outreach' && rows.length >= 4 && allClosed
+        && (!intake || intake.status === 'In Progress');
+      prompt.style.display = show ? '' : 'none';
+    }
   }
 
-  function openContact(id) {
+  function openContact(id, defaultArea) {
     const c = id ? contacts.find(x => x.id === id) : null;
     document.getElementById('contact-modal-title').textContent = c ? 'Edit Contact' : 'Add Contact';
     document.getElementById('c-id').value = c ? c.id : '';
@@ -2066,6 +2154,8 @@
     document.getElementById('c-notes').value = c ? (c.notes || '') : '';
     document.getElementById('c-followup').value = c ? dInput(c.followup_date) : '';
     fillSelect('c-status', CONTACT_STATUSES, c ? c.contact_status : 'Open');
+    fillSelect('c-area', WORK_AREAS, c ? (c.work_area || 'Enrollment Outreach')
+      : (defaultArea || ITAB_AREA[activeITab] || 'Enrollment Outreach'));
     openModal('contact-modal');
   }
 
@@ -2077,6 +2167,7 @@
       notes: document.getElementById('c-notes').value.trim(),
       followup_date: document.getElementById('c-followup').value || null,
       contact_status: document.getElementById('c-status').value,
+      work_area: document.getElementById('c-area').value,
     };
     if (!body.contact_date) { showToast('Date is required', 'error'); return; }
     const res = id

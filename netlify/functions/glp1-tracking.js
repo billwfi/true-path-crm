@@ -6,6 +6,8 @@ const { normalizePriority, isEscalation, nextFollowup } = require('./_cadence');
 // member = member_key (Member_ID, or idx:<indx> fallback for null-member records).
 
 const CONTACT_TYPES = ['Phone Call', 'Text', 'Email', 'Other'];
+// Which part of the workflow a contact belongs to — drives the intake tabs.
+const WORK_AREAS = ['Enrollment Outreach', 'Rx Order & Get Rx', 'Fulfillment & Tracking'];
 const CONTACT_STATUSES = ['Open', 'Closed'];
 const INTAKE_STATUSES = ['In Progress', 'Outreach Completed', 'Submitted to WellSync'];
 const SUB_STATUSES = ['Declined Enrollment', 'Approved', 'Clinical Denial'];
@@ -71,7 +73,7 @@ exports.handler = async function (event) {
       }
       const contacts = await mssql(
         `SELECT id, member_key, contact_date, contact_type, notes, followup_date,
-                contact_status, created_by, created_at
+                contact_status, created_by, created_at, work_area, outreach_attempt
          FROM dbo.GLP1_ContactLog WHERE category = @category AND member_key = @member
          ORDER BY contact_date DESC, id DESC`,
         { category: cat, member });
@@ -103,17 +105,18 @@ exports.handler = async function (event) {
       const type = CONTACT_TYPES.includes(b.contact_type) ? b.contact_type : null;
       if (!type) return badRequest('contact_type must be one of: ' + CONTACT_TYPES.join(', '));
       const status = CONTACT_STATUSES.includes(b.contact_status) ? b.contact_status : 'Open';
+      const area = WORK_AREAS.includes(b.work_area) ? b.work_area : 'Enrollment Outreach';
       const r = await mssql(
         `INSERT INTO dbo.GLP1_ContactLog
-           (member_key, category, contact_date, contact_type, notes, followup_date, contact_status, created_by)
+           (member_key, category, contact_date, contact_type, notes, followup_date, contact_status, created_by, work_area)
          OUTPUT INSERTED.*
-         VALUES (@member, @category, @contact_date, @contact_type, @notes, @followup_date, @contact_status, @created_by)`,
+         VALUES (@member, @category, @contact_date, @contact_type, @notes, @followup_date, @contact_status, @created_by, @work_area)`,
         {
           member, category: cat,
           contact_date: b.contact_date || new Date().toISOString().slice(0, 10),
           contact_type: type, notes: b.notes || null,
           followup_date: b.followup_date || null, contact_status: status,
-          created_by: user.id || null,
+          created_by: user.id || null, work_area: area,
         });
       return created(r.recordset[0]);
     }
@@ -263,6 +266,10 @@ exports.handler = async function (event) {
       if ('contact_status' in b) {
         if (!CONTACT_STATUSES.includes(b.contact_status)) return badRequest('invalid contact_status');
         sets.push('contact_status=@contact_status'); params.contact_status = b.contact_status;
+      }
+      if ('work_area' in b) {
+        if (!WORK_AREAS.includes(b.work_area)) return badRequest('invalid work_area');
+        sets.push('work_area=@work_area'); params.work_area = b.work_area;
       }
       if (!sets.length) return badRequest('No updatable fields provided');
       const r = await mssql(

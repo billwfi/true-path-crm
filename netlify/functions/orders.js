@@ -428,8 +428,8 @@ async function trackingText(q, user) {
   await logEvent(id, 'Tracking Texted', 'Prepared [staged]', msg, user.id);
   // Mirror into the contact log so the member's history shows it.
   await mssql(
-    `INSERT INTO dbo.GLP1_ContactLog (member_key, category, contact_date, contact_type, notes, contact_status, created_by)
-     VALUES (@m, @c, CAST(GETDATE() AS date), 'Text', @n, 'Closed', @by)`,
+    `INSERT INTO dbo.GLP1_ContactLog (member_key, category, contact_date, contact_type, notes, contact_status, created_by, work_area)
+     VALUES (@m, @c, CAST(GETDATE() AS date), 'Text', @n, 'Closed', @by, 'Fulfillment & Tracking')`,
     { m: o.member_key, c: o.intake_type, n: 'Tracking text prepared [staged]', by: user.id || null });
   return ok({ ok: true, message: msg, staged: true });
 }
@@ -477,8 +477,8 @@ async function deliveryCall(q, event, user) {
   const o = await getOrder(id);
   // Log the call on the member's contact history too.
   await mssql(
-    `INSERT INTO dbo.GLP1_ContactLog (member_key, category, contact_date, contact_type, notes, contact_status, created_by)
-     VALUES (@m, @c, CAST(GETDATE() AS date), 'Phone Call', @n, @st, @by)`,
+    `INSERT INTO dbo.GLP1_ContactLog (member_key, category, contact_date, contact_type, notes, contact_status, created_by, work_area)
+     VALUES (@m, @c, CAST(GETDATE() AS date), 'Phone Call', @n, @st, @by, 'Fulfillment & Tracking')`,
     { m: o.member_key, c: o.intake_type,
       n: `Delivery-confirmation call — ${b.reached ? 'member reached' : 'no answer'}${b.notes ? ': ' + b.notes : ''}`,
       st: b.reached ? 'Closed' : 'Open', by: user.id || null });
