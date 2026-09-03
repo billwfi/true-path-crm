@@ -354,8 +354,9 @@ async function procurementHandoff(q, event, user) {
         vendor_day_supply, status, transaction_date, document_patient_id)
      OUTPUT INSERTED.id
      VALUES (@cid, @cname, @drug, @strength, @vendor, @ds, 'Pending', CAST(GETDATE() AS date), @cid)`,
+    // vendor is left null — Procurement sets it when they source the order.
     { cid: o.member_key, cname: nm.full, drug: o.medication, strength: o.strength,
-      vendor: (b.vendor || '').slice(0, 500) || null, ds: o.day_supply || null });
+      vendor: null, ds: o.day_supply || null });
   const batchId = batch.recordset[0].id;
 
   await mssql(

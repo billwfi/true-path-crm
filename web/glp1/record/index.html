@@ -425,9 +425,9 @@
     </div>
     <div class="modal-body">
       <p class="text-sm text-slate-500 mb-3">Creates the procurement batch record, sets the intake to <b>Registered for Services</b>, and opens the order task with its reminder ladder.</p>
-      <div class="flex gap-3">
-        <div class="form-group flex-1"><label class="form-label">Vendor</label><input class="form-control" id="ho-vendor" placeholder="e.g. Cypress"></div>
-        <div class="form-group flex-1"><label class="form-label">Run-out date (order task due)</label><input type="date" class="form-control" id="ho-runout"></div>
+      <div class="form-group" style="max-width:220px">
+        <label class="form-label">Run-out date (order task due)</label>
+        <input type="date" class="form-control" id="ho-runout">
       </div>
       <div class="flex gap-3">
         <div class="form-group flex-1"><label class="form-label">Rebate group</label><input class="form-control" id="ho-rgroup"></div>
@@ -1440,7 +1440,6 @@
   }
 
   function openHandoff() {
-    document.getElementById('ho-vendor').value = '';
     document.getElementById('ho-runout').value = order.run_out_date ? String(order.run_out_date).slice(0,10) : '';
     document.getElementById('ho-rgroup').value = order.rebate_group || '';
     document.getElementById('ho-rmo').value = order.rebate_monthly ?? '';
@@ -1450,7 +1449,6 @@
   async function doHandoff() {
     const btn = document.getElementById('ho-save'); btn.disabled = true;
     const res = await apiPost(`/orders?order_id=${order.id}&resource=handoff`, {
-      vendor: document.getElementById('ho-vendor').value,
       run_out_date: document.getElementById('ho-runout').value || null,
       rebate_group: document.getElementById('ho-rgroup').value,
       rebate_monthly: document.getElementById('ho-rmo').value,
