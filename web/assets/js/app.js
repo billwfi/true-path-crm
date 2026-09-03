@@ -64,6 +64,11 @@ function esc(s) { return (s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').re
 
 function fmtDate(d) {
   if (!d) return '—';
+  // SQL `date` columns arrive as 'YYYY-MM-DD' or as midnight-UTC ISO. Render those
+  // from their own parts: passing them through new Date() treats them as UTC and
+  // then prints local, which shows the previous day west of Greenwich.
+  const m = String(d).match(/^(\d{4})-(\d{2})-(\d{2})(?:T00:00:00(?:\.000)?Z?)?$/);
+  if (m) return `${+m[2]}/${+m[3]}/${m[1]}`;
   const dt = new Date(d);
   return isNaN(dt) ? d : `${dt.getMonth()+1}/${dt.getDate()}/${dt.getFullYear()}`;
 }
