@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Cypress Fax Cover Sheet — True Path CRM</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+  <style>
+    body{font-family:'Segoe UI',system-ui,sans-serif;color:#1e293b;background:#f1f5f9;margin:0;padding:24px}
+    .sheet{max-width:760px;margin:0 auto;background:#fff;border:1px solid #e2e8f0;border-radius:8px;padding:40px 44px;box-shadow:0 4px 16px rgba(15,23,42,.06)}
+    .bar{max-width:760px;margin:0 auto 12px;display:flex;gap:8px}
+    .btn{border:none;border-radius:8px;padding:9px 16px;font-size:14px;font-weight:600;cursor:pointer}
+    .btn-primary{background:#0ea5e9;color:#fff}.btn-light{background:#e2e8f0;color:#334155}
+    h1{font-size:24px;margin:0 0 4px;letter-spacing:.02em}
+    .rule{border:0;border-top:2px solid #223f72;margin:14px 0}
+    .grid{display:grid;grid-template-columns:120px 1fr;row-gap:8px;column-gap:12px;font-size:14px}
+    .grid .k{color:#64748b;font-weight:600}
+    .sec{margin-top:22px}
+    .sec h2{font-size:13px;text-transform:uppercase;letter-spacing:.08em;color:#0a5e57;margin:0 0 8px;border-bottom:1px solid #e2e8f0;padding-bottom:4px}
+    .note{background:#f8fafc;border:1px solid #e2e8f0;border-radius:6px;padding:12px 14px;font-size:14px;margin-top:6px}
+    .muted{color:#94a3b8}
+    @media print { body{background:#fff;padding:0} .bar{display:none} .sheet{border:0;box-shadow:none;max-width:none;padding:0} }
+  </style>
+</head>
+<body>
+  <div class="bar">
+    <button class="btn btn-primary" onclick="window.print()"><i class="fa-solid fa-print"></i> Print / Fax</button>
+    <button class="btn btn-light" onclick="window.close()">Close</button>
+  </div>
+  <div class="sheet" id="sheet"><p class="muted">Loading…</p></div>
+
+<script src="/assets/js/app.js"></script>
+<script>
+  const id = new URLSearchParams(location.search).get('id');
+  const esc2 = s => (s==null?'':String(s)).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  const row = (k,v) => v ? `<div class="k">${esc2(k)}</div><div>${esc2(v)}</div>` : '';
+
+  (async () => {
+    if (!id) { document.getElementById('sheet').innerHTML = '<p class="muted">Missing request id.</p>'; return; }
+    const d = await apiGet(`/cypress?resource=cover-sheet&id=${encodeURIComponent(id)}`);
+    if (!d) { document.getElementById('sheet').innerHTML = '<p class="muted">Request not found.</p>'; return; }
+    const r = d.request, cy = d.cypress;
+    const today = new Date().toLocaleDateString('en-US');
+
+    const isTransfer = r.request_type === 'Transfer In' || r.request_type === 'Transfer Out';
+    document.title = `Cypress Fax — ${r.request_type} — ${r.member_name || ''}`;
+    document.getElementById('sheet').innerHTML = `
+      <h1>Fax Cover Sheet</h1>
+      <div class="muted" style="font-size:14px">${esc2(cy.name)} &middot; ${esc2(r.request_type)}</div>
+      <hr class="rule">
+      <div class="grid">
+        <div class="k">To</div><div>${esc2(cy.name)} — Fax ${esc2(cy.fax)}</div>
+        <div class="k">Address</div><div>${esc2(cy.address)}</div>
+        <div class="k">Phone</div><div>${esc2(cy.phone)}</div>
+        <div class="k">From</div><div>True Path Sourcing — Client Concierge</div>
+        <div class="k">Date</div><div>${today}</div>
+        <div class="k">Re</div><div>${esc2(cy.refill_language)} — ${esc2(r.request_type)}</div>
+      </div>
+
+      <div class="sec">
+        <h2>Member</h2>
+        <div class="grid">
+          ${row('Name', r.member_name)}${row('DOB', r.dob)}${row('Phone', r.phone)}${row('Address', r.address)}
+          ${row('Medication', [r.medication, r.strength].filter(Boolean).join(' '))}
+        </div>
+      </div>
+
+      ${isTransfer ? `
+      <div class="sec">
+        <h2>Pharmacy</h2>
+        <div class="grid">
+          ${row('Name', r.pharmacy_name)}${row('Address', r.pharmacy_address)}
+          ${row('Phone', r.pharmacy_phone)}${row('Fax', r.pharmacy_fax)}
+          ${r.request_type === 'Transfer Out' ? row('Supply on hand', r.never_filled ? 'Never Filled' : r.supply_on_hand) : ''}
+        </div>
+      </div>` : `
+      <div class="sec">
+        <h2>Prescriber (Verbal Request)</h2>
+        <div class="grid">${row('Name', r.prescriber_name)}${row('Phone', r.prescriber_phone)}</div>
+      </div>`}
+
+      <div class="sec">
+        <h2>Request</h2>
+        <div class="note">${esc2(cy.refill_language)}. ${esc2(r.request_type)} for the member above.${
+          r.notes ? '<br><br>' + esc2(r.notes) : ''}</div>
+      </div>
+
+      <div class="sec muted" style="font-size:12px">Generated from True Path CRM · Request #${esc2(r.id)}</div>`;
+  })();
+</script>
+</body>
+</html>

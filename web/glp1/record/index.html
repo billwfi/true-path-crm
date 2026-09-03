@@ -151,6 +151,24 @@
             </div>
           </div>
 
+          <!-- Cypress Requests (CS3 + RXF4) — transfer in/out + verbal requests, BA-routed -->
+          <div class="card mb-4" id="cypress-card">
+            <div class="card-header flex items-center">
+              <span><i class="fa-solid fa-right-left text-slate-400"></i> Cypress Requests</span>
+              <div class="ml-auto flex gap-2">
+                <button class="btn btn-outline btn-sm" onclick="toggleCypressScripts()"><i class="fa-solid fa-language"></i> Scripts</button>
+                <button class="btn btn-primary btn-sm" onclick="openCypressModal()"><i class="fa-solid fa-plus"></i> New Request</button>
+              </div>
+            </div>
+            <div class="card-body">
+              <div id="cypress-scripts" class="hidden border border-slate-200 rounded-lg p-3 mb-3 bg-slate-50"></div>
+              <table class="data-table">
+                <thead><tr><th>Type</th><th>Medication</th><th>Pharmacy / Prescriber</th><th>Status</th><th>Created</th><th></th></tr></thead>
+                <tbody id="cypress-body"></tbody>
+              </table>
+            </div>
+          </div>
+
           <!-- Contact Tracking -->
           <div class="card mb-4">
             <div class="card-header flex items-center">
@@ -260,6 +278,67 @@
     <div class="modal-footer">
       <button class="btn btn-outline" onclick="closeModal('contact-modal')">Cancel</button>
       <button class="btn btn-primary" onclick="saveContact()">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- New / edit Cypress request modal -->
+<div id="cypress-modal" class="modal-backdrop hidden">
+  <div class="modal" style="max-width:640px">
+    <div class="modal-header">
+      <span class="modal-title" id="cy-modal-title">New Cypress Request</span>
+      <button class="modal-close" onclick="closeModal('cypress-modal')">×</button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="cy-id">
+      <div class="form-group"><label class="form-label">Request type *</label>
+        <select class="form-control" id="cy-type" onchange="cyTypeChange()">
+          <option>Transfer In</option><option>Transfer Out</option><option>Verbal Request</option>
+        </select></div>
+      <div class="flex gap-3">
+        <div class="form-group flex-1"><label class="form-label">Member name</label><input class="form-control" id="cy-name"></div>
+        <div class="form-group" style="max-width:150px"><label class="form-label">DOB</label><input class="form-control" id="cy-dob"></div>
+      </div>
+      <div class="flex gap-3">
+        <div class="form-group flex-1"><label class="form-label">Phone</label><input class="form-control" id="cy-phone"></div>
+        <div class="form-group flex-1"><label class="form-label">Address</label><input class="form-control" id="cy-address"></div>
+      </div>
+      <div class="flex gap-3">
+        <div class="form-group flex-1"><label class="form-label">Medication</label><input class="form-control" id="cy-med"></div>
+        <div class="form-group flex-1"><label class="form-label">Strength</label><input class="form-control" id="cy-strength"></div>
+      </div>
+
+      <div id="cy-pharmacy">
+        <div class="text-xs font-semibold text-slate-500 uppercase mt-1 mb-1">Pharmacy</div>
+        <div class="flex gap-3">
+          <div class="form-group flex-1"><label class="form-label">Pharmacy name</label><input class="form-control" id="cy-ph-name"></div>
+          <div class="form-group flex-1"><label class="form-label">Pharmacy phone</label><input class="form-control" id="cy-ph-phone"></div>
+        </div>
+        <div class="flex gap-3">
+          <div class="form-group flex-1"><label class="form-label">Pharmacy address</label><input class="form-control" id="cy-ph-address"></div>
+          <div class="form-group" style="max-width:170px"><label class="form-label">Pharmacy fax</label><input class="form-control" id="cy-ph-fax"></div>
+        </div>
+        <div class="flex gap-3" id="cy-transfer-out">
+          <div class="form-group flex-1"><label class="form-label">Supply on hand</label><input class="form-control" id="cy-supply"></div>
+          <div class="form-group self-end"><label class="flex items-center gap-2 text-sm"><input type="checkbox" id="cy-never"> Never Filled</label></div>
+          <div class="form-group flex-1"><label class="form-label">Attached Rx link</label><input class="form-control" id="cy-rxlink"></div>
+        </div>
+      </div>
+
+      <div id="cy-prescriber" style="display:none">
+        <div class="text-xs font-semibold text-slate-500 uppercase mt-1 mb-1">Prescriber</div>
+        <div class="flex gap-3">
+          <div class="form-group flex-1"><label class="form-label">Prescriber name</label><input class="form-control" id="cy-dr-name"></div>
+          <div class="form-group flex-1"><label class="form-label">Prescriber phone</label><input class="form-control" id="cy-dr-phone"></div>
+        </div>
+      </div>
+
+      <div class="form-group"><label class="form-label">Notes</label><textarea class="form-control" id="cy-notes" rows="2"></textarea></div>
+      <p class="text-xs text-slate-400"><i class="fa-solid fa-circle-info"></i> Submitting routes a BA escalation reminder — BA is the sole channel to Cypress.</p>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeModal('cypress-modal')">Cancel</button>
+      <button class="btn btn-primary" id="cy-save" onclick="saveCypress()"><i class="fa-solid fa-floppy-disk"></i> Save Request</button>
     </div>
   </div>
 </div>
@@ -492,6 +571,7 @@
     await loadTracking();
     await loadWorksheet();
     await loadOrders();
+    await loadCypress();
     if (isGlp1(cat)) await loadQuestionnaires();
   }
 
@@ -1053,6 +1133,125 @@
   }
 
   document.getElementById('rx-modal').addEventListener('click', e => { if (e.target === e.currentTarget) closeModal('rx-modal'); });
+
+  /* ── Cypress Requests (CS3 + RXF4) ── */
+  let cypressRequests = [], cypressScripts = [], cypressScriptsShown = false;
+
+  async function loadCypress() {
+    const d = await apiGet(`/cypress?member=${encodeURIComponent(memberKey)}&category=${encodeURIComponent(trackCat())}`) || { requests: [] };
+    cypressRequests = d.requests || [];
+    renderCypress();
+  }
+  function renderCypress() {
+    document.getElementById('cypress-body').innerHTML = cypressRequests.length
+      ? cypressRequests.map(r => `<tr>
+          <td>${esc(r.request_type)}</td>
+          <td>${esc([r.medication, r.strength].filter(Boolean).join(' '))||'—'}</td>
+          <td class="text-xs">${esc(r.request_type==='Verbal Request' ? r.prescriber_name : r.pharmacy_name)||'—'}</td>
+          <td>${esc(r.status)}</td>
+          <td class="text-xs text-slate-400">${fmtDate(r.created_at)}</td>
+          <td class="text-right whitespace-nowrap">
+            <a class="btn btn-outline btn-sm" href="/cypress/cover-sheet/?id=${r.id}" target="_blank" rel="noopener" title="Fax cover sheet"><i class="fa-solid fa-fax"></i></a>
+            <button class="btn btn-outline btn-sm" onclick="editCypress(${r.id})"><i class="fa-solid fa-pen"></i></button>
+            <button class="btn btn-danger btn-sm" onclick="deleteCypress(${r.id})"><i class="fa-solid fa-trash"></i></button>
+          </td></tr>`).join('')
+      : '<tr><td colspan="6" class="text-center py-6 text-slate-400">No Cypress requests</td></tr>';
+  }
+
+  async function toggleCypressScripts() {
+    const el = document.getElementById('cypress-scripts');
+    cypressScriptsShown = !cypressScriptsShown;
+    el.classList.toggle('hidden', !cypressScriptsShown);
+    if (cypressScriptsShown && !cypressScripts.length) {
+      const d = await apiGet('/cypress?resource=scripts') || { scripts: [] };
+      cypressScripts = d.scripts || [];
+    }
+    el.innerHTML = cypressScripts.length
+      ? cypressScripts.map(s => `<div class="mb-2">
+          <div class="flex items-center gap-2"><span class="badge badge-gray">${esc(s.lang)}</span>
+            <span class="font-medium text-sm">${esc(s.title)}</span>
+            <button class="btn btn-outline btn-sm" onclick="copyCypressScript('${esc(s.script_key)}')"><i class="fa-regular fa-copy"></i></button></div>
+          <div class="text-xs text-slate-500">${esc(s.script_text)}</div></div>`).join('')
+      : '<div class="text-sm text-slate-400">No Cypress scripts.</div>';
+  }
+  function copyCypressScript(key) {
+    const s = cypressScripts.find(x => x.script_key === key); if (!s) return;
+    (navigator.clipboard ? navigator.clipboard.writeText(s.script_text||'') : Promise.reject())
+      .then(() => showToast('Copied','success'), () => showToast('Copy failed','error'));
+  }
+
+  function cyTypeChange() {
+    const t = document.getElementById('cy-type').value;
+    document.getElementById('cy-pharmacy').style.display = (t === 'Verbal Request') ? 'none' : '';
+    document.getElementById('cy-prescriber').style.display = (t === 'Verbal Request') ? '' : 'none';
+    document.getElementById('cy-transfer-out').style.display = (t === 'Transfer Out') ? '' : 'none';
+  }
+  function cyClear() {
+    ['cy-name','cy-dob','cy-phone','cy-address','cy-med','cy-strength','cy-ph-name','cy-ph-phone','cy-ph-address',
+     'cy-ph-fax','cy-supply','cy-rxlink','cy-dr-name','cy-dr-phone','cy-notes'].forEach(id => document.getElementById(id).value = '');
+    document.getElementById('cy-never').checked = false;
+  }
+  function openCypressModal() {
+    document.getElementById('cy-id').value = '';
+    document.getElementById('cy-modal-title').textContent = 'New Cypress Request';
+    cyClear();
+    document.getElementById('cy-type').value = 'Transfer In';
+    document.getElementById('cy-name').value = `${record.First_Name||''} ${record.Last_Name||''}`.trim();
+    document.getElementById('cy-dob').value = record.Date_of_Birth ? fmtDate(record.Date_of_Birth) : '';
+    document.getElementById('cy-phone').value = '';
+    document.getElementById('cy-med').value = (order && order.medication) || '';
+    document.getElementById('cy-strength').value = (order && order.strength) || '';
+    cyTypeChange();
+    openModal('cypress-modal');
+  }
+  function editCypress(id) {
+    const r = cypressRequests.find(x => x.id === id); if (!r) return;
+    document.getElementById('cy-id').value = r.id;
+    document.getElementById('cy-modal-title').textContent = 'Edit Cypress Request';
+    document.getElementById('cy-type').value = r.request_type;
+    const set = (id2, v) => document.getElementById(id2).value = v || '';
+    set('cy-name', r.member_name); set('cy-dob', r.dob); set('cy-phone', r.phone); set('cy-address', r.address);
+    set('cy-med', r.medication); set('cy-strength', r.strength);
+    set('cy-ph-name', r.pharmacy_name); set('cy-ph-phone', r.pharmacy_phone); set('cy-ph-address', r.pharmacy_address);
+    set('cy-ph-fax', r.pharmacy_fax); set('cy-supply', r.supply_on_hand); set('cy-rxlink', r.rx_file_link);
+    set('cy-dr-name', r.prescriber_name); set('cy-dr-phone', r.prescriber_phone); set('cy-notes', r.notes);
+    document.getElementById('cy-never').checked = !!r.never_filled;
+    cyTypeChange();
+    openModal('cypress-modal');
+  }
+  async function saveCypress() {
+    const id = document.getElementById('cy-id').value;
+    const body = {
+      request_type: document.getElementById('cy-type').value,
+      order_id: order ? order.id : null,
+      member_name: document.getElementById('cy-name').value, dob: document.getElementById('cy-dob').value,
+      phone: document.getElementById('cy-phone').value, address: document.getElementById('cy-address').value,
+      medication: document.getElementById('cy-med').value, strength: document.getElementById('cy-strength').value,
+      pharmacy_name: document.getElementById('cy-ph-name').value, pharmacy_phone: document.getElementById('cy-ph-phone').value,
+      pharmacy_address: document.getElementById('cy-ph-address').value, pharmacy_fax: document.getElementById('cy-ph-fax').value,
+      supply_on_hand: document.getElementById('cy-supply').value, never_filled: document.getElementById('cy-never').checked,
+      rx_file_link: document.getElementById('cy-rxlink').value,
+      prescriber_name: document.getElementById('cy-dr-name').value, prescriber_phone: document.getElementById('cy-dr-phone').value,
+      notes: document.getElementById('cy-notes').value,
+    };
+    const btn = document.getElementById('cy-save'); btn.disabled = true;
+    let res;
+    if (id) res = await apiPatch(`/cypress?id=${id}`, body);
+    else res = await apiPost(`/cypress?member=${encodeURIComponent(memberKey)}&category=${encodeURIComponent(trackCat())}`, body);
+    btn.disabled = false;
+    if (res && res.ok) {
+      const d = await res.json().catch(()=>({}));
+      showToast(d.ba_reminder ? 'Request saved — BA reminder created' : 'Request saved', 'success');
+      closeModal('cypress-modal'); await loadCypress();
+    } else { const e = res ? await res.json().catch(()=>({})) : {}; showToast(e.error || 'Save failed', 'error'); }
+  }
+  async function deleteCypress(id) {
+    if (!confirm2('Delete this Cypress request?')) return;
+    const res = await apiDelete(`/cypress?id=${id}`);
+    if (res && res.ok) { showToast('Deleted', 'success'); await loadCypress(); } else showToast('Delete failed', 'error');
+  }
+
+  document.getElementById('cypress-modal').addEventListener('click', e => { if (e.target === e.currentTarget) closeModal('cypress-modal'); });
 
   /* ── Enrollment Worksheet (CC1 / ENR1) ── */
   const WS_ITEMS = [
