@@ -1,0 +1,418 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Review &amp; Close — True Path CRM</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+  <link rel="stylesheet" href="/assets/css/app.css">
+  <style>
+    .tiles{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:16px}
+    @media(max-width:760px){.tiles{grid-template-columns:repeat(2,1fr)}}
+    .tile{background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:14px 16px;cursor:pointer;transition:box-shadow .12s,border-color .12s}
+    .tile:hover{box-shadow:0 4px 14px rgba(15,23,42,.08)}
+    .tile.active{border-color:#0ea5e9;box-shadow:0 0 0 2px rgba(14,165,233,.18)}
+    .tile .n{font-size:26px;font-weight:700;line-height:1;font-variant-numeric:tabular-nums;color:#334155}
+    .tile .l{font-size:11.5px;text-transform:uppercase;letter-spacing:.04em;color:#64748b;margin-top:6px}
+    .tile.red .n{color:#dc2626}.tile.amber .n{color:#d97706}.tile.green .n{color:#16a34a}
+    .tabs{display:flex;gap:22px;border-bottom:1px solid #e2e8f0;margin-bottom:16px;padding:0 2px}
+    .tabs button{background:none;border:0;padding:9px 2px;font-size:14px;font-weight:600;color:#64748b;cursor:pointer;border-bottom:2px solid transparent}
+    .tabs button.on{color:#223f72;border-bottom-color:#0ea5e9}
+    .chk{display:flex;align-items:center;gap:8px;font-size:14px;padding:3px 0}
+    .drawer{position:fixed;top:0;right:0;bottom:0;width:min(760px,96vw);background:#fff;box-shadow:-8px 0 30px rgba(15,23,42,.18);
+      transform:translateX(100%);transition:transform .18s ease;z-index:60;display:flex;flex-direction:column}
+    .drawer.open{transform:translateX(0)}
+    .drawer-h{padding:16px 20px;border-bottom:1px solid #e2e8f0;display:flex;align-items:center;gap:10px}
+    .drawer-b{padding:18px 20px;overflow-y:auto;flex:1}
+    .scrim{position:fixed;inset:0;background:rgba(15,23,42,.35);z-index:59;display:none}
+    .scrim.open{display:block}
+  </style>
+</head>
+<body class="bg-slate-100 text-slate-700">
+<div id="app" class="flex h-screen overflow-hidden">
+  <div id="nav-placeholder"></div>
+  <div class="flex-1 flex flex-col overflow-hidden">
+    <div id="topbar"></div>
+    <main class="flex-1 overflow-y-auto p-6">
+
+      <div class="tabs">
+        <button id="tab-review" class="on" onclick="showTab('review')">Review &amp; Close</button>
+        <button id="tab-recycle" onclick="showTab('recycle')">Recycling</button>
+        <button id="tab-rebates" onclick="showTab('rebates')">Rebates</button>
+      </div>
+
+      <!-- REVIEW & CLOSE -->
+      <div id="panel-review">
+        <div id="tiles" class="tiles"></div>
+        <div class="search-bar" style="gap:8px">
+          <input type="text" id="search" class="form-control" placeholder="Search member…" oninput="debounceLoad()" style="max-width:260px">
+          <span id="count" class="text-sm text-slate-500 ml-auto self-center"></span>
+        </div>
+        <div class="card"><div class="card-body">
+          <table class="data-table">
+            <thead><tr><th>Member</th><th>Group</th><th>Type</th><th>Routed</th><th>Reason</th>
+              <th>Attempts</th><th>Delivered</th><th>Rebates</th><th></th></tr></thead>
+            <tbody id="rc-body"></tbody>
+          </table>
+        </div></div>
+      </div>
+
+      <!-- RECYCLING -->
+      <div id="panel-recycle" style="display:none">
+        <div id="rec-tiles" class="tiles"></div>
+        <div class="search-bar" style="gap:8px">
+          <input type="text" id="rec-search" class="form-control" placeholder="Search member…" oninput="debounceRec()" style="max-width:260px">
+          <label class="flex items-center gap-2 text-sm self-center"><input type="checkbox" id="rec-due" onchange="loadRecycling()"> Due for retry now</label>
+          <span id="rec-count" class="text-sm text-slate-500 ml-auto self-center"></span>
+        </div>
+        <div class="card"><div class="card-body">
+          <table class="data-table">
+            <thead><tr><th>Member</th><th>Group</th><th>Type</th><th>Status</th><th>Flagged</th>
+              <th>Retry after</th><th>Attempts</th><th>Close reason</th><th></th></tr></thead>
+            <tbody id="rec-body"></tbody>
+          </table>
+        </div></div>
+      </div>
+
+      <!-- REBATES -->
+      <div id="panel-rebates" style="display:none">
+        <div id="reb-tiles" class="tiles"></div>
+        <div class="search-bar" style="gap:8px">
+          <select id="reb-status" class="form-control" style="max-width:180px" onchange="loadRebates()">
+            <option value="">All rebate tasks</option><option value="Open">Open</option><option value="Completed">Completed</option>
+          </select>
+          <button class="btn btn-outline btn-sm self-center" onclick="exportRebates()"><i class="fa-solid fa-file-arrow-down"></i> Friday export (CSV)</button>
+          <span id="reb-count" class="text-sm text-slate-500 ml-auto self-center"></span>
+        </div>
+        <div class="card"><div class="card-body">
+          <table class="data-table">
+            <thead><tr><th>Member</th><th>Medication</th><th>Rebate status</th><th>Monthly</th><th>To issue</th>
+              <th>Transaction</th><th>Txn date</th><th>Task</th><th></th></tr></thead>
+            <tbody id="reb-body"></tbody>
+          </table>
+        </div></div>
+      </div>
+    </main>
+  </div>
+</div>
+
+<!-- Reviewer drawer -->
+<div class="scrim" id="scrim" onclick="closeDrawer()"></div>
+<div class="drawer" id="drawer">
+  <div class="drawer-h">
+    <span class="text-lg font-semibold" id="dw-name">—</span>
+    <span class="badge badge-gray" id="dw-type"></span>
+    <button class="btn btn-outline btn-sm ml-auto" onclick="closeDrawer()">Close</button>
+  </div>
+  <div class="drawer-b" id="dw-body"></div>
+</div>
+
+<script src="/assets/js/app.js"></script>
+<script>
+  initNav('cc-review-close');
+  let rcRows = [], recRows = [], rebRows = [], cur = null, tile = '', dbc, dbr;
+
+  function debounceLoad(){ clearTimeout(dbc); dbc = setTimeout(loadQueue, 300); }
+  function debounceRec(){ clearTimeout(dbr); dbr = setTimeout(loadRecycling, 300); }
+  function nameOf(r){ return `${esc(r.Last_Name||'')}, ${esc(r.First_Name||'')}`.replace(/^, |, $/,'') || esc(r.member_key); }
+
+  function showTab(t){
+    ['review','recycle','rebates'].forEach(x=>{
+      document.getElementById('tab-'+x).classList.toggle('on', x===t);
+      document.getElementById('panel-'+x).style.display = x===t ? '' : 'none';
+    });
+    if (t==='recycle') loadRecycling();
+    if (t==='rebates') loadRebates();
+  }
+
+  /* ── Review & Close queue ── */
+  async function loadQueue(){
+    const p = new URLSearchParams({ resource:'queue' });
+    if (tile) p.set('state', tile);
+    const s = document.getElementById('search').value.trim(); if (s) p.set('search', s);
+    const d = await apiGet('/review-close?'+p.toString()) || { rows:[], summary:{} };
+    rcRows = d.rows||[];
+    const sm = d.summary||{};
+    document.getElementById('tiles').innerHTML = [
+      {k:'',l:'Open Cases',n:sm.open_cases||0,c:''},
+      {k:'rebate-due',l:'Rebate Due',n:sm.rebate_due||0,c:'green'},
+      {k:'rts',l:'RTS Flagged',n:sm.rts||0,c:'red'},
+      {k:'deferred',l:'Deferred',n:sm.deferred||0,c:'amber'},
+    ].map(t=>`<div class="tile ${t.c}${tile===t.k?' active':''}" onclick="tileClick('${t.k}')">
+        <div class="n">${t.n}</div><div class="l">${t.l}</div></div>`).join('');
+    document.getElementById('count').textContent = `${rcRows.length} case${rcRows.length===1?'':'s'}`;
+    document.getElementById('rc-body').innerHTML = rcRows.length ? rcRows.map(r=>`<tr>
+        <td class="font-medium">${nameOf(r)}</td>
+        <td>${esc(r.Group_Name)||'—'}</td>
+        <td><span class="badge badge-gray">${r.intake_type==='NONGLP1'?'Non-GLP-1':'GLP-1'}</span></td>
+        <td class="text-xs text-slate-400">${fmtDate(r.routed_at)}</td>
+        <td class="text-sm">${esc(r.reason)||'—'}</td>
+        <td>${r.attempts||0}</td>
+        <td class="text-xs">${r.delivered_date?fmtDate(r.delivered_date):'<span class="text-slate-400">—</span>'}</td>
+        <td>${r.rebates_issued||0}/4 ${r.rebates_issued<4?'<span class="badge badge-green">due</span>':'<span class="badge badge-gray">maxed</span>'}</td>
+        <td class="text-right whitespace-nowrap">
+          <button class="btn btn-primary btn-sm" onclick="openCase('${esc(r.member_key)}','${esc(r.intake_type)}')"><i class="fa-solid fa-clipboard-check"></i> Review</button>
+          ${r.ready_indx?`<a class="btn btn-outline btn-sm" href="/glp1/record/?indx=${r.ready_indx}&cat=${encodeURIComponent(r.intake_type)}" title="Open record"><i class="fa-solid fa-folder-open"></i></a>`:''}
+        </td></tr>`).join('')
+      : '<tr><td colspan="9" class="text-center py-10 text-slate-400">No open Review &amp; Close cases</td></tr>';
+  }
+  function tileClick(k){ tile = (tile===k)?'':k; loadQueue(); }
+
+  /* ── Recycling ── */
+  async function loadRecycling(){
+    const p = new URLSearchParams({ resource:'recycling' });
+    const s = document.getElementById('rec-search').value.trim(); if (s) p.set('search', s);
+    if (document.getElementById('rec-due').checked) p.set('due','1');
+    const d = await apiGet('/review-close?'+p.toString()) || { rows:[], summary:{} };
+    recRows = d.rows||[]; const sm = d.summary||{};
+    document.getElementById('rec-tiles').innerHTML = [
+      {l:'Flagged',n:sm.total||0,c:''},{l:'Non-Responsive',n:sm.non_responsive||0,c:'amber'},
+      {l:'Invalid Information',n:sm.invalid||0,c:'red'},{l:'Due for retry',n:sm.due_now||0,c:'green'},
+    ].map(t=>`<div class="tile ${t.c}"><div class="n">${t.n}</div><div class="l">${t.l}</div></div>`).join('');
+    document.getElementById('rec-count').textContent = `${recRows.length} member${recRows.length===1?'':'s'}`;
+    document.getElementById('rec-body').innerHTML = recRows.length ? recRows.map(r=>`<tr>
+        <td class="font-medium">${nameOf(r)}</td><td>${esc(r.Group_Name)||'—'}</td>
+        <td><span class="badge badge-gray">${r.intake_type==='NONGLP1'?'Non-GLP-1':'GLP-1'}</span></td>
+        <td><span class="badge badge-${r.outreach_status==='Invalid Information'?'red':'orange'}">${esc(r.outreach_status)}</span></td>
+        <td class="text-xs text-slate-400">${r.outreach_status_at?fmtDate(r.outreach_status_at):'—'}</td>
+        <td class="text-xs">${r.recycle_after?fmtDate(r.recycle_after):'<span class="text-slate-400">any time</span>'}</td>
+        <td>${r.attempts||0}</td>
+        <td class="text-sm">${esc(r.close_reason)||'—'}</td>
+        <td class="text-right">${r.ready_indx?`<a class="btn btn-primary btn-sm" href="/glp1/record/?indx=${r.ready_indx}&cat=${encodeURIComponent(r.intake_type)}"><i class="fa-solid fa-folder-open"></i></a>`:''}</td>
+      </tr>`).join('')
+      : '<tr><td colspan="9" class="text-center py-10 text-slate-400">No members flagged for recycling</td></tr>';
+  }
+
+  /* ── Rebates ── */
+  async function loadRebates(){
+    const p = new URLSearchParams({ resource:'rebates' });
+    const st = document.getElementById('reb-status').value; if (st) p.set('status', st);
+    const d = await apiGet('/review-close?'+p.toString()) || { rows:[], summary:{} };
+    rebRows = d.rows||[]; const sm = d.summary||{};
+    document.getElementById('reb-tiles').innerHTML = [
+      {l:'Rebate tasks',n:sm.total||0,c:''},{l:'Open',n:sm.open||0,c:'amber'},
+      {l:'Unpaid',n:sm.unpaid||0,c:'red'},{l:'Maxed out',n:sm.maxed||0,c:'green'},
+    ].map(t=>`<div class="tile ${t.c}"><div class="n">${t.n}</div><div class="l">${t.l}</div></div>`).join('');
+    document.getElementById('reb-count').textContent = `${rebRows.length} rebate${rebRows.length===1?'':'s'}`;
+    document.getElementById('reb-body').innerHTML = rebRows.length ? rebRows.map(r=>`<tr>
+        <td class="font-medium">${nameOf(r)}</td>
+        <td>${esc([r.medication,r.strength].filter(Boolean).join(' '))||'—'}</td>
+        <td><span class="badge badge-${r.rebate_status==='UNPAID'?'red':r.rebate_status==='MAXED OUT'?'green':'gray'}">${esc(r.rebate_status)}</span></td>
+        <td>${r.monthly_amount!=null?fmtCurrency(r.monthly_amount):'—'}</td>
+        <td>${r.amount_to_issue!=null?fmtCurrency(r.amount_to_issue):'—'}</td>
+        <td class="text-xs font-mono">${esc(r.transaction_number)||'—'}</td>
+        <td class="text-xs">${r.transaction_date?fmtDate(r.transaction_date):'—'}</td>
+        <td>${r.status==='Completed'?'<span class="badge badge-green">Completed</span>':'<span class="badge badge-blue">Open</span>'}</td>
+        <td class="text-right">${r.ready_indx?`<a class="btn btn-outline btn-sm" href="/glp1/record/?indx=${r.ready_indx}&cat=${encodeURIComponent(r.intake_type)}"><i class="fa-solid fa-folder-open"></i></a>`:''}</td>
+      </tr>`).join('')
+      : '<tr><td colspan="9" class="text-center py-10 text-slate-400">No rebate tasks</td></tr>';
+  }
+
+  function exportRebates(){
+    if (!rebRows.length) { showToast('Nothing to export','error'); return; }
+    const cols = ['Member','Group','Medication','Rebate Status','Monthly','To Issue','Transaction #','Order #','Tracking','Txn Date','Status'];
+    const rows = rebRows.map(r=>[nameOf(r).replace(/<[^>]+>/g,''), r.Group_Name||'', [r.medication,r.strength].filter(Boolean).join(' '),
+      r.rebate_status||'', r.monthly_amount??'', r.amount_to_issue??'', r.transaction_number||'', r.order_number||'',
+      r.tracking_numbers||'', r.transaction_date?String(r.transaction_date).slice(0,10):'', r.status||'']);
+    const csv = [cols, ...rows].map(r=>r.map(v=>`"${String(v).replace(/"/g,'""')}"`).join(',')).join('\n');
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([csv], {type:'text/csv'}));
+    a.download = `review-close-rebates-${new Date().toISOString().slice(0,10)}.csv`;
+    document.body.appendChild(a); a.click(); a.remove();
+    showToast('Rebate list downloaded','success');
+  }
+
+  /* ── Reviewer drawer ── */
+  function closeDrawer(){ document.getElementById('drawer').classList.remove('open'); document.getElementById('scrim').classList.remove('open'); }
+  async function openCase(member, category){
+    cur = await apiGet(`/review-close?member=${encodeURIComponent(member)}&category=${encodeURIComponent(category)}`);
+    if (!cur) { showToast('Could not load case','error'); return; }
+    cur._member = member; cur._category = category;
+    document.getElementById('dw-name').textContent = cur.member_name || member;
+    document.getElementById('dw-type').textContent = category==='NONGLP1'?'Non-GLP-1':'GLP-1';
+    renderDrawer();
+    document.getElementById('drawer').classList.add('open');
+    document.getElementById('scrim').classList.add('open');
+  }
+
+  function renderDrawer(){
+    const c = cur.case||{}, o = cur.options, v = cur.verification, due = cur.rebate_due;
+    const cl = (()=>{ try { return c.checklist?JSON.parse(c.checklist):{}; } catch { return {}; } })();
+    const ok = b => b ? '<i class="fa-solid fa-circle-check text-emerald-500"></i>' : '<i class="fa-regular fa-circle text-slate-300"></i>';
+
+    document.getElementById('dw-body').innerHTML = `
+      <!-- RC1 verification -->
+      <div class="card mb-4"><div class="card-header">Delivery verification</div><div class="card-body">
+        <div class="text-sm space-y-1">
+          <div>${ok(v.has_order)} Order exists</div>
+          <div>${ok(v.delivery_date_present)} Delivery date present on the order</div>
+          <div>${ok(v.delivery_confirmed)} Delivery confirmation recorded</div>
+          <div>${ok(v.transaction_present)} Transaction present</div>
+          ${v.rts_or_delay?'<div class="text-red-600"><i class="fa-solid fa-triangle-exclamation"></i> Shipment flagged RTS / delayed</div>':''}
+        </div>
+        <div class="flex flex-wrap gap-2 mt-3">
+          <label class="chk"><input type="checkbox" id="v-delv" ${c.delivery_verified?'checked':''}> Delivery verified across ticket, task &amp; transaction</label>
+          <label class="chk"><input type="checkbox" id="v-txn" ${c.transaction_present?'checked':''}> Transaction present</label>
+          <label class="chk"><input type="checkbox" id="v-rts" ${c.rts_flagged?'checked':''}> Flag RTS</label>
+        </div>
+        <div class="flex flex-wrap items-end gap-2 mt-3">
+          <button class="btn btn-outline btn-sm" onclick="saveVerify()"><i class="fa-solid fa-floppy-disk"></i> Save</button>
+          <button class="btn btn-outline btn-sm" onclick="deferCase()"><i class="fa-solid fa-clock"></i> Missing transaction — defer 4 days</button>
+          ${c.deferred_until?`<span class="text-xs text-amber-700">Deferred to ${fmtDate(c.deferred_until)}</span>`:''}
+        </div>
+      </div></div>
+
+      <!-- rebates -->
+      <div class="card mb-4"><div class="card-header flex items-center">
+          <span>Rebates</span>
+          <span class="badge ${due.due?'badge-green':'badge-gray'} ml-2">${due.issued}/${o.max_rebates} issued${due.due?` · ${due.remaining} due`:' · maxed out'}</span>
+          ${due.due?'<button class="btn btn-primary btn-sm ml-auto" onclick="openRebate()"><i class="fa-solid fa-plus"></i> Issue Rebate</button>':''}
+        </div><div class="card-body">
+        ${cur.rebates.length?`<table class="data-table"><thead><tr><th>Medication</th><th>Status</th><th>To issue</th><th>Txn</th><th>Task</th></tr></thead>
+          <tbody>${cur.rebates.map(r=>`<tr><td>${esc([r.medication,r.strength].filter(Boolean).join(' '))}</td>
+            <td><span class="badge badge-${r.rebate_status==='UNPAID'?'red':r.rebate_status==='MAXED OUT'?'green':'gray'}">${esc(r.rebate_status)}</span></td>
+            <td>${r.amount_to_issue!=null?fmtCurrency(r.amount_to_issue):'—'}</td>
+            <td class="text-xs font-mono">${esc(r.transaction_number)||'—'}</td>
+            <td>${r.status==='Completed'?'<span class="badge badge-green">Completed</span>':'<span class="badge badge-blue">Open</span>'}</td></tr>`).join('')}</tbody></table>`
+          : '<p class="text-sm text-slate-400">No rebates yet.</p>'}
+        <div id="rebate-form" class="hidden mt-3 border-t border-slate-100 pt-3"></div>
+      </div></div>
+
+      <!-- close-out -->
+      <div class="card"><div class="card-header">Close out</div><div class="card-body form-pad">
+        ${cur.invalid_info_eligible?`<div class="bg-amber-50 border border-amber-300 text-amber-800 rounded-md px-3 py-2 text-sm mb-3">
+          <i class="fa-solid fa-circle-info"></i> ${cur.attempts} outreach attempts logged — eligible for <b>Invalid Information</b> status.</div>`:''}
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-x-5 gap-y-3">
+          <div class="form-group mb-0"><label class="form-label">Close reason *</label>
+            <select class="form-control" id="cl-reason" onchange="reasonChange()">
+              <option value="">— Select —</option>${o.close_reasons.map(r=>`<option>${esc(r)}</option>`).join('')}</select></div>
+          <div class="form-group mb-0"><label class="form-label">Member profile status *</label>
+            <select class="form-control" id="cl-status">
+              <option value="">— Select —</option>${o.member_statuses.map(r=>`<option>${esc(r)}</option>`).join('')}</select></div>
+          <div class="form-group mb-0 md:col-span-2"><label class="form-label">Why is this being closed? *</label>
+            <input class="form-control" id="cl-detail" placeholder="e.g. CLOSED due to unresponsiveness after all outreach attempts were made."></div>
+          <div class="form-group mb-0" id="cl-auth-wrap" style="display:none"><label class="form-label">Authorised by (AMT / BA / Procurement) *</label>
+            <input class="form-control" id="cl-auth" placeholder="name"></div>
+          <div class="form-group mb-0"><label class="form-label">Retry after (recycling)</label>
+            <input type="date" class="form-control" id="cl-recycle"></div>
+        </div>
+        <div class="mt-3">
+          <div class="text-xs font-semibold text-slate-500 uppercase mb-1">Close-out checklist</div>
+          ${o.close_checklist.map(i=>`<label class="chk"><input type="checkbox" class="cl-chk" data-k="${i.key}" ${cl[i.key]?'checked':''}> ${esc(i.label)}</label>`).join('')}
+        </div>
+        <div class="flex gap-2 mt-3">
+          <button class="btn btn-primary" onclick="doClose(false)"><i class="fa-solid fa-check"></i> Close case</button>
+          <button class="btn btn-outline" onclick="doClose(true)"><i class="fa-solid fa-rotate"></i> Close &amp; recycle</button>
+        </div>
+      </div></div>`;
+  }
+
+  function reasonChange(){
+    const r = document.getElementById('cl-reason').value;
+    const need = (cur.options.reasons_needing_auth||[]).includes(r);
+    document.getElementById('cl-auth-wrap').style.display = need ? '' : 'none';
+  }
+
+  async function saveVerify(){
+    const body = {
+      delivery_verified: document.getElementById('v-delv').checked,
+      transaction_present: document.getElementById('v-txn').checked,
+      rts_flagged: document.getElementById('v-rts').checked,
+    };
+    const res = await apiPatch(`/review-close?member=${encodeURIComponent(cur._member)}&category=${encodeURIComponent(cur._category)}`, body);
+    if (res && res.ok) { cur = { ...(await res.json()), _member: cur._member, _category: cur._category }; renderDrawer(); showToast('Saved','success'); loadQueue(); }
+    else showToast('Save failed','error');
+  }
+
+  async function deferCase(){
+    const d = new Date(); d.setDate(d.getDate()+4);
+    const res = await apiPatch(`/review-close?member=${encodeURIComponent(cur._member)}&category=${encodeURIComponent(cur._category)}`,
+      { deferred_until: d.toISOString().slice(0,10), reason: 'Awaiting transaction creation' });
+    if (res && res.ok) { cur = { ...(await res.json()), _member: cur._member, _category: cur._category }; renderDrawer(); showToast('Deferred 4 days — reminder to create the transaction','success'); loadQueue(); }
+  }
+
+  function openRebate(){
+    const el = document.getElementById('rebate-form');
+    el.classList.remove('hidden');
+    const o = cur.orders && cur.orders[0] || {};
+    el.innerHTML = `
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-x-5 gap-y-3">
+        <div class="form-group mb-0"><label class="form-label">Medication</label><input class="form-control" id="rb-med" value="${esc(o.medication)}"></div>
+        <div class="form-group mb-0"><label class="form-label">Strength</label><input class="form-control" id="rb-str" value="${esc(o.strength)}"></div>
+        <div class="form-group mb-0"><label class="form-label">Day supply</label><input type="number" class="form-control" id="rb-ds" value="${o.day_supply??''}" onchange="previewRebate()"></div>
+        <div class="form-group mb-0"><label class="form-label">Rebate status</label>
+          <select class="form-control" id="rb-status">${cur.options.rebate_statuses.map(s=>`<option>${esc(s)}</option>`).join('')}</select></div>
+        <div class="form-group mb-0"><label class="form-label">Shipment state</label>
+          <select class="form-control" id="rb-ship" onchange="shipChange()"><option value="">Normal</option><option>RTS</option><option>Customs</option></select></div>
+        <div class="form-group mb-0"><label class="form-label">Transaction date *</label><input type="date" class="form-control" id="rb-tdate"></div>
+        <div class="form-group mb-0"><label class="form-label">Transaction #</label><input class="form-control" id="rb-txn"></div>
+        <div class="form-group mb-0"><label class="form-label">Order #</label><input class="form-control" id="rb-ord"></div>
+        <div class="form-group mb-0"><label class="form-label">AUB #</label><input class="form-control" id="rb-aub"></div>
+        <div class="form-group mb-0 md:col-span-3"><label class="form-label">Tracking numbers (US &amp; international)</label><input class="form-control" id="rb-trk" value="${esc(o.tracking_number)}"></div>
+        <div class="form-group mb-0 md:col-span-2"><label class="form-label">Rebate address</label><input class="form-control" id="rb-addr"></div>
+        <div class="form-group mb-0"><label class="form-label">Proof of delivery</label><input class="form-control" id="rb-pod" placeholder="link / note"></div>
+      </div>
+      <p class="text-xs text-slate-500 mt-2" id="rb-preview"></p>
+      <div class="flex gap-2 mt-2">
+        <button class="btn btn-primary btn-sm" onclick="createRebate()"><i class="fa-solid fa-plus"></i> Create Issue Rebate task</button>
+        <button class="btn btn-outline btn-sm" onclick="document.getElementById('rebate-form').classList.add('hidden')">Cancel</button>
+      </div>`;
+    previewRebate();
+  }
+  function shipChange(){
+    const s = document.getElementById('rb-ship').value;
+    const p = cur.options.placeholder_dates;
+    if (s==='RTS') document.getElementById('rb-tdate').value = p.RTS;
+    else if (s==='Customs') document.getElementById('rb-tdate').value = p.CUSTOMS;
+    else document.getElementById('rb-tdate').value = '';
+  }
+  function previewRebate(){
+    const ds = parseInt(document.getElementById('rb-ds').value,10);
+    document.getElementById('rb-preview').textContent = ds
+      ? `Amount is calculated from the drug rules (biosimilars $150/30d, Tirzepatide $50/30d 30-day only). ${ds} day supply.`
+      : 'Amount is calculated from the drug rules once a day supply is entered.';
+  }
+  async function createRebate(){
+    const body = {
+      order_id: (cur.orders&&cur.orders[0]||{}).id || null,
+      medication: document.getElementById('rb-med').value,
+      strength: document.getElementById('rb-str').value,
+      day_supply: document.getElementById('rb-ds').value,
+      rebate_status: document.getElementById('rb-status').value,
+      shipment_state: document.getElementById('rb-ship').value || null,
+      transaction_date: document.getElementById('rb-tdate').value || null,
+      transaction_number: document.getElementById('rb-txn').value,
+      order_number: document.getElementById('rb-ord').value,
+      aub_number: document.getElementById('rb-aub').value,
+      tracking_numbers: document.getElementById('rb-trk').value,
+      rebate_address: document.getElementById('rb-addr').value,
+      proof_of_delivery: document.getElementById('rb-pod').value,
+    };
+    const res = await apiPost(`/review-close?member=${encodeURIComponent(cur._member)}&category=${encodeURIComponent(cur._category)}&resource=rebate`, body);
+    if (res && res.ok) {
+      const d = await res.json().catch(()=>({}));
+      showToast(`Issue Rebate task created${d.amount!=null?` — ${fmtCurrency(d.amount)}`:''}`,'success');
+      await openCase(cur._member, cur._category); loadQueue();
+    } else { const e = res?await res.json().catch(()=>({})):{}; showToast(e.error||'Could not create rebate','error'); }
+  }
+
+  async function doClose(recycle){
+    const checklist = {};
+    document.querySelectorAll('.cl-chk').forEach(el=>{ checklist[el.dataset.k] = el.checked; });
+    const body = {
+      close_reason: document.getElementById('cl-reason').value,
+      close_detail: document.getElementById('cl-detail').value,
+      authorized_by: document.getElementById('cl-auth') ? document.getElementById('cl-auth').value : null,
+      member_status: document.getElementById('cl-status').value,
+      recycle_after: document.getElementById('cl-recycle').value || null,
+      checklist, recycle,
+    };
+    const res = await apiPost(`/review-close?member=${encodeURIComponent(cur._member)}&category=${encodeURIComponent(cur._category)}&resource=close`, body);
+    if (res && res.ok) { showToast(recycle?'Closed and queued for recycling':'Case closed','success'); closeDrawer(); loadQueue(); }
+    else { const e = res?await res.json().catch(()=>({})):{}; showToast(e.error||'Close failed','error'); }
+  }
+
+  loadQueue();
+</script>
+</body>
+</html>

@@ -147,13 +147,14 @@ exports.handler = async function (event) {
 
       const row = (await mssql(
         `INSERT INTO dbo.GLP1_ContactLog
-           (member_key, category, contact_date, contact_type, notes, followup_date, contact_status, created_by, outreach_attempt)
+           (member_key, category, contact_date, contact_type, notes, followup_date, contact_status, created_by, outreach_attempt, invalid_contact)
          OUTPUT INSERTED.*
-         VALUES (@member, @category, @contact_date, @contact_type, @notes, @followup_date, @contact_status, @by, @attempt)`,
+         VALUES (@member, @category, @contact_date, @contact_type, @notes, @followup_date, @contact_status, @by, @attempt, @invalid)`,
         {
           member, category: cat, contact_date: contactDate,
           contact_type: logAs, notes,
           followup_date: followup, contact_status: status, by: user.id || null, attempt: currentNo,
+          invalid: b.invalid_contact ? 1 : 0,
         })).recordset[0];
 
       // Ensure the intake record exists (started when assigned; guard for older data).
@@ -163,16 +164,39 @@ exports.handler = async function (event) {
            VALUES (@member, @category, 'In Progress', CAST(GETDATE() AS DATE), @by)`,
         { member, category: cat, by: user.id || null });
 
+      // RC2 — three or more attempts against bad contact details marks the member
+      // "Invalid Information" (for reporting) and sends them to Review & Close,
+      // without waiting for the full six-attempt sequence.
+      let invalidInfo = false;
+      if (b.invalid_contact) {
+        const bad = (await mssql(
+          `SELECT COUNT(*) n FROM dbo.GLP1_ContactLog
+           WHERE member_key=@m AND category=@c AND invalid_contact=1`, { m: member, c: cat })).recordset[0].n;
+        if (bad >= 3 && !progressed) {
+          await mssql(
+            `UPDATE dbo.tp_member_intakes SET outreach_status='Invalid Information',
+               outreach_status_at=SYSUTCDATETIME(), updated_by=@by, updated_at=GETDATE()
+             WHERE member_key=@m AND intake_type=@c`, { m: member, c: cat, by: user.id || null });
+          await routeToReview(member, cat, `Invalid Information (${bad} attempts)`, null);
+          invalidInfo = true;
+        }
+      }
+
       // Auto-route to Review & Close when the final attempt is logged and the
       // member hasn't progressed past "In Progress".
       let autoRouted = false;
       if (currentNo >= MAX_ATTEMPTS && !progressed) {
         await routeToReview(member, cat, `Non-Responsive (${MAX_ATTEMPTS} attempts)`, null);
+        await mssql(
+          `UPDATE dbo.tp_member_intakes SET outreach_status=COALESCE(outreach_status,'Non-Responsive'),
+             outreach_status_at=SYSUTCDATETIME(), updated_at=GETDATE()
+           WHERE member_key=@m AND intake_type=@c`, { m: member, c: cat });
         autoRouted = true;
       }
       return created({ contact: row, attempt_no: currentNo, followup_date: followup,
         next_attempt: currentNo < MAX_ATTEMPTS ? currentNo + 1 : null,
-        auto_routed_to_review: autoRouted });
+        auto_routed_to_review: autoRouted || invalidInfo,
+        invalid_information: invalidInfo });
     }
 
     return { statusCode: 405, body: 'Method Not Allowed' };

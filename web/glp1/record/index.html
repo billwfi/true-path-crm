@@ -641,6 +641,10 @@
         <div class="form-group flex-1"><label class="form-label">Attempt status</label>
           <select class="form-control" id="om-status"><option>Open</option><option>Closed</option></select></div>
       </div>
+      <label class="flex items-center gap-2 text-sm"><input type="checkbox" id="om-invalid">
+        Contact details are invalid (bad number / email)</label>
+      <p class="text-xs text-slate-500 mt-1">Three attempts against invalid details set the member to
+        <b>Invalid Information</b> and send them to Review &amp; Close.</p>
     </div>
     <div class="modal-footer">
       <button class="btn btn-outline" onclick="closeModal('outreach-modal')">Cancel</button>
@@ -946,6 +950,7 @@
     document.getElementById('om-notes').value = '';
     document.getElementById('om-followup').value = '';
     document.getElementById('om-status').value = 'Open';
+    document.getElementById('om-invalid').checked = false;
     openModal('outreach-modal');
   }
 
@@ -955,13 +960,15 @@
       notes: document.getElementById('om-notes').value.trim() || null,
       followup_date: document.getElementById('om-followup').value || null,
       contact_status: document.getElementById('om-status').value,
+      invalid_contact: document.getElementById('om-invalid').checked,
     };
     const res = await apiPost(`/outreach?member=${encodeURIComponent(memberKey)}&category=${encodeURIComponent(trackCat())}`, body);
     btn.disabled = false;
     if (res && res.ok) {
       const d = await res.json().catch(() => ({}));
       closeModal('outreach-modal');
-      showToast(d.auto_routed_to_review ? 'Attempt logged — routed to Review & Close' : 'Attempt logged', 'success');
+      showToast(d.invalid_information ? 'Attempt logged — marked Invalid Information, routed to Review & Close'
+        : d.auto_routed_to_review ? 'Attempt logged — routed to Review & Close' : 'Attempt logged', 'success');
       await loadTracking();  // refreshes contacts + outreach panel
     } else { const e = res ? await res.json().catch(() => ({})) : {}; showToast(e.error || 'Could not log attempt', 'error'); }
   }
