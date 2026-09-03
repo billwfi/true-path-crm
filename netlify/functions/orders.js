@@ -383,7 +383,7 @@ async function procurementHandoff(q, event, user) {
   // RC2 — order task + Rx-driven reminder ladder.
   const fresh = await getOrder(id);
   const tasks = await orderTaskReminders(fresh, nm, user.id);
-  await logEvent(id, 'Carrier Check', 'Handed to procurement', `Batch #${batchId}`, user.id);
+  await logEvent(id, 'Hand-off', 'Handed to procurement', `Batch #${batchId}`, user.id);
   return ok({ ok: true, batch_id: batchId, stage: 'Ordered', intake_status: 'Registered for Services', created: tasks });
 }
 
