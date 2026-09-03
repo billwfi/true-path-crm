@@ -51,6 +51,14 @@ exports.handler = async function (event) {
           { member, category: cat })).recordset;
         return ok(rows);
       }
+      if (resource === 'worksheet') {
+        // CC1 enrollment profile-confirmation checklist / order-ticket notes.
+        const row = (await mssql(
+          `SELECT data, updated_at FROM dbo.tp_enrollment_worksheet
+           WHERE member_key = @member AND intake_type = @category`,
+          { member, category: cat })).recordset[0] || null;
+        return ok(row ? { data: safeParse(row.data), updated_at: row.updated_at } : { data: {}, updated_at: null });
+      }
       if (resource === 'questionnaire') {
         const qid = parseInt(q_id, 10);
         if (!qid) return badRequest('q_id is required');
@@ -124,6 +132,22 @@ exports.handler = async function (event) {
            SELECT @@ROWCOUNT AS added;`,
           { member, category: cat, by: user.id || null });
         return ok({ ok: true, intake_type: cat, added: (r.recordset[0] || {}).added || 0 });
+      }
+
+      if (action === 'worksheet') {
+        // Upsert the enrollment worksheet (checklist + order-ticket notes) as JSON.
+        if (!member) return badRequest('member is required');
+        const b = JSON.parse(event.body || '{}');
+        const r = await mssql(
+          `MERGE dbo.tp_enrollment_worksheet AS t
+           USING (SELECT @member AS member_key, @category AS intake_type) AS s
+           ON t.member_key = s.member_key AND t.intake_type = s.intake_type
+           WHEN MATCHED THEN UPDATE SET data=@data, updated_by=@by, updated_at=SYSUTCDATETIME()
+           WHEN NOT MATCHED THEN INSERT (member_key, intake_type, data, updated_by)
+             VALUES (@member, @category, @data, @by)
+           OUTPUT INSERTED.updated_at;`,
+          { member, category: cat, data: JSON.stringify(b.data || {}), by: user.id || null });
+        return ok({ ok: true, updated_at: (r.recordset[0] || {}).updated_at });
       }
 
       if (action === 'questionnaire') {

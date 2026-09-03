@@ -12,6 +12,12 @@ function requireAuth() {
   if (!getToken()) { window.location.href = '/login.html'; }
 }
 
+// Where a user lands after login — concierges start on their work queue (IA4),
+// everyone else on the main dashboard.
+function landingPath(user) {
+  return (user && user.role === 'Client Concierge') ? '/call-center/my-queue/' : '/dashboard/';
+}
+
 function logout() {
   clearAuth();
   window.location.href = '/login.html';
@@ -100,6 +106,7 @@ const NAV_ITEMS = [
   { href: '/glp1/ready-to-assign/', icon: 'fa-user-clock', label: 'Ready to Assign', key: 'glp1-ready' },
   { href: '/glp1/assigned/',        icon: 'fa-user-check', label: 'Assigned',        key: 'glp1-assigned' },
   { section: 'Call Center' },
+  { href: '/call-center/my-queue/',    icon: 'fa-list-check',     label: 'My Queue',       key: 'cc-my-queue' },
   { href: '/call-center/in-progress/', icon: 'fa-hourglass-half', label: 'In Progress',    key: 'cc-in-progress' },
   { href: '/call-center/other/',       icon: 'fa-list-check',     label: 'Other Statuses', key: 'cc-other' },
   { section: 'Invoices & Statements' },
@@ -187,6 +194,7 @@ function initNav(activeKey) {
     batch: 'Batch Orders', 'temp-batch': 'Temp Batch',
     'glp1-ready': 'AMT & Assignment — Ready to Assign', 'glp1-assigned': 'AMT & Assignment — Assigned',
     'glp1-report': 'AMT & Assignment — Ready to Assign Report', 'glp1-record': 'Member Record',
+    'cc-my-queue': 'Call Center — My Queue',
     'cc-in-progress': 'Call Center — In Progress', 'cc-other': 'Call Center — Other Statuses',
     'invoices-list': 'Invoices',
     'invoices-dashboard': 'Invoices & Statements — Dashboard',

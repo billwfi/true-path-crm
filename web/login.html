@@ -42,7 +42,14 @@
   </div>
 
   <script>
-    if (localStorage.getItem('tp_token')) window.location.href = '/dashboard/';
+    // Concierges land on their work queue; everyone else on the dashboard.
+    function landingPath(user) {
+      return (user && user.role === 'Client Concierge') ? '/call-center/my-queue/' : '/dashboard/';
+    }
+    if (localStorage.getItem('tp_token')) {
+      let u = null; try { u = JSON.parse(localStorage.getItem('tp_user')); } catch {}
+      window.location.href = landingPath(u);
+    }
 
     async function doLogin(e) {
       e.preventDefault();
@@ -68,7 +75,7 @@
         } else {
           localStorage.setItem('tp_token', data.token);
           localStorage.setItem('tp_user', JSON.stringify(data.user));
-          window.location.href = '/dashboard/';
+          window.location.href = landingPath(data.user);
         }
       } catch {
         errEl.textContent = 'Connection error — please try again';

@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>My Queue — True Path CRM</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+  <link rel="stylesheet" href="/assets/css/app.css">
+  <style>
+    .tiles{display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin-bottom:16px}
+    @media(max-width:900px){.tiles{grid-template-columns:repeat(2,1fr)}}
+    .tile{background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:14px 16px;cursor:pointer;transition:box-shadow .12s,border-color .12s}
+    .tile:hover{box-shadow:0 4px 14px rgba(15,23,42,.08)}
+    .tile.active{border-color:#0ea5e9;box-shadow:0 0 0 2px rgba(14,165,233,.18)}
+    .tile .n{font-size:26px;font-weight:700;line-height:1;font-variant-numeric:tabular-nums}
+    .tile .l{font-size:11.5px;text-transform:uppercase;letter-spacing:.04em;color:#64748b;margin-top:6px}
+    .tile.red .n{color:#dc2626}.tile.amber .n{color:#d97706}.tile.slate .n{color:#334155}.tile.purple .n{color:#7c3aed}
+    .att{display:inline-flex;align-items:center;gap:6px;font-variant-numeric:tabular-nums}
+    .att-bar{width:52px;height:6px;border-radius:4px;background:#e2e8f0;overflow:hidden}
+    .att-bar i{display:block;height:100%;background:#0ea5e9}
+    .fu-over{color:#dc2626;font-weight:600}.fu-today{color:#d97706;font-weight:600}
+    .modal-back{position:fixed;inset:0;background:rgba(15,23,42,.45);display:none;align-items:center;justify-content:center;z-index:50}
+    .modal-back.show{display:flex}
+    .modal-card{background:#fff;border-radius:14px;width:100%;max-width:440px;padding:22px;box-shadow:0 20px 50px rgba(15,23,42,.3)}
+  </style>
+</head>
+<body class="bg-slate-100 text-slate-700">
+<div id="app" class="flex h-screen overflow-hidden">
+  <div id="nav-placeholder"></div>
+  <div class="flex-1 flex flex-col overflow-hidden">
+    <div id="topbar"></div>
+    <main class="flex-1 overflow-y-auto p-6">
+
+      <div id="tiles" class="tiles"></div>
+
+      <div class="search-bar" style="flex-wrap:wrap;gap:8px">
+        <input type="text" id="search" class="form-control" placeholder="Search patient, member ID, drug…" oninput="debounceLoad()" style="max-width:260px">
+        <select id="f-assignee" class="form-control" style="max-width:220px;display:none" onchange="load()"></select>
+        <select id="f-type" class="form-control" style="max-width:170px" onchange="applyFilters()"><option value="">All Types</option></select>
+        <select id="f-status" class="form-control" style="max-width:190px" onchange="applyFilters()"><option value="">All Statuses</option></select>
+        <select id="f-group" class="form-control" style="max-width:220px" onchange="applyFilters()"><option value="">All Groups</option></select>
+        <select id="f-due" class="form-control" style="max-width:170px" onchange="applyFilters()">
+          <option value="">Any follow-up</option><option value="overdue">Overdue</option>
+          <option value="today">Due today</option><option value="week">Next 7 days</option>
+          <option value="none">No follow-up set</option>
+        </select>
+        <span id="count" class="text-sm text-slate-500 ml-auto self-center"></span>
+      </div>
+
+      <div class="card">
+        <div class="card-body">
+          <table class="data-table">
+            <thead><tr>
+              <th>Member</th><th>Group</th><th>Type</th><th>Intake Status</th>
+              <th>Outreach</th><th>Next Follow-up</th><th>Last Contact</th><th></th>
+            </tr></thead>
+            <tbody id="tbl-body"></tbody>
+          </table>
+        </div>
+      </div>
+    </main>
+  </div>
+</div>
+
+<!-- Quick log-contact / reminder modal -->
+<div class="modal-back" id="log-modal">
+  <div class="modal-card">
+    <h2 class="text-lg font-semibold text-slate-800 mb-1">Log Contact / Reminder</h2>
+    <p class="text-sm text-slate-500 mb-4" id="log-who"></p>
+    <div class="mb-3">
+      <label class="block text-xs font-semibold text-slate-500 mb-1">Contact type</label>
+      <select id="log-type" class="form-control">
+        <option>Phone Call</option><option>Text</option><option>Email</option><option>Other</option>
+      </select>
+    </div>
+    <div class="mb-3">
+      <label class="block text-xs font-semibold text-slate-500 mb-1">Notes</label>
+      <textarea id="log-notes" class="form-control" rows="3" placeholder="What happened / next step…"></textarea>
+    </div>
+    <div class="flex gap-3 mb-4">
+      <div class="flex-1">
+        <label class="block text-xs font-semibold text-slate-500 mb-1">Follow-up date (reminder)</label>
+        <input type="date" id="log-followup" class="form-control">
+      </div>
+      <div class="flex-1">
+        <label class="block text-xs font-semibold text-slate-500 mb-1">Status</label>
+        <select id="log-status" class="form-control"><option>Open</option><option>Closed</option></select>
+      </div>
+    </div>
+    <div class="flex justify-end gap-2">
+      <button class="btn btn-light" onclick="closeLog()">Cancel</button>
+      <button class="btn btn-primary" id="log-save" onclick="saveLog()">Save</button>
+    </div>
+  </div>
+</div>
+
+<script src="/assets/js/app.js"></script>
+<script>
+  initNav('cc-my-queue');
+  const me = getUser() || {};
+  const CAN_SEE_ALL = ['Admin', 'Call Center Manager'].includes(me.role);
+  let all = [], view = [], debounce, activeTile = '', logCtx = null;
+
+  const STATUS_COLORS = { 'In Progress':'blue','Outreach Completed':'green','Enrolled':'green',
+    'Submitted to WellSync':'purple','Registered for Services':'purple' };
+
+  function debounceLoad(){ clearTimeout(debounce); debounce = setTimeout(load, 300); }
+  function todayStr(){ return new Date().toISOString().slice(0,10); }
+  function dateOnly(d){ return d ? String(d).slice(0,10) : ''; }
+  function name(r){ return `${esc(r.Last_Name||'')}, ${esc(r.First_Name||'')}`.replace(/^, |, $/,''); }
+  function cleanDrug(d){ return (d||'').replace(/\s+/g,' ').trim(); }
+
+  function fuClass(d){
+    const s = dateOnly(d); if (!s) return '';
+    const t = todayStr();
+    if (s < t) return 'fu-over'; if (s === t) return 'fu-today'; return '';
+  }
+
+  function statusPill(r){
+    if (r.review_close_status === 'Open')
+      return `<span class="badge badge-red" title="${esc(r.review_close_reason||'')}">Review &amp; Close</span>`;
+    if (!r.intake_status) return '<span class="text-slate-400">—</span>';
+    const c = STATUS_COLORS[r.intake_status] || 'gray';
+    const sub = r.intake_sub_status ? ` <span class="text-xs text-slate-500">· ${esc(r.intake_sub_status)}</span>` : '';
+    return `<span class="badge badge-${c}">${esc(r.intake_status)}</span>${sub}`;
+  }
+
+  function attCell(r){
+    const n = r.attempts || 0, max = 6, pct = Math.min(100, Math.round(n/max*100));
+    return `<span class="att"><span class="att-bar"><i style="width:${pct}%"></i></span>${n}/${max}</span>`;
+  }
+
+  async function loadFilters(){
+    if (CAN_SEE_ALL) {
+      const asg = await apiGet('/concierge-queue?resource=assignees') || [];
+      const sel = document.getElementById('f-assignee');
+      sel.style.display = '';
+      sel.innerHTML = '<option value="">— My Queue —</option><option value="all">All Concierges</option>'
+        + asg.map(a => `<option value="${a.id}">${esc(a.name)} (${a.n})</option>`).join('');
+    }
+  }
+
+  async function load(){
+    const asg = document.getElementById('f-assignee').value;
+    let url = '/concierge-queue';
+    if (CAN_SEE_ALL && asg) url += `?assigned_to=${encodeURIComponent(asg)}`;
+    const data = await apiGet(url) || { rows:[], summary:{} };
+    all = data.rows || [];
+    renderTiles(data.summary || {});
+    // populate type + group dropdowns from the data
+    fillSelect('f-type', [...new Set(all.map(r => r.category))].sort(),
+      v => `<option value="${esc(v)}">${esc((all.find(r=>r.category===v)||{}).type_name || v)}</option>`);
+    fillSelect('f-status', [...new Set(all.map(r => r.intake_status).filter(Boolean))].sort(),
+      v => `<option value="${esc(v)}">${esc(v)}</option>`);
+    fillSelect('f-group', [...new Set(all.map(r => r.Group_Name).filter(Boolean))].sort(),
+      v => `<option value="${esc(v)}">${esc(v)}</option>`);
+    applyFilters();
+  }
+
+  function fillSelect(id, values, opt){
+    const el = document.getElementById(id), cur = el.value, first = el.querySelector('option').outerHTML;
+    el.innerHTML = first + values.map(opt).join('');
+    el.value = cur;
+  }
+
+  function renderTiles(s){
+    const tiles = [
+      { k:'', l:'Open Intakes', n:s.open_intakes||0, cls:'slate' },
+      { k:'overdue', l:'Overdue', n:s.overdue||0, cls:'red' },
+      { k:'today', l:'Due Today', n:s.due_today||0, cls:'amber' },
+      { k:'unworked', l:'Unworked', n:s.unworked||0, cls:'slate' },
+      { k:'review', l:'Review & Close', n:s.review_close||0, cls:'purple' },
+    ];
+    document.getElementById('tiles').innerHTML = tiles.map(t =>
+      `<div class="tile ${t.cls}${activeTile===t.k?' active':''}" onclick="tileClick('${t.k}')">
+        <div class="n">${t.n}</div><div class="l">${t.l}</div></div>`).join('');
+  }
+
+  function tileClick(k){
+    activeTile = (activeTile === k) ? '' : k;
+    // map tiles onto the due/unworked/review filters
+    const due = document.getElementById('f-due');
+    if (activeTile === 'overdue') due.value = 'overdue';
+    else if (activeTile === 'today') due.value = 'today';
+    else if (activeTile !== 'unworked' && activeTile !== 'review') due.value = '';
+    applyFilters();
+  }
+
+  function applyFilters(){
+    const search = document.getElementById('search').value.toLowerCase();
+    const type = document.getElementById('f-type').value;
+    const status = document.getElementById('f-status').value;
+    const group = document.getElementById('f-group').value;
+    const due = document.getElementById('f-due').value;
+    const t = todayStr();
+    const weekEnd = new Date(Date.now()+7*864e5).toISOString().slice(0,10);
+
+    view = all.filter(r => {
+      if (type && r.category !== type) return false;
+      if (status && r.intake_status !== status) return false;
+      if (group && r.Group_Name !== group) return false;
+      const fu = dateOnly(r.next_followup);
+      if (due === 'overdue' && !(fu && fu < t)) return false;
+      if (due === 'today' && fu !== t) return false;
+      if (due === 'week' && !(fu && fu >= t && fu <= weekEnd)) return false;
+      if (due === 'none' && fu) return false;
+      if (activeTile === 'unworked' && (r.attempts||0) !== 0) return false;
+      if (activeTile === 'review' && r.review_close_status !== 'Open') return false;
+      if (search) {
+        const hay = `${r.First_Name} ${r.Last_Name} ${r.Member_ID} ${r.Drug_Name} ${r.Group_Name}`.toLowerCase();
+        if (!hay.includes(search)) return false;
+      }
+      return true;
+    });
+    render();
+  }
+
+  function render(){
+    document.getElementById('count').textContent = `${view.length} of ${all.length}`;
+    const showAssignee = document.getElementById('f-assignee').value === 'all';
+    document.getElementById('tbl-body').innerHTML = view.length
+      ? view.map(r => `<tr>
+          <td class="font-medium">${name(r)}
+            <div class="text-xs text-slate-400 font-normal">${esc(r.Member_ID)||''}${
+              r.City ? ` · ${esc(r.City)}, ${esc(r.State||'')}` : ''}${
+              showAssignee && r.assigned_name ? ` · <span class="text-slate-500">${esc(r.assigned_name)}</span>` : ''}</div></td>
+          <td>${esc(r.Group_Name)||'—'}</td>
+          <td><span class="badge" style="background:${esc(r.type_color)||'#64748b'}22;color:${esc(r.type_color)||'#334155'}">${esc(r.type_name)||esc(r.category)}</span></td>
+          <td>${statusPill(r)}</td>
+          <td>${attCell(r)}</td>
+          <td class="${fuClass(r.next_followup)}">${r.next_followup ? fmtDate(r.next_followup) : '—'}</td>
+          <td class="text-xs text-slate-400">${r.last_contact ? fmtDate(r.last_contact) : 'never'}</td>
+          <td class="text-right whitespace-nowrap">
+            <button class="btn btn-light btn-sm" title="Log contact / reminder"
+              onclick='openLog(${JSON.stringify({member:r.member_key,category:r.category,name:name(r)})})'><i class="fa-solid fa-phone-volume"></i></button>
+            <a class="btn btn-primary btn-sm" title="Open record" href="/glp1/record/?indx=${r.indx}"><i class="fa-solid fa-folder-open"></i> Open</a>
+          </td>
+        </tr>`).join('')
+      : '<tr><td colspan="8" class="text-center py-10 text-slate-400">No matching intakes</td></tr>';
+  }
+
+  /* ── quick log modal ── */
+  function openLog(ctx){
+    logCtx = ctx;
+    document.getElementById('log-who').textContent = ctx.name;
+    document.getElementById('log-type').value = 'Phone Call';
+    document.getElementById('log-notes').value = '';
+    document.getElementById('log-followup').value = '';
+    document.getElementById('log-status').value = 'Open';
+    document.getElementById('log-modal').classList.add('show');
+  }
+  function closeLog(){ document.getElementById('log-modal').classList.remove('show'); logCtx = null; }
+  async function saveLog(){
+    if (!logCtx) return;
+    const btn = document.getElementById('log-save'); btn.disabled = true;
+    const body = {
+      contact_type: document.getElementById('log-type').value,
+      notes: document.getElementById('log-notes').value || null,
+      followup_date: document.getElementById('log-followup').value || null,
+      contact_status: document.getElementById('log-status').value,
+      contact_date: todayStr(),
+    };
+    const res = await apiPost(`/glp1-tracking?member=${encodeURIComponent(logCtx.member)}&category=${encodeURIComponent(logCtx.category)}`, body);
+    btn.disabled = false;
+    if (res && res.ok) { showToast('Contact logged', 'success'); closeLog(); load(); }
+    else showToast('Could not save contact', 'error');
+  }
+
+  (async () => { await loadFilters(); await load(); })();
+</script>
+</body>
+</html>

@@ -88,6 +88,37 @@
             </div>
           </div>
 
+          <!-- Enrollment Outreach (CC1) — the guided 6-attempt cadence -->
+          <div class="card mb-4" id="outreach-card">
+            <div class="card-header flex items-center">
+              <span><i class="fa-solid fa-headset text-slate-400"></i> Enrollment Outreach</span>
+              <span class="badge badge-blue ml-2" id="ao-progress">—</span>
+              <span class="ml-auto text-xs text-slate-400" id="ao-booking-note"></span>
+            </div>
+            <div class="card-body form-pad">
+              <div id="ao-rc-banner" style="display:none" class="flex items-center justify-between bg-purple-50 border border-purple-300 text-purple-800 rounded-md px-4 py-3 mb-3 text-sm"></div>
+              <div id="ao-stepper" class="flex flex-wrap gap-2 mb-4"></div>
+              <div id="ao-current"></div>
+            </div>
+          </div>
+
+          <!-- Enrollment Worksheet (CC1 / ENR1) — profile-confirmation checklist + order-ticket notes -->
+          <div class="card mb-4" id="worksheet-card">
+            <div class="card-header flex items-center">
+              <span><i class="fa-solid fa-clipboard-list text-slate-400"></i> Enrollment Worksheet</span>
+              <span class="text-xs text-slate-400 ml-auto" id="ws-updated"></span>
+            </div>
+            <div class="card-body form-pad">
+              <p class="text-sm text-slate-500 mb-3">Confirm every field on the member's profile, then capture what the order ticket needs. Saved per intake.</p>
+              <div id="ws-checklist" class="grid grid-cols-1 md:grid-cols-2 gap-1.5 mb-4"></div>
+              <div class="form-group mb-3">
+                <label class="form-label">Order ticket / task notes</label>
+                <textarea id="ws-notes" class="form-control" rows="3" placeholder="Shipping address, medication, copay, special instructions…"></textarea>
+              </div>
+              <button class="btn btn-primary" onclick="saveWorksheet()"><i class="fa-solid fa-floppy-disk"></i> Save Worksheet</button>
+            </div>
+          </div>
+
           <!-- Contact Tracking -->
           <div class="card mb-4">
             <div class="card-header flex items-center">
@@ -197,6 +228,30 @@
     <div class="modal-footer">
       <button class="btn btn-outline" onclick="closeModal('contact-modal')">Cancel</button>
       <button class="btn btn-primary" onclick="saveContact()">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- Log outreach attempt modal -->
+<div id="outreach-modal" class="modal-backdrop hidden">
+  <div class="modal">
+    <div class="modal-header">
+      <span class="modal-title" id="om-title">Log Outreach Attempt</span>
+      <button class="modal-close" onclick="closeModal('outreach-modal')">×</button>
+    </div>
+    <div class="modal-body">
+      <p class="text-sm text-slate-500 mb-3" id="om-sub"></p>
+      <div class="form-group"><label class="form-label">Notes / outcome</label>
+        <textarea class="form-control" id="om-notes" rows="3" placeholder="No answer, left voicemail, sent text…"></textarea></div>
+      <div class="flex gap-3">
+        <div class="form-group flex-1"><label class="form-label">Follow-up Date</label><input type="date" class="form-control" id="om-followup"></div>
+        <div class="form-group flex-1"><label class="form-label">Attempt status</label>
+          <select class="form-control" id="om-status"><option>Open</option><option>Closed</option></select></div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeModal('outreach-modal')">Cancel</button>
+      <button class="btn btn-primary" id="om-save" onclick="logAttempt()"><i class="fa-solid fa-paper-plane"></i> Log Attempt</button>
     </div>
   </div>
 </div>
@@ -328,6 +383,7 @@
     document.getElementById('intake-list').style.display = 'none';
     document.getElementById('intake-detail').style.display = '';
     await loadTracking();
+    await loadWorksheet();
     if (isGlp1(cat)) await loadQuestionnaires();
   }
 
@@ -372,6 +428,154 @@
     intake = data.intake;
     renderIntake();
     renderContacts();
+    await loadOutreach();
+  }
+
+  /* ── Enrollment Outreach (CC1): guided 6-attempt cadence ── */
+  let outreach = null;
+  async function loadOutreach() {
+    outreach = await apiGet(`/outreach?member=${encodeURIComponent(memberKey)}&category=${encodeURIComponent(trackCat())}`) || null;
+    renderOutreach();
+  }
+
+  function renderOutreach() {
+    const card = document.getElementById('outreach-card');
+    if (!outreach) { card.style.display = 'none'; return; }
+    card.style.display = '';
+    const o = outreach, max = o.max_attempts || 6;
+
+    document.getElementById('ao-progress').textContent =
+      o.exhausted ? `All ${max} attempts logged` : `Attempt ${o.current_attempt} of ${max}`;
+    document.getElementById('ao-booking-note').textContent =
+      o.booking_configured ? '' : 'Booking link not configured — “[booking link]” shown as placeholder';
+
+    // Review & Close routing banner
+    const rc = o.review_close, rcb = document.getElementById('ao-rc-banner');
+    if (rc && rc.status === 'Open') {
+      rcb.style.display = 'flex';
+      rcb.innerHTML = `<span><i class="fa-solid fa-flag"></i> Routed to <strong>Review &amp; Close</strong>${
+        rc.reason ? ` — ${esc(rc.reason)}` : ''}${rc.routed_at ? ` · ${fmtDate(rc.routed_at)}` : ''}</span>`;
+    } else rcb.style.display = 'none';
+
+    // Stepper
+    document.getElementById('ao-stepper').innerHTML = (o.cadence || []).map(s => {
+      const done = s.attempt_no <= o.attempts_logged;
+      const current = !o.exhausted && s.attempt_no === o.current_attempt;
+      const bg = done ? '#dcfce7;color:#15803d;border-color:#86efac'
+        : current ? '#e0f2fe;color:#0369a1;border-color:#38bdf8'
+        : '#f8fafc;color:#94a3b8;border-color:#e2e8f0';
+      return `<span title="${esc(s.title)}" style="display:inline-flex;align-items:center;gap:6px;border:1px solid;border-radius:999px;padding:4px 11px;font-size:12px;background:${bg}">
+        ${done ? '<i class="fa-solid fa-check"></i>' : s.attempt_no}
+        ${esc(s.channel)}${s.booking_link ? ' <i class="fa-solid fa-link" title="Includes booking link"></i>' : ''}</span>`;
+    }).join('');
+
+    // Current step / completion
+    const el = document.getElementById('ao-current');
+    if (o.exhausted) {
+      const canRoute = !o.progressed && !(rc && rc.status === 'Open');
+      el.innerHTML = `<div class="text-sm text-slate-600 mb-2"><i class="fa-solid fa-flag-checkered"></i>
+          Outreach sequence complete.${o.progressed ? ' Member has progressed past outreach.' : ''}</div>
+        ${canRoute ? `<button class="btn btn-outline btn-sm" onclick="routeToReviewClose()"><i class="fa-solid fa-flag"></i> Route to Review &amp; Close</button>` : ''}`;
+      return;
+    }
+    const step = o.current_step;
+    if (!step) { el.innerHTML = ''; return; }
+    el.innerHTML = `
+      <div class="border border-slate-200 rounded-lg p-4 bg-slate-50">
+        <div class="flex items-center gap-2 mb-2">
+          <span class="badge badge-blue">${esc(step.channel)}</span>
+          <span class="font-medium text-slate-700">${esc(step.title)}</span>
+          ${step.booking_link ? '<span class="badge badge-gray"><i class="fa-solid fa-link"></i> Booking link</span>' : ''}
+        </div>
+        <textarea id="ao-script" class="form-control" rows="4" readonly style="background:#fff">${esc(step.script_text)}</textarea>
+        <div class="flex items-center gap-2 mt-3">
+          <button class="btn btn-outline btn-sm" onclick="copyScript()"><i class="fa-regular fa-copy"></i> Copy script</button>
+          <button class="btn btn-primary btn-sm" onclick="openLogAttempt()"><i class="fa-solid fa-paper-plane"></i> Log attempt ${step.attempt_no}</button>
+          <span class="text-xs text-slate-400 ml-1">Logs as “${esc(step.log_as)}” in Contact Tracking</span>
+        </div>
+      </div>`;
+  }
+
+  function copyScript() {
+    const t = document.getElementById('ao-script');
+    if (!t) return;
+    navigator.clipboard.writeText(t.value).then(
+      () => showToast('Script copied', 'success'),
+      () => { t.select(); document.execCommand('copy'); showToast('Script copied', 'success'); });
+  }
+
+  function openLogAttempt() {
+    const step = outreach && outreach.current_step;
+    if (!step) return;
+    document.getElementById('om-title').textContent = `Log ${step.title}`;
+    document.getElementById('om-sub').textContent = `${step.channel} · logs as “${step.log_as}”`;
+    document.getElementById('om-notes').value = '';
+    document.getElementById('om-followup').value = '';
+    document.getElementById('om-status').value = 'Open';
+    openModal('outreach-modal');
+  }
+
+  async function logAttempt() {
+    const btn = document.getElementById('om-save'); btn.disabled = true;
+    const body = {
+      notes: document.getElementById('om-notes').value.trim() || null,
+      followup_date: document.getElementById('om-followup').value || null,
+      contact_status: document.getElementById('om-status').value,
+    };
+    const res = await apiPost(`/outreach?member=${encodeURIComponent(memberKey)}&category=${encodeURIComponent(trackCat())}`, body);
+    btn.disabled = false;
+    if (res && res.ok) {
+      const d = await res.json().catch(() => ({}));
+      closeModal('outreach-modal');
+      showToast(d.auto_routed_to_review ? 'Attempt logged — routed to Review & Close' : 'Attempt logged', 'success');
+      await loadTracking();  // refreshes contacts + outreach panel
+    } else { const e = res ? await res.json().catch(() => ({})) : {}; showToast(e.error || 'Could not log attempt', 'error'); }
+  }
+
+  async function routeToReviewClose() {
+    if (!confirm2('Route this member to the Review & Close queue?')) return;
+    const res = await apiPost(`/outreach?member=${encodeURIComponent(memberKey)}&category=${encodeURIComponent(trackCat())}&action=route-review`,
+      { reason: 'Manually routed after outreach' });
+    if (res && res.ok) { showToast('Routed to Review & Close', 'success'); await loadOutreach(); }
+    else showToast('Could not route', 'error');
+  }
+
+  document.getElementById('outreach-modal').addEventListener('click', e => { if (e.target === e.currentTarget) closeModal('outreach-modal'); });
+
+  /* ── Enrollment Worksheet (CC1 / ENR1) ── */
+  const WS_ITEMS = [
+    ['name', 'Full legal name confirmed'],
+    ['dob', 'Date of birth confirmed'],
+    ['address', 'Shipping address confirmed'],
+    ['phone', 'Phone number confirmed'],
+    ['email', 'Email confirmed'],
+    ['pref_contact', 'Preferred contact method noted'],
+    ['eligibility', 'Eligibility / coverage verified'],
+    ['medication', 'Medication & strength confirmed'],
+    ['prescriber', 'Prescriber information captured'],
+    ['consent_text', 'Consent to text messages confirmed'],
+    ['copay', 'Copay / cost expectation reviewed'],
+    ['order_ready', 'Ready to create order ticket'],
+  ];
+  let worksheet = null;
+  async function loadWorksheet() {
+    worksheet = await apiGet(`/glp1-tracking?member=${encodeURIComponent(memberKey)}&category=${encodeURIComponent(trackCat())}&resource=worksheet`) || { data: {} };
+    renderWorksheet();
+  }
+  function renderWorksheet() {
+    const d = (worksheet && worksheet.data) || {};
+    document.getElementById('ws-checklist').innerHTML = WS_ITEMS.map(([k, label]) =>
+      `<label class="flex items-center gap-2 text-sm py-1"><input type="checkbox" class="ws-item" data-k="${k}" ${d[k] ? 'checked' : ''}> ${esc(label)}</label>`).join('');
+    document.getElementById('ws-notes').value = d.notes || '';
+    document.getElementById('ws-updated').textContent =
+      worksheet && worksheet.updated_at ? 'Saved ' + fmtDate(worksheet.updated_at) : 'Not saved';
+  }
+  async function saveWorksheet() {
+    const data = { notes: document.getElementById('ws-notes').value };
+    document.querySelectorAll('.ws-item').forEach(el => { data[el.dataset.k] = el.checked; });
+    const res = await apiPatch(`/glp1-tracking?member=${encodeURIComponent(memberKey)}&category=${encodeURIComponent(trackCat())}&action=worksheet`, { data });
+    if (res && res.ok) { showToast('Worksheet saved', 'success'); await loadWorksheet(); }
+    else showToast('Save failed', 'error');
   }
 
   /* ── Intake questionnaires (a GLP-1 intake can have several) ── */
