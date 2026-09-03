@@ -273,6 +273,10 @@
             <div class="card-body form-pad" id="ship-body"></div>
           </div>
 
+          <div class="card mb-4" id="ship-note" style="display:none"><div class="card-body">
+            <p class="text-sm text-slate-500" id="ship-note-text"></p>
+          </div></div>
+
           <!-- Delivery Support / RTS prevention (TRK1) -->
           <div class="card mb-4" id="rts-card" style="display:none">
             <div class="card-header flex items-center">
@@ -1453,7 +1457,8 @@
 
   function renderShip() {
     const card = document.getElementById('ship-card');
-    if (!order || isGlp1(trackCat())) { card.style.display = 'none'; return; }
+    if (!order || isGlp1(trackCat())) { card.style.display = 'none'; shipNote(); return; }
+    shipNote();
     card.style.display = '';
     const o = order, ev = o._events || [];
     const badge = document.getElementById('ship-stage-badge');
@@ -1523,6 +1528,21 @@
           <td>${esc(e.event_type)}</td><td class="text-sm">${esc(e.status)||'—'}</td>
           <td class="text-sm">${esc(e.notes)||''}</td></tr>`).join('')}</tbody></table>
       </div>` : ''}`;
+  }
+
+  // Explain an empty Fulfillment tab rather than leaving a blank panel.
+  function shipNote() {
+    const note = document.getElementById('ship-note');
+    const text = document.getElementById('ship-note-text');
+    if (!note) return;
+    if (isGlp1(trackCat())) {
+      text.innerHTML = 'Fulfillment for GLP-1 members runs through WellSync today, so there is nothing to track here yet. '
+        + 'This area is reserved for a future GLP-1 fulfillment workflow — <b>still to be defined</b>.';
+      note.style.display = '';
+    } else if (!order) {
+      text.innerHTML = 'No order ticket yet — create one on the <b>Rx Order &amp; Get Rx</b> tab and fulfillment will appear here.';
+      note.style.display = '';
+    } else note.style.display = 'none';
   }
 
   function trackLink(carrier, tn) {
