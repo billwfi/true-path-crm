@@ -237,11 +237,24 @@ async function courtesyHold(q, event, user) {
     `UPDATE dbo.tp_rts_cases SET courtesy_hold_requested=1, courtesy_hold_at=SYSUTCDATETIME(),
        hold_extension_days=@ext, updated_at=SYSUTCDATETIME() WHERE id=@id`,
     { id, ext: granted ? ext : 0 });
-  await mssql(
-    `INSERT INTO dbo.tp_rts_contacts (case_id, contact_date, day_no, carrier_note, notes, created_by)
-     VALUES (@id, CAST(GETDATE() AS date), @day, @cn, @n, @by)`,
-    { id, day: RTS.dayNumber(c), cn: `Courtesy hold ${granted ? 'granted' : 'refused'} by local office${b.clerk ? ` (${b.clerk})` : ''}`,
-      n: b.notes || null, by: user.id || null });
+  // Fold the note into today's log row if one exists, so a day never gets two entries.
+  const note = `Courtesy hold ${granted ? 'granted' : 'refused'} by local office${b.clerk ? ` (${b.clerk})` : ''}`;
+  const today = new Date().toISOString().slice(0, 10);
+  const existing = (await mssql(
+    `SELECT TOP 1 id, carrier_note FROM dbo.tp_rts_contacts WHERE case_id=@id AND contact_date=@d`,
+    { id, d: today })).recordset[0];
+  if (existing) {
+    await mssql(
+      `UPDATE dbo.tp_rts_contacts
+       SET carrier_note = LEFT(LTRIM(RTRIM(ISNULL(carrier_note + ' · ', '') + @cn)), 500),
+           notes = COALESCE(@n, notes)
+       WHERE id=@rid`, { rid: existing.id, cn: note, n: b.notes || null });
+  } else {
+    await mssql(
+      `INSERT INTO dbo.tp_rts_contacts (case_id, contact_date, day_no, carrier_note, notes, created_by)
+       VALUES (@id, @d, @day, @cn, @n, @by)`,
+      { id, d: today, day: RTS.dayNumber(c), cn: note, n: b.notes || null, by: user.id || null });
+  }
   const after = await loadCase('id=@id', { id });
   return ok(await caseBundle(after));
 }

@@ -55,7 +55,15 @@ function holdDeadline(c) {
 function requirementFor(c, contacts, todayArg) {
   const today = iso(todayArg || new Date());
   const day = dayNumber(c, today);
-  const logged = (contacts || []).find(x => iso(x.contact_date) === today) || null;
+  // Merge every row logged today — a day can pick up more than one entry (e.g. the
+  // courtesy-hold call), and a channel counts as done if ANY of them recorded it.
+  const todays = (contacts || []).filter(x => iso(x.contact_date) === today);
+  const logged = todays.length ? todays.reduce((a, x) => ({
+    did_text:  a.did_text  || !!x.did_text,
+    did_call:  a.did_call  || !!x.did_call,
+    did_email: a.did_email || !!x.did_email,
+    reached:   a.reached   || !!x.reached,
+  }), { did_text: false, did_call: false, did_email: false, reached: false }) : null;
 
   if (c.status && c.status !== 'Open') {
     return { day, level: 'none', channels: [], reason: `Case is ${c.status}`, satisfied: true, logged };
