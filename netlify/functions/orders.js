@@ -286,7 +286,6 @@ async function getOrder(id) {
 // RC2 — the SOP reminder ladder off the order's run-out date.
 async function orderTaskReminders(o, nm, userId) {
   const made = [];
-  const dayBefore = (d, n) => { const x = new Date(d); x.setDate(x.getDate() - n); return x.toISOString().slice(0, 10); };
   const med = [o.medication, o.strength].filter(Boolean).join(' ') || 'medication';
   // The per-medication order task: due at run-out, with the SOP checklist.
   const rebate = (o.rebate_monthly != null || o.rebate_annual != null)
@@ -300,9 +299,18 @@ async function orderTaskReminders(o, nm, userId) {
     { n: taskName.slice(0, 1000), p: o.priority || 'Medium', due: o.run_out_date || null,
       asg: o.assigned_to || null, rid: o.id, d: desc });
   made.push(taskName);
-  // Rx-driven reminders, only when we know the run-out date.
+  // Rx-driven reminders, only when we know the run-out date. run_out_date arrives from
+  // the driver as a Date; String()-slicing it yields "Sun Nov 15", which new Date()
+  // reads as year 2001 — so normalise to a real UTC date and step back in UTC.
   if (o.run_out_date) {
-    const ru = String(o.run_out_date).slice(0, 10);
+    const base = (o.run_out_date instanceof Date)
+      ? new Date(Date.UTC(o.run_out_date.getUTCFullYear(), o.run_out_date.getUTCMonth(), o.run_out_date.getUTCDate()))
+      : new Date(String(o.run_out_date).slice(0, 10) + 'T00:00:00Z');
+    const dayBefore = n => {
+      const x = new Date(base);
+      x.setUTCDate(x.getUTCDate() - n);
+      return x.toISOString().slice(0, 10);
+    };
     const ladder = [
       [45, `Get Rx - ${nm.full} - ${med}`],
       [23, `Submit to verify address - ${nm.full} - ${med}`],
@@ -312,7 +320,7 @@ async function orderTaskReminders(o, nm, userId) {
       await mssql(
         `INSERT INTO dbo.tp_reminders (rel_type, rel_id, staff_id, created_by, description, reminder_date, notify_by_email, is_closed)
          VALUES ('CC Order', @rid, NULL, @by, @d, @when, 0, 0)`,
-        { rid: o.id, by: userId || null, d: text.slice(0, 400), when: dayBefore(ru, days) + 'T09:00:00' });
+        { rid: o.id, by: userId || null, d: text.slice(0, 400), when: dayBefore(days) + 'T09:00:00' });
       made.push(text);
     }
   }
