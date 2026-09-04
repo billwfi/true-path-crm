@@ -22,4 +22,4 @@ jobs:
                   --query "sort_by([],&properties.startTime)[-1].name" -o tsv)
           echo "last execution: $NAME"
           echo "--- logs ---"
-          az containerapp job logs show -n caj-tpcrm-bookings-daily -g rg-tpcrm-prod --execution "$NAME" --tail 80 || true
+          az containerapp job logs show -n caj-tpcrm-bookings-daily -g rg-tpcrm-prod             --execution "$NAME" --container caj-tpcrm-bookings-daily --tail 100 || true
