@@ -12,17 +12,16 @@ Usage:
   python scripts/bookings_daily_report.py           # yesterday (Central), the daily run
   python scripts/bookings_daily_report.py --test     # last 60 days, subject tagged [TEST]
 
-Env: IRX_DB_PWD, SMTP_HOST/PORT/USER/SMTP_PASS/MAIL_FROM,
-     REPORT_TO (default scheduler@truepathsourcing.com)
+Env: IRX_DB_PWD, ACS_CONNECTION_STRING, EMAIL_FROM (default noreply@truepathsourcing.com),
+     REPORT_TO (default amtfileloads@truepathsourcing.com)
 """
 import os
 import sys
-import smtplib
-from email.mime.text import MIMEText
+from _acs_email import send_email
 
 import pyodbc
 
-REPORT_TO = os.environ.get("REPORT_TO", "scheduler@truepathsourcing.com")
+REPORT_TO = os.environ.get("REPORT_TO", "amtfileloads@truepathsourcing.com")
 # The OnBase team always receives the daily recap too (in addition to REPORT_TO).
 ALWAYS_TO = "onbasesupport@internationalrx.com"
 
@@ -154,16 +153,7 @@ def build_html(rows, subtitle, test):
 
 
 def send(html, subject):
-    to = recipients()
-    msg = MIMEText(html, "html")
-    msg["Subject"] = subject
-    msg["From"] = os.environ["MAIL_FROM"]
-    msg["To"] = ", ".join(to)
-    with smtplib.SMTP(os.environ.get("SMTP_HOST", "smtp.office365.com"),
-                      int(os.environ.get("SMTP_PORT", "587"))) as s:
-        s.starttls()
-        s.login(os.environ["SMTP_USER"], os.environ["SMTP_PASS"])
-        s.sendmail(msg["From"], to, msg.as_string())
+    send_email(recipients(), subject, html)
 
 
 def main():

@@ -6,11 +6,10 @@ number has cleared carrier verification -> email a one-time heads-up and stop.
 Otherwise send a fresh probe so the next run has something to check.
 
 Env: IRX_DB_PWD, ACS_CONNECTION_STRING, SMS_FROM, WATCH_TO, WATCH_EMAIL,
-     SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS, MAIL_FROM
+     ACS_CONNECTION_STRING, EMAIL_FROM (default noreply@truepathsourcing.com)
 """
 import os
-import smtplib
-from email.mime.text import MIMEText
+from _acs_email import send_email
 
 import pyodbc
 from azure.communication.sms import SmsClient
@@ -27,14 +26,8 @@ def db():
 
 
 def email(subject, body):
-    msg = MIMEText(body)
-    msg["Subject"] = subject
-    msg["From"] = os.environ.get("MAIL_FROM", os.environ["SMTP_USER"])
-    msg["To"] = os.environ["WATCH_EMAIL"]
-    with smtplib.SMTP(os.environ["SMTP_HOST"], int(os.environ.get("SMTP_PORT", 587))) as s:
-        s.starttls()
-        s.login(os.environ["SMTP_USER"], os.environ["SMTP_PASS"])
-        s.sendmail(msg["From"], [os.environ["WATCH_EMAIL"]], msg.as_string())
+    # plain text, wrapped so ACS (which sends HTML) preserves the line breaks
+    send_email(os.environ["WATCH_EMAIL"], subject, f"<pre>{body}</pre>")
 
 
 def main():

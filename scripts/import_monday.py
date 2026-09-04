@@ -10,7 +10,7 @@ Env:
   IRX_DB_PWD        SQL password (user claudeservices)
   MCR_SFTP_PWD      SFTP password for us-east-1.sftpcloud.io / MANAGER (tree scan)
   IMPORT_CRYPT_KEY  needed by import_worker to decrypt per-config SFTP creds
-  SMTP_HOST/PORT/USER/SMTP_PASS/MAIL_FROM   O365 relay
+  ACS_CONNECTION_STRING / EMAIL_FROM        ACS sender (noreply@truepathsourcing.com)
   REPORT_TO         report recipient (default bill@workflowinnovators.com)
 
 Usage:
@@ -20,12 +20,11 @@ Usage:
 import argparse
 import fnmatch
 import os
-import smtplib
+from _acs_email import send_email
 import stat
 import subprocess
 import sys
 from datetime import datetime
-from email.mime.text import MIMEText
 
 import paramiko
 import pyodbc
@@ -309,14 +308,7 @@ def main():
     html = "<div style='max-width:900px'>" + "".join(H) + "</div>"
 
     to = os.environ.get("REPORT_TO", "amtfileloads@truepathsourcing.com")
-    msg = MIMEText(html, "html")
-    msg["Subject"] = f"True Path — Weekly Import Report ({run_started:%Y-%m-%d})"
-    msg["From"] = os.environ["MAIL_FROM"]
-    msg["To"] = to
-    with smtplib.SMTP(os.environ.get("SMTP_HOST", "smtp.office365.com"), int(os.environ.get("SMTP_PORT", "587"))) as s:
-        s.starttls()
-        s.login(os.environ["SMTP_USER"], os.environ["SMTP_PASS"])
-        s.sendmail(msg["From"], [a.strip() for a in to.split(",")], msg.as_string())
+    send_email(to, subject, html)
     print(f"Report emailed to {to}. loaders_ready={len(ready)} uncovered={len(uncovered)} covered_new={len(covered_new)} adhoc={len(adhoc)}")
     cn.close()
 

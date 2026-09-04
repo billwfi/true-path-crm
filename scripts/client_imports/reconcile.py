@@ -19,15 +19,16 @@ Usage:
   python scripts/client_imports/reconcile.py mcrhotels --commit        # write to prod
   python scripts/client_imports/reconcile.py mcrhotels --commit --send # write + email AMT
 
-Env: IRX_DB_PWD (required). For --send: SMTP_HOST, SMTP_PORT (default 587),
-SMTP_USER, SMTP_PASS, MAIL_FROM.
+Env: IRX_DB_PWD (required). For --send: ACS_CONNECTION_STRING, and optionally
+EMAIL_FROM (defaults to noreply@truepathsourcing.com).
 """
 import argparse
 import os
+import sys as _sys
+_sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..'))
+from _acs_email import send_email as acs_send
 import sys
-import smtplib
 from datetime import date
-from email.mime.text import MIMEText
 
 import pyodbc
 
@@ -639,19 +640,10 @@ def report_html(cfg, rows, summary=""):
 
 
 def send_email(cfg, html):
-    host = os.environ.get("SMTP_HOST")
-    if not host:
-        sys.exit("--send requires SMTP_HOST/SMTP_PORT/SMTP_USER/SMTP_PASS/MAIL_FROM env vars")
-    msg = MIMEText(html, "html")
-    msg["Subject"] = f"{cfg['group_name']} Import Reconciliation — {date.today():%m/%d/%Y}"
-    msg["From"] = os.environ.get("MAIL_FROM", os.environ.get("SMTP_USER"))
-    msg["To"] = ", ".join(AMT_RECIPIENTS)
-    with smtplib.SMTP(host, int(os.environ.get("SMTP_PORT", 587))) as s:
-        s.starttls()
-        if os.environ.get("SMTP_USER"):
-            s.login(os.environ["SMTP_USER"], os.environ["SMTP_PASS"])
-        s.sendmail(msg["From"], AMT_RECIPIENTS, msg.as_string())
-    print(f"  Emailed report to {', '.join(AMT_RECIPIENTS)}")
+    if not os.environ.get("ACS_CONNECTION_STRING"):
+        sys.exit("--send requires ACS_CONNECTION_STRING (and optionally EMAIL_FROM)")
+    subject = f"{cfg['group_name']} Import Reconciliation — {date.today():%m/%d/%Y}"
+    acs_send(AMT_RECIPIENTS, subject, html)
 
 
 def main():

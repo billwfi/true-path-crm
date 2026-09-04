@@ -11,7 +11,7 @@ Env:
   IRX_DB_PWD    (required)  SQL Server password
   SFTP_PWD      (required)  SFTP password (SFTPCloud MANAGER)
   RECON_FLAGS   (default "--commit --send")  passed to reconcile.py
-  SMTP_HOST/PORT/USER/SMTP_PASS/MAIL_FROM  for --send
+  ACS_CONNECTION_STRING / EMAIL_FROM       for --send (ACS, noreply@truepathsourcing.com)
 """
 import fnmatch
 import os

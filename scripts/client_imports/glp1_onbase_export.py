@@ -9,17 +9,16 @@ ISO-dated claims (e.g. July) are included, not silently dropped by style 101.
 Builds a CSV and emails it as an attachment to the OnBase load team so they can
 import the new GLP-1 records. Sends only when there are rows.
 
-Env: IRX_DB_PWD, SMTP_HOST/PORT/USER/SMTP_PASS/MAIL_FROM,
+Env: IRX_DB_PWD, ACS_CONNECTION_STRING, EMAIL_FROM (default noreply@truepathsourcing.com),
      GLP1_ONBASE_TO (default techsupport@workflowinnovators.com)
 """
 import io
 import os
+import sys as _sys
+_sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..'))
+from _acs_email import send_email
 import csv
-import smtplib
 from datetime import date
-from email.mime.multipart import MIMEMultipart
-from email.mime.text import MIMEText
-from email.mime.application import MIMEApplication
 
 import pyodbc
 
@@ -100,25 +99,15 @@ def to_csv(rows):
 
 def send(csv_bytes, n, fname):
     from collections import Counter
-    msg = MIMEMultipart()
-    msg["Subject"] = f"ACTION: Load {n} new GLP-1 record(s) to OnBase — {date.today():%m/%d/%Y}"
-    msg["From"] = os.environ["MAIL_FROM"]
-    msg["To"] = TO
+    subject = f"ACTION: Load {n} new GLP-1 record(s) to OnBase — {date.today():%m/%d/%Y}"
     body = (f"<p>The weekly GLP-1 &rarr; OnBase export identified <b>{n}</b> new GLP-1 member(s) "
             f"(matched to eligibility, not already in OnBase) this week.</p>"
             f"<p><b>Action:</b> please import the attached CSV "
             f"(<code>{fname}</code>) into OnBase for outreach.</p>"
             f"<p style='color:#64748b;font-size:12px'>Automated bridge process (True Path Monday load) "
             f"&mdash; runs until full cutover to the new app.</p>")
-    msg.attach(MIMEText(body, "html"))
-    part = MIMEApplication(csv_bytes, Name=fname)
-    part["Content-Disposition"] = f'attachment; filename="{fname}"'
-    msg.attach(part)
-    recips = [a.strip() for a in TO.split(",") if a.strip()]
-    with smtplib.SMTP(os.environ.get("SMTP_HOST", "smtp.office365.com"), int(os.environ.get("SMTP_PORT", "587"))) as s:
-        s.starttls()
-        s.login(os.environ["SMTP_USER"], os.environ["SMTP_PASS"])
-        s.sendmail(msg["From"], recips, msg.as_string())
+    send_email(TO, subject, body,
+               attachments=[(fname, "text/csv", csv_bytes)])
 
 
 def main():

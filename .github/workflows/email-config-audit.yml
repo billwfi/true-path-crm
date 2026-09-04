@@ -1,0 +1,46 @@
+name: Email Config Audit
+
+# Every job that sends mail now goes through ACS (noreply@truepathsourcing.com)
+# instead of O365 SMTP, so each needs ACS_CONNECTION_STRING. Read-only audit:
+# reports presence only, never values. Optionally sets the recap recipient.
+on:
+  workflow_dispatch:
+    inputs:
+      set_report_to:
+        description: 'Set REPORT_TO on caj-tpcrm-bookings-daily (blank = audit only)'
+        required: false
+        default: ''
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      - name: Audit mail-sending jobs
+        run: |
+          az extension add --upgrade --name containerapp -y 2>/dev/null || true
+          for J in caj-tpcrm-bookings-daily caj-tpcrm-import-monday-nat caj-tpcrm-imports \
+                   caj-tpcrm-sms-watch caj-tpcrm-liviniti-nat caj-tpcrm-anders-nat; do
+            ACS=$(az containerapp job show -n "$J" -g rg-tpcrm-prod \
+                   --query "length(properties.template.containers[0].env[?name=='ACS_CONNECTION_STRING'])" -o tsv 2>/dev/null)
+            SMTP=$(az containerapp job show -n "$J" -g rg-tpcrm-prod \
+                   --query "length(properties.template.containers[0].env[?name=='SMTP_PASS'])" -o tsv 2>/dev/null)
+            RT=$(az containerapp job show -n "$J" -g rg-tpcrm-prod \
+                   --query "properties.template.containers[0].env[?name=='REPORT_TO'].value | [0]" -o tsv 2>/dev/null)
+            echo "$J: ACS=${ACS:-0} legacySMTP=${SMTP:-0} REPORT_TO=${RT:-<unset>}"
+          done
+      - name: Set recap recipient
+        if: inputs.set_report_to != ''
+        run: |
+          az containerapp job update -n caj-tpcrm-bookings-daily -g rg-tpcrm-prod \
+            --set-env-vars "REPORT_TO=${{ inputs.set_report_to }}" -o none
+          echo "REPORT_TO now: $(az containerapp job show -n caj-tpcrm-bookings-daily -g rg-tpcrm-prod \
+            --query "properties.template.containers[0].env[?name=='REPORT_TO'].value | [0]" -o tsv)"
