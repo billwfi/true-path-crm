@@ -1,0 +1,25 @@
+name: Job Image Check
+on:
+  workflow_dispatch:
+permissions:
+  id-token: write
+  contents: read
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      - name: Image + last execution log
+        run: |
+          az extension add --upgrade --name containerapp -y 2>/dev/null || true
+          echo "image: $(az containerapp job show -n caj-tpcrm-bookings-daily -g rg-tpcrm-prod --query 'properties.template.containers[0].image' -o tsv)"
+          echo "container name: $(az containerapp job show -n caj-tpcrm-bookings-daily -g rg-tpcrm-prod --query 'properties.template.containers[0].name' -o tsv)"
+          NAME=$(az containerapp job execution list -n caj-tpcrm-bookings-daily -g rg-tpcrm-prod \
+                  --query "sort_by([],&properties.startTime)[-1].name" -o tsv)
+          echo "last execution: $NAME"
+          echo "--- logs ---"
+          az containerapp job logs show -n caj-tpcrm-bookings-daily -g rg-tpcrm-prod --execution "$NAME" --tail 80 || true
