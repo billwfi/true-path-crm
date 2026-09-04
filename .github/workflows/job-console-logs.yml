@@ -1,0 +1,33 @@
+name: Job Console Logs
+on:
+  workflow_dispatch:
+    inputs:
+      job:
+        description: 'Container App job name'
+        required: true
+        default: 'caj-tpcrm-bookings-daily'
+permissions:
+  id-token: write
+  contents: read
+jobs:
+  logs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      - name: Query Log Analytics for the job's console output
+        run: |
+          az extension add --upgrade --name containerapp -y 2>/dev/null || true
+          az extension add --upgrade --name log-analytics -y 2>/dev/null || true
+          J='${{ inputs.job }}'
+          ENVID=$(az containerapp job show -n "$J" -g rg-tpcrm-prod --query 'properties.environmentId' -o tsv)
+          WS=$(az containerapp env show --ids "$ENVID" --query 'properties.appLogsConfiguration.logAnalyticsConfiguration.customerId' -o tsv)
+          echo "workspace: $WS"
+          az monitor log-analytics query -w "$WS" --analytics-query \
+            "ContainerAppConsoleLogs_CL | where ContainerJobName_s == '$J' | where TimeGenerated > ago(2h) | project TimeGenerated, Log_s | order by TimeGenerated asc | take 80" \
+            -o tsv 2>/dev/null || \
+          az monitor log-analytics query -w "$WS" --analytics-query \
+            "ContainerAppConsoleLogs_CL | where TimeGenerated > ago(2h) | where ContainerName_s contains 'bookings' | project TimeGenerated, Log_s | order by TimeGenerated asc | take 80" -o tsv
