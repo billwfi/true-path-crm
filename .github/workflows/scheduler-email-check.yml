@@ -1,0 +1,31 @@
+name: Scheduler Email Config Check
+
+# Read-only: confirms the prod web app has what the real-time scheduler
+# registration email needs. Prints presence/booleans only, never values.
+on:
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      - name: Check ca-tpcrm-web email config
+        run: |
+          az extension add --upgrade --name containerapp -y 2>/dev/null || true
+          echo "image: $(az containerapp show -n ca-tpcrm-web -g rg-tpcrm-prod --query 'properties.template.containers[0].image' -o tsv)"
+          for V in ACS_CONNECTION_STRING EMAIL_FROM SCHEDULER_NOTIFY_TO; do
+            N=$(az containerapp show -n ca-tpcrm-web -g rg-tpcrm-prod \
+                 --query "length(properties.template.containers[0].env[?name=='$V'])" -o tsv 2>/dev/null)
+            S=$(az containerapp show -n ca-tpcrm-web -g rg-tpcrm-prod \
+                 --query "length(properties.template.containers[0].env[?name=='$V' && secretRef!=null])" -o tsv 2>/dev/null)
+            echo "$V: set=${N:-0} viaSecret=${S:-0}"
+          done
