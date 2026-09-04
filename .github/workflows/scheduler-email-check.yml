@@ -29,3 +29,8 @@ jobs:
                  --query "length(properties.template.containers[0].env[?name=='$V' && secretRef!=null])" -o tsv 2>/dev/null)
             echo "$V: set=${N:-0} viaSecret=${S:-0}"
           done
+          echo "--- daily recap job: caj-tpcrm-bookings-daily ---"
+          for V in REPORT_TO MAIL_FROM SMTP_USER; do
+            VAL=$(az containerapp job show -n caj-tpcrm-bookings-daily -g rg-tpcrm-prod                    --query "properties.template.containers[0].env[?name=='$V'].value | [0]" -o tsv 2>/dev/null)
+            echo "$V: ${VAL:-<not set>}"
+          done
