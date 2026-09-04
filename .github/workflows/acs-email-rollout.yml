@@ -1,0 +1,67 @@
+name: ACS Email Rollout
+
+# Every mail-sending job now uses ACS (noreply@truepathsourcing.com) instead of
+# O365 SMTP, so each needs ACS_CONNECTION_STRING. This copies the existing
+# connection string from a job that already has it onto the ones that don't,
+# and points the scheduler recap at amtfileloads. The secret value is masked
+# and never printed.
+on:
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  rollout:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      - name: Copy ACS connection string onto the jobs that lack it
+        run: |
+          az extension add --upgrade --name containerapp -y 2>/dev/null || true
+          SRC=caj-tpcrm-liviniti-nat
+
+          # name of the secret backing ACS_CONNECTION_STRING on the source job
+          REF=$(az containerapp job show -n $SRC -g rg-tpcrm-prod \
+                 --query "properties.template.containers[0].env[?name=='ACS_CONNECTION_STRING'].secretRef | [0]" -o tsv)
+          echo "source secret ref: ${REF:-<literal>}"
+
+          if [ -n "$REF" ] && [ "$REF" != "null" ]; then
+            CS=$(az containerapp job secret show -n $SRC -g rg-tpcrm-prod --secret-name "$REF" --query value -o tsv)
+          else
+            CS=$(az containerapp job show -n $SRC -g rg-tpcrm-prod \
+                  --query "properties.template.containers[0].env[?name=='ACS_CONNECTION_STRING'].value | [0]" -o tsv)
+          fi
+          echo "::add-mask::$CS"
+          if [ -z "$CS" ]; then echo "could not read the ACS connection string"; exit 1; fi
+          echo "read connection string: ${#CS} chars"
+
+          for J in caj-tpcrm-bookings-daily caj-tpcrm-import-monday-nat caj-tpcrm-imports caj-tpcrm-anders-nat; do
+            echo "::group::$J"
+            az containerapp job secret set -n "$J" -g rg-tpcrm-prod --secrets "acs-connection-string=$CS" -o none
+            az containerapp job update -n "$J" -g rg-tpcrm-prod \
+              --set-env-vars "ACS_CONNECTION_STRING=secretref:acs-connection-string" "EMAIL_FROM=noreply@truepathsourcing.com" -o none
+            echo "$J updated"
+            echo "::endgroup::"
+          done
+
+          echo "--- scheduler recap recipient ---"
+          az containerapp job update -n caj-tpcrm-bookings-daily -g rg-tpcrm-prod \
+            --set-env-vars "REPORT_TO=amtfileloads@truepathsourcing.com" -o none
+
+          echo "--- final audit ---"
+          for J in caj-tpcrm-bookings-daily caj-tpcrm-import-monday-nat caj-tpcrm-imports \
+                   caj-tpcrm-sms-watch caj-tpcrm-liviniti-nat caj-tpcrm-anders-nat; do
+            ACS=$(az containerapp job show -n "$J" -g rg-tpcrm-prod \
+                   --query "length(properties.template.containers[0].env[?name=='ACS_CONNECTION_STRING'])" -o tsv)
+            EF=$(az containerapp job show -n "$J" -g rg-tpcrm-prod \
+                  --query "properties.template.containers[0].env[?name=='EMAIL_FROM'].value | [0]" -o tsv)
+            RT=$(az containerapp job show -n "$J" -g rg-tpcrm-prod \
+                  --query "properties.template.containers[0].env[?name=='REPORT_TO'].value | [0]" -o tsv)
+            echo "$J: ACS=${ACS:-0} EMAIL_FROM=${EF:-<unset>} REPORT_TO=${RT:-<unset>}"
+          done
